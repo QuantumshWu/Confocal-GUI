@@ -88,6 +88,8 @@ class MainWindow(QMainWindow):
         self.is_fit = False
         self.spl = 299792458
         self.is_save_to_jupyter_flag = True
+        self.time_PL = 0
+        self.time_PLE = 0
 
         ui_path = os.path.join(os.path.dirname(__file__), "GUI.ui")
         uic.loadUi(ui_path, self)
@@ -155,22 +157,44 @@ class MainWindow(QMainWindow):
         self.doubleSpinBox_wl.valueChanged.connect(self.estimate_PLE_time)
         self.doubleSpinBox_wu.valueChanged.connect(self.estimate_PLE_time)
         self.doubleSpinBox_step_PLE.valueChanged.connect(self.estimate_PLE_time)
+        self.doubleSpinBox_step_PLE.valueChanged.connect(self.step_PLE_in_MHz)
         # recalculate plot time of PLE
 
 
         self.init_widget()
         self.show()
 
+    def step_PLE_in_MHz(self):
+
+        step_in_MHz = 1000*np.abs(self.spl/((self.wl + self.wu)/2) - self.spl/((self.wl + self.wu)/2 + self.step_PLE))
+        self.lineEdit_step_PLE.setText(f'{step_in_MHz:.2f}MHz')
+
     def estimate_PL_time(self):
-        self.read_data_PL()
-        time = self.exposure_PL * len(np.arange(self.xl, self.xu, self.step_PL)) * len(np.arange(self.yl, self.yu, self.step_PL))
-        self.print_log(f'estimate PL finish in {time:.2f}s', is_print_jupyter = False)
+        if self.is_running:
+            points_total = self.live_plot_PL.points_total
+            points_done = self.live_plot_PL.points_done
+            ratio = points_done/points_total
+            self.lineEdit_time_PL.setText(f'PL finishes in {(ratio*self.time_PL):.2f}s / {self.time_PL:.2f}s, {ratio*100:.2f}%')
+
+        else:
+            self.read_data_PL()
+            time = self.exposure_PL * len(np.arange(self.xl, self.xu, self.step_PL)) * len(np.arange(self.yl, self.yu, self.step_PL))
+            self.lineEdit_time_PL.setText(f'new PL finishes in {time:.2f}s')
+            self.time_PL = time
 
     def estimate_PLE_time(self):
-        self.read_data_PLE()
-        time = (self.exposure_PLE + 0.5)* len(np.arange(self.wl, self.wu, self.step_PLE)) 
-        # considering the overhead of stabilizing laser frequency
-        self.print_log(f'estimate PLE finish in {time:.2f}s', is_print_jupyter = False)
+        if self.is_running:
+            points_total = self.live_plot_PLE.points_total
+            points_done = self.live_plot_PLE.points_done
+            ratio = points_done/points_total
+            self.lineEdit_time_PLE.setText(f'PLE finishes in {(ratio*self.time_PLE):.2f}s / {self.time_PLE:.2f}s, {ratio*100:.2f}%')
+
+        else:
+            self.read_data_PLE()
+            time = (self.exposure_PLE + 0.5)* len(np.arange(self.wl, self.wu, self.step_PLE)) 
+            # considering the overhead of stabilizing laser frequency
+            self.lineEdit_time_PLE.setText(f'new PLE finishes in {time:.2f}s')
+            self.time_PLE = time
 
 
     def init_widget(self):
@@ -179,6 +203,16 @@ class MainWindow(QMainWindow):
         time_str = current_date.replace('-', '_')
 
         self.lineEdit_save.setText(f'{time_str}/')
+
+        self.estimate_PLE_time()
+
+        step_in_MHz = 1000*np.abs(self.spl/((self.wl + self.wu)/2) - self.spl/((self.wl + self.wu)/2 + self.step_PLE))
+        self.lineEdit_step_PLE.setText(f'{step_in_MHz:.2f}MHz')
+
+        self.estimate_PL_time()
+
+
+
 
     def move_scanner(self):
         x = self.doubleSpinBox_X.value()
@@ -498,6 +532,11 @@ class MainWindow(QMainWindow):
 
             live_plot_handle.update_figure()
 
+            if attr == 'PL':
+                self.estimate_PL_time()
+            elif attr == 'PLE':
+                self.estimate_PLE_time()
+            # update estimate finish time
         else:
 
             self.timer.stop()
@@ -510,6 +549,12 @@ class MainWindow(QMainWindow):
             cur_fig = (getattr(self, f'canvas_{attr}')).fig
             cur_selector = getattr(self, f'selector_{attr}')
             setattr(self, f'data_figure_{attr}', DataFigure(cur_fig, cur_selector))
+            self.is_running = False
+
+            if attr == 'PL':
+                self.estimate_PL_time()
+            elif attr == 'PLE':
+                self.estimate_PLE_time()
             
     
     def stop_plot(self):
@@ -542,6 +587,15 @@ class MainWindow(QMainWindow):
         # stop acquiring data but enable save, fit and selector
         self.print_log(f'Plot stopped')
         self.is_running = False
+
+        if hasattr(self, 'timer'):
+            self.timer.setInterval(50)
+
+        if hasattr(self, 'live_plot_PLE') and self.live_plot_PLE is not None:
+            self.estimate_PLE_time()
+            
+        if hasattr(self, 'live_plot_PL') and self.live_plot_PL is not None:
+            self.estimate_PL_time()
 
 
             

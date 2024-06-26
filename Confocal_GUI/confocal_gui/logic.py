@@ -186,6 +186,7 @@ class PLEAcquire(threading.Thread):
         self.is_done = False
         self.counter = config_instances.get('counter')
         self.config_instances = config_instances
+        self.points_done = 0
         
     
     def run(self):
@@ -204,6 +205,7 @@ class PLEAcquire(threading.Thread):
                 return 
 
             counts = self.counter(self.exposure, self)
+            self.points_done += 1
 
             self.data_y[i] += counts
             
@@ -256,6 +258,7 @@ class PLAcquire(threading.Thread):
         self.daemon = True
         self.is_running = True
         self.is_done = False
+        self.points_done = 0
         
     
     def run(self):
@@ -279,6 +282,7 @@ class PLAcquire(threading.Thread):
                     return
                 # break loop when interrupt
                 counts = self.counter(self.exposure, self)
+                self.points_done += 1
 
                 self.data_z[j][i] += counts
             
@@ -333,6 +337,7 @@ class LiveAcquire(threading.Thread):
         self.daemon = True
         self.is_running = True
         self.is_done = False
+        self.points_done = 0
         
     
     def run(self):
@@ -360,6 +365,7 @@ class LiveAcquire(threading.Thread):
             # roll data as live counts, from left most to right most, [:] makes sure not create new arr
 
             counts = self.counter(self.exposure, self)
+            self.points_done += 1
 
             self.data_y[:] = np.roll(self.data_y, 1)
             self.data_y[0] = counts

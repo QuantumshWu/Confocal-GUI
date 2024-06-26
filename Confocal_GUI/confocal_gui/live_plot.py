@@ -187,12 +187,14 @@ class LivePlotGUI():
             self.data_x = data[0]
             self.data_y = data[1]
             self.data_z = data[2]
+            self.points_total = len(self.data_z.flatten())
             
         else:# 'PLE' or 'Live'
             self.xlabel = labels[0]
             self.ylabel = labels[1]
             self.data_x = data[0]
             self.data_y = data[1]
+            self.points_total = len(self.data_y.flatten())
         
         self.update_time = update_time
         self.data_generator = data_generator
@@ -202,6 +204,9 @@ class LivePlotGUI():
             self.have_init_fig = False
         else:
             self.have_init_fig = True
+
+        self.points_done = 0
+        # track how many data points have done
         
     def init_figure_and_data(self):
         change_to_nbagg(params_type = 'nbagg')
@@ -246,6 +251,7 @@ class LivePlotGUI():
         self.axes.draw_artist(self.line)
         self.fig.canvas.blit(self.fig.bbox)
         self.fig.canvas.flush_events()
+        self.points_done = self.data_generator.points_done
         
         
     def init_core(self):
