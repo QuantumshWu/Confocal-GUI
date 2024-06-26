@@ -17,7 +17,7 @@
    </font>
   </property>
   <property name="windowTitle">
-   <string>ConfocalGUI Wanglab@UOregon</string>
+   <string>ConfocalGUI @Wanglab, UOregon</string>
   </property>
   <widget class="QWidget" name="centralwidget">
    <widget class="QTabWidget" name="tabWidget_2">
@@ -220,7 +220,7 @@
               <number>0</number>
              </property>
              <property name="minimum">
-              <double>0.000000000000000</double>
+              <double>1.000000000000000</double>
              </property>
              <property name="singleStep">
               <double>1.000000000000000</double>

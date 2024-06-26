@@ -49,7 +49,7 @@ class VirtualWaveMeter():
         
 def virtual_read_counts(duration, parent):
     """
-    software gated counter for USB-6211, and reset pulse every time but maybe good enough
+    simulated counter for test
     """
     if parent is None:
         time.sleep(duration)

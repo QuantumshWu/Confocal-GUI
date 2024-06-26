@@ -4,8 +4,6 @@ import matplotlib.pyplot as plt
 from IPython.display import display, HTML
 import matplotlib.ticker as mticker
 from IPython import get_ipython
-
-
 import sys
 from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QPushButton, QWidget
 from PyQt5.QtCore import QThread, pyqtSignal, QObject
@@ -16,30 +14,23 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 import time
 import threading
 from decimal import Decimal
-#matplotlib.use('Qt5Agg')
-#matplotlib.rcParams.update(params_nbagg)
-
 from PyQt5 import QtCore, QtWidgets
 from PyQt5.QtWidgets import QHBoxLayout, QWidget, QPushButton, QLabel, QLineEdit, QDoubleSpinBox
 from PyQt5.QtCore import QThread, pyqtSignal
-
 from matplotlib.figure import Figure
 from threading import Event
-
 import io
 from PIL import Image as PILImage
 from IPython.display import display, Image as IPImage
-
-
-
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg
-
 from PyQt5.QtCore import QThread, pyqtSignal, Qt
 from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QPushButton, QWidget
 from PyQt5 import uic
 from scipy.optimize import curve_fit
+import os
 
-    
+from .logic import *
+
 
 
 
@@ -89,8 +80,7 @@ params_inline = {
 
 }
 
-#_new_black = '#373737'
-#_new_black = 'dimgrey'
+
 params_nbagg = {
 	'axes.labelsize': 13,
 	'legend.fontsize': 13,
@@ -135,9 +125,23 @@ params_nbagg = {
 
 }
 
-def change_to_inline():
+def change_to_inline(params_type):
     get_ipython().run_line_magic('matplotlib', 'inline')
-    matplotlib.rcParams.update(params_inline)
+    if params_type == 'inline':
+        matplotlib.rcParams.update(params_inline)
+    elif params_type == 'nbagg':
+        matplotlib.rcParams.update(params_nbagg)
+    else:
+        print('wrong params_type')
+
+def change_to_nbagg(params_type):
+    get_ipython().run_line_magic('matplotlib', 'nbagg')
+    if params_type == 'inline':
+        matplotlib.rcParams.update(params_inline)
+    elif params_type == 'nbagg':
+        matplotlib.rcParams.update(params_nbagg)
+    else:
+        print('wrong params_type')
 
 def hide_elements():
     css_code = """
@@ -150,389 +154,17 @@ def hide_elements():
     """
     display(HTML(css_code))
 
-class LaserStabilizer(threading.Thread):
-    """
-    stablize laser
-    
-    >>> laser_stable = LaserStabilizer()
-    >>> laser_stable.start()
-    >>> laser_stable.set_wavelength(1)
-    >>> laser_stable.is_ready
-    True
-    >>> laser_stable.stop()
-    
-    or 
-    
-    >>> with laser_stable = LaserStabilizer():
-    >>>    something
-    
-    """
-    def __init__(self, config_instances):
-        super().__init__()
-        self.is_ready = False
-        self.wavelength = None
-        self.desired_wavelength = None
-        self.is_running = True
-        self.is_change = False
-        # indicate if wavelnegth has changed
-        self.daemon = True
-        self.laser_stabilizer_core = config_instances.get('laser_stabilizer_core')
-        # will be killed if main thread is killed
-        
-    def set_wavelength(self, desired_wavelength):
-        if self.desired_wavelength != desired_wavelength:
-            #print('set', desired_wavelength, 'time', time.time())
-            self.is_ready = False
-            self.desired_wavelength = desired_wavelength
-            
-        # make sure no unexpected order
-                
-    
-    def run(self):
-        while self.is_running:
-            
-            if self.wavelength!=self.desired_wavelength:
-                self.is_change = True
-                self.wavelength = self.desired_wavelength
-                self.is_ready = False
-                
-            if self.wavelength == None:
-                continue
 
-            self.laser_stabilizer_core.wavelength = self.wavelength
-            self.laser_stabilizer_core.run()
-            # laser_stabilizer_core(), core logic to connect hardware
-            #time.sleep(0.1)
-            
-            if self.is_change and self.laser_stabilizer_core.is_ready:
-                #print('ready', self.wavelength, 'time', time.time())
-                # only change flags after wavelength changes
-                self.is_ready = True
-                self.is_change = False
-
-    def stop(self):
-        if self.is_alive(): #use () cause it's a method not property
-            self.is_running = False
-            self.join()
-        
-        
-    # below __enter__ and __exit__ allow class be called using with
-    # 
-    def __enter__(self):
-        return self
-    
-    def __exit__(self, exc_type, exc_value, exc_traceback):
-        self.stop()
-        
-        
-class VirtualLaserStabilizerCore():
+def enable_long_output():
+    css_code = """
+    <style>
+    .output_scroll {
+        height: auto !important;
+        max-height: none !important;
+    }
+    </style>
     """
-    core logic for stabilizer, test
-    
-    no real operations, just time.sleep(0.1)
-    """
-    
-    def __init__(self, config_instances, ratio=None):
-        self.ratio = ratio
-        self.wavemeter = config_instances.get('wavemeter')
-        self.laser = config_instances.get('laser')
-        self.is_ready = True
-
-        
-    def run(self):
-        
-        time.sleep(0.1) 
-        return
-        
-class LaserStabilizerCore():
-    """
-    core logic for stabilizer,
-    
-    .run() will read wavemeter and change laser piezo
-    .is_ready=True when wavelength_desired = wavelength_actual
-    .wavelength is the wavelength desired
-    .ratio = -0.85GHz/V defines the ratio for feedback
-    """
-    
-    def __init__(self, config_instances, ratio=-0.85):
-        self.ratio = ratio
-        self.wavemeter = config_instances.get('wavemeter')
-        self.laser = config_instances.get('laser')
-        self.is_ready = False
-        self.spl = 299792458
-        self.v_mid = 0.5*(self.laser.piezo_max + self.laser.piezo_min)
-        self.v_min = self.laser.piezo_min + 0.05*(self.laser.piezo_max - self.laser.piezo_min)
-        self.v_max = self.laser.piezo_min + 0.95*(self.laser.piezo_max - self.laser.piezo_min)
-        self.freq_recent = self.spl/self.wavemeter.wavelength
-        self.freq_thre = 0.05 #50MHz threshold defines when to return is_ready
-        # leaves about 10% extra space
-        
-    @property
-    def wavelength(self):
-        return self._wavelength
-    
-    @wavelength.setter
-    def wavelength(self, wavelength_in):
-        self._wavelength = wavelength_in
-        
-    def run(self):
-        
-        freq_desired = self.spl/self.wavelength
-        freq_diff_guess = freq_desired - self.freq_recent
-        v_diff = freq_diff_guess/self.ratio 
-        v_0 = self.laser.piezo
-        
-        if (v_0+v_diff)<self.v_min or (v_0+v_diff)>self.v_max:
-            
-            wavelength_now = self.laser.wavelength
-            
-            freq_by_piezo = (self.v_mid - v_0)*self.ratio
-            freq_by_wavelength = freq_diff_guess - freq_by_piezo
-            wavelength_set = 0.01*round((self.spl/(freq_by_wavelength + self.spl/wavelength_now))/0.01)
-            # freq_diff_guess = freq_wavelength + freq_piezo
-            self.laser.piezo = self.v_mid 
-            # reset piezo to center
-            self.laser.wavelength = wavelength_set
-            wavelength_delta = wavelength_set - wavelength_now
-            time.sleep(max(np.abs(wavelength_delta)*50, 5))
-        else:
-            self.laser.piezo = v_0+v_diff
-
-        
-        
-        freq_actual = self.spl/self.wavemeter.wavelength #wait
-        freq_diff = freq_desired - freq_actual
-        if np.abs(freq_diff) <= self.freq_thre:
-            self.is_ready = True
-        else:
-            self.is_ready = False
-        self.freq_recent = freq_actual    
-        return
-        
-        
-class PLEAcquire(threading.Thread):
-    """
-    class for ple measurement
-    """
-    def __init__(self, exposure, data_x, data_y, config_instances):
-        super().__init__()
-        self.exposure = exposure
-        self.data_x = data_x
-        self.data_y = data_y
-        self.daemon = True
-        self.is_running = True
-        self.is_done = False
-        self.counter = config_instances.get('counter')
-        self.config_instances = config_instances
-        #self.laser_stabilizer = config_instances.get('laser_stabilizer')
-        
-    
-    def run(self):
-        
-        
-        self.laser_stabilizer = LaserStabilizer(config_instances = self.config_instances)
-        self.laser_stabilizer.start()
-        
-        for i, wavelength in enumerate(self.data_x):
-            #self.wavelength = wavelength
-            self.laser_stabilizer.set_wavelength(wavelength)
-            while self.is_running:
-                time.sleep(0.01)
-                if self.laser_stabilizer.is_ready:
-                    break
-            else:
-                return 
-
-            #time.sleep(self.exposure)
-            #counts = np.random.poisson(self.exposure*self.height*1/((wavelength-self.center)**2/(self.width/2)**2+1) \
-            #                           + self.bg)
-            counts = self.counter(self.exposure, self)
-
-            self.data_y[i] += counts
-            
-        self.is_done = True
-        #finish all data
-        
-    def stop(self):
-        if self.laser_stabilizer.is_alive():
-            self.laser_stabilizer.stop()
-        #self.is_running = False
-        if self.is_alive():
-            self.is_running = False
-            self.join()
-        
-        
-    def __enter__(self):
-        return self
-    
-    def __exit__(self, exc_type, exc_value, exc_traceback):
-        #print('exit')
-        self.stop()
-        
-        
-class PLAcquire(threading.Thread):
-    """
-    class for pl measurement
-    
-    data_x, data_y, center are coordinates
-    
-    data_z is returned data
-    
-    wavelength=None as default
-    
-    """
-    def __init__(self, exposure, data_x, data_y, data_z, config_instances, wavelength=None):
-        super().__init__()
-        self.exposure = exposure
-        self.data_x = data_x
-        self.data_y = data_y
-        self.data_z = data_z
-        #self.center = center
-        #self.height = height
-        self.scanner = config_instances.get('scanner')
-        self.counter = config_instances.get('counter')
-        self.config_instances = config_instances
-        #self.laser_stabilizer = config_instances.get('laser_stabilizer')
-        
-        self.wavelength = wavelength
-        if self.wavelength is None:
-            self.is_stable = False
-        else:
-            self.is_stable = True
-        
-        self.daemon = True
-        self.is_running = True
-        self.is_done = False
-        
-    
-    def run(self):
-        
-        if self.is_stable:
-            self.laser_stabilizer = LaserStabilizer(config_instances = self.config_instances)
-            self.laser_stabilizer.start()
-            self.laser_stabilizer.set_wavelength(self.wavelength)
-            
-            while self.is_running:
-                time.sleep(0.01)
-                if self.laser_stabilizer.is_ready:
-                    break
-        
-        for j, y in enumerate(self.data_y):
-            self.scanner.y = y
-            for i, x in enumerate(self.data_x):
-                self.scanner.x = x
-                # reverse x, y order because how imshow displays data
-                if not self.is_running:
-                    return
-                # break loop when interrupt
-                #time.sleep(self.exposure)
-                #counts = np.random.poisson(self.height)
-                counts = self.counter(self.exposure, self)
-
-                self.data_z[j][i] += counts
-            
-        self.is_done = True
-        #finish all data
-        
-    def stop(self):
-        
-        if self.is_stable:
-            self.laser_stabilizer.stop()
-            
-        self.is_running = False
-        self.join()
-        
-        
-    def __enter__(self):
-        return self
-    
-    def __exit__(self, exc_type, exc_value, exc_traceback):
-        #print('exit')
-        self.stop()
-        
-        
-class LiveAcquire(threading.Thread):
-    """
-    class for live counts measurement
-    
-    data_x means time/points
-    
-    data_y is returned data, and rolled by LiveAcquire
-    
-    wavelength=None as default
-    
-    """
-    def __init__(self, exposure, data_x, data_y, config_instances, wavelength=None, is_finite=False):
-        super().__init__()
-        self.exposure = exposure
-        self.data_x = data_x
-        self.data_y = data_y
-        self.counter = config_instances.get('counter')
-        self.config_instances = config_instances
-        #self.laser_stabilizer = config_instances.get('laser_stabilizer')
-        
-        self.wavelength = wavelength
-        if self.wavelength is None:
-            self.is_stable = False
-        else:
-            self.is_stable = True
-        self.is_finite = is_finite
-        
-        self.daemon = True
-        self.is_running = True
-        self.is_done = False
-        
-    
-    def run(self):
-        
-        if self.is_stable:
-            self.laser_stabilizer = LaserStabilizer(config_instances = self.config_instances)
-            self.laser_stabilizer.start()
-            self.laser_stabilizer.set_wavelength(self.wavelength)
-            
-            while self.is_running:
-                time.sleep(0.01)
-                if self.laser_stabilizer.is_ready:
-                    break
-        
-        
-        finite_counter = 0
-        while 1 and finite_counter<len(self.data_x):
-
-            if not self.is_running:
-                return
-            # break loop when interrupt
-
-            if self.is_finite:
-                finite_counter += 1
-            # roll data as live counts, from left most to right most, [:] makes sure not create new arr
-
-            #time.sleep(self.exposure)
-            #counts = np.random.poisson(self.height)
-            counts = self.counter(self.exposure, self)
-
-            self.data_y[:] = np.roll(self.data_y, 1)
-            self.data_y[0] = counts
-            #print(counts, self.data_y)
-            
-        self.is_done = True
-        #finish all data
-        
-    def stop(self):
-        
-        if self.is_stable:
-            self.laser_stabilizer.stop()
-            
-        self.is_running = False
-        self.join()
-        
-        
-    def __enter__(self):
-        return self
-    
-    def __exit__(self, exc_type, exc_value, exc_traceback):
-        #print('exit')
-        self.stop()
+    display(HTML(css_code))
         
         
 class LivePlotGUI():
@@ -547,10 +179,6 @@ class LivePlotGUI():
     """
     
     def __init__(self, labels, update_time, data_generator, data, fig=None):
-        #VALID_MODES = ['PLE', 'PL', 'Live','PLGUI']
-        #if mode not in VALID_MODES:
-        #    print('mode error')
-        #self.mode = mode
         
         if len(data) == 3: #PL
             self.xlabel = labels[0]
@@ -576,50 +204,29 @@ class LivePlotGUI():
             self.have_init_fig = True
         
     def init_figure_and_data(self):
-        #print('start')
-        get_ipython().run_line_magic('matplotlib', 'nbagg')
-        matplotlib.rcParams.update(params_nbagg)
+        change_to_nbagg(params_type = 'nbagg')
         hide_elements()
         # make sure environment enables interactive then updating figure
         
         if self.fig is None:
-            plt.close() # close possible previous figures
             self.fig = plt.figure()  # figsize
-            #fig.tight_layout()
             self.axes = self.fig.add_subplot(111)
         else:
-            #plt.close()
-            #fig = self.fig
-    
             self.axes = self.fig.axes[0]
-            #self.fig.tight_layout()
             
         self.clear_all() #makes sure no residual artist
         self.axes.set_autoscale_on(True)
         
-        #self.fig.clear()
-        #self.fig.canvas.draw()
-        #self.bg_fig = self.fig.canvas.copy_from_bbox(self.fig.bbox)
-        self.init_core()
-            
+        self.init_core()            
         self.ylim_max = 100
-        #self.canvas =  fig.canvas?
         
         
         #formatter = mticker.ScalarFormatter(useMathText=True)
         #self.axes.xaxis.set_major_formatter(formatter)
         #self.axes.xaxis.offsetText.set_visible(False)
-        
-        
-            
-        
-        #axes.draw_artist(line)
-        #fig.canvas.blit(fig.bbox)
-        
-        
-        #self.fig.canvas.draw()
-        #fig.show()
         #ticks_offset = self.axes.xaxis.get_major_formatter().get_offset()
+        # code to move offset of ticks to label
+
         self.axes.set_ylabel(self.ylabel)
         self.axes.set_xlabel(self.xlabel)
         
@@ -631,10 +238,8 @@ class LivePlotGUI():
         
         
         self.data_generator.start()
-        #return self.fig
         
     def update_figure(self):
-        #print(self.data_z)
         self.update_core()
             
 
@@ -661,7 +266,6 @@ class LivePlotGUI():
                 time.sleep(self.update_time)
             else:
                 self.update_figure()
-                #print(self.data_z)
                 
         except BaseException as e:
             print(e)
@@ -670,29 +274,21 @@ class LivePlotGUI():
         self.data_generator.stop()
         
         
-        self.line.set_animated(False)
-        #self.fig.canvas.draw()
-        #self.bg_fig = self.fig.canvas.copy_from_bbox(self.fig.bbox)
-        #self.fig.canvas.restore_region(self.bg_fig)
-        #self.axes.draw_artist(self.line)
-        
-        
+        self.line.set_animated(False)        
         self.axes.set_autoscale_on(False)
         
 
         self.selector = self.choose_selector()
 
-        #get_ipython().run_line_magic('matplotlib', 'inline')
-        #matplotlib.rcParams.update(params_inline)
         return self.fig, self.selector
 
     
     def stop(self):
-        #plt.close()
         if self.data_generator.is_alive():
             self.data_generator.stop()
             
     def clear_all(self):
+        # code to remove selectors' plot
         for ax in self.fig.axes:
             lines_to_remove = [line for line in ax.lines]
             patches_to_remove = [patch for patch in ax.patches]
@@ -716,7 +312,6 @@ class PLELive(LivePlotGUI):
         
         self.line, = self.axes.plot(self.data_x, self.data_y, animated=True, color='grey', alpha=0.7)
         self.axes.set_xlim(np.min(self.data_x), np.max(self.data_x))
-        #self.fig.tight_layout()
         
     def update_core(self):
         if len(self.data_y) == 0:
@@ -754,7 +349,6 @@ class PLLive(LivePlotGUI):
         extents = [self.data_x[0]-half_step_x, self.data_x[-1]+half_step_x, \
                    self.data_y[-1]+half_step_y, self.data_y[0]-half_step_y] #left, right, bottom, up
         self.line = self.axes.imshow(self.data_z, animated=True, alpha=0.7, cmap=cmap, extent=extents)
-        #self.fig.tight_layout()
         cbar = self.fig.colorbar(self.line)
         cbar.set_label(self.zlabel)
 
@@ -822,10 +416,7 @@ class PLDisLive(LivePlotGUI):
         self.cax = divider.append_axes("right", size="5%", pad=0.15)
         cbar = self.fig.colorbar(self.line, cax = self.cax)
         cbar.set_label(self.zlabel)
-        #self.fig.tight_layout()
-        
-        #self.fig.canvas.draw()
-        #self.bg_fig = self.fig.canvas.copy_from_bbox(self.fig.bbox)
+
         
     def update_core(self):
         
@@ -841,9 +432,7 @@ class PLDisLive(LivePlotGUI):
         self.n, _ = np.histogram(self.hist_data, bins=self.bins)
 
         
-        #vmax = np.max(self.data_z)
         if vmin*0.8 < self.vmin or self.vmax < vmax*1.2:
-            #print('v')
             self.vmin = vmin*0.8
             self.vmax = vmax*1.2
         # filter out zero data
@@ -859,7 +448,6 @@ class PLDisLive(LivePlotGUI):
             self.bg_fig = self.fig.canvas.copy_from_bbox(self.fig.bbox)
             
         elif np.max(self.n) >= self.counts_max:
-            #print('max n')
             self.counts_max = np.max(self.n) + 5
             self.axright.set_ylim(0, self.counts_max)
             self.fig.canvas.draw()
@@ -869,7 +457,6 @@ class PLDisLive(LivePlotGUI):
         self.fig.canvas.restore_region(self.bg_fig)
         self.line.set_array(self.data_z)
         
-        #print(self.n, self.bins)
         for count, patch in zip(self.n, self.patches):
             patch.set_height(count)
             #patch.set_width(0.5)
@@ -878,12 +465,6 @@ class PLDisLive(LivePlotGUI):
         for patch in self.patches:
             self.axright.draw_artist(patch)
             
-        #print(hist_data, np.min(hist_data), np.max(hist_data))
-        #self.axright.clear()
-        #self.axright.hist(hist_data, orientation='vertical', bins=30, color='grey')
-        #self.axright.set_xlim(vmin, vmax)
-        #print(vmin, np.max(self.data_z))
-        #self.fig.canvas.draw()
         
     def choose_selector(self):
         self.area = AreaSelector(self.fig.axes[0])
@@ -894,7 +475,6 @@ class PLDisLive(LivePlotGUI):
         self.line_l = self.axright.axvline(np.min(self.hist_data), color=cmap(0))
         self.line_h = self.axright.axvline(np.max(self.hist_data), color=cmap(0.95))
         self.drag_line = DragVLine(self.line_l, self.line_h, self.update_clim, self.axright)
-        #self.drag_line_h = DragVLine(self.line_h, self.update_clim, self.axright)
         
         return [self.area, self.cross, self.zoom, self.drag_line]
     
@@ -902,7 +482,6 @@ class PLDisLive(LivePlotGUI):
         vmin = self.line_l.get_xdata()[0]
         vmax = self.line_h.get_xdata()[0]
         self.line.set_clim(vmin, vmax)
-        #self.fig.canvas.draw()
 
 class PLGUILive(LivePlotGUI):
     
@@ -919,8 +498,7 @@ class PLGUILive(LivePlotGUI):
         half_step_y = 0.5*(self.data_y[-1] - self.data_y[0])/len(self.data_y)
         extents = [self.data_x[0]-half_step_x, self.data_x[-1]+half_step_x, \
                    self.data_y[-1]+half_step_y, self.data_y[0]-half_step_y] #left, right, bottom, up
-        #print('first',self.data_z)
-        #line = axes.imshow(self.data_z, animated=True, alpha=0.7, cmap=cmap, extent=extents)
+
         self.line = self.fig.axes[0].images[0]
         self.line.set(cmap = cmap, extent=extents)
         self.line.set_array(self.data_z)
@@ -940,10 +518,7 @@ class PLGUILive(LivePlotGUI):
             hist_data = [i for i in self.data_z.flatten() if i != 0]
         self.n, self.bins, self.patches = self.axright.hist(hist_data, orientation='vertical', bins=30, color='grey')
         self.axright.set_ylim(0, self.counts_max)
-        #self.fig.tight_layout()
-        
-        #self.fig.canvas.draw()
-        #self.bg_fig = self.fig.canvas.copy_from_bbox(self.fig.bbox)
+
         
         
     def update_core(self):
@@ -959,7 +534,6 @@ class PLGUILive(LivePlotGUI):
         self.n, _ = np.histogram(self.hist_data, bins=self.bins)
 
         
-        #vmax = np.max(self.data_z)
         if vmin*0.8 < self.vmin or self.vmax < vmax*1.2:
             #print('v')
             self.vmin = vmin*0.8
@@ -977,7 +551,6 @@ class PLGUILive(LivePlotGUI):
             self.bg_fig = self.fig.canvas.copy_from_bbox(self.fig.bbox)
             
         elif np.max(self.n) >= self.counts_max:
-            #print('max n')
             self.counts_max = np.max(self.n) + 5
             self.axright.set_ylim(0, self.counts_max)
             self.fig.canvas.draw()
@@ -987,7 +560,6 @@ class PLGUILive(LivePlotGUI):
         self.fig.canvas.restore_region(self.bg_fig)
         self.line.set_array(self.data_z)
         
-        #print(self.n, self.bins)
         for count, patch in zip(self.n, self.patches):
             patch.set_height(count)
             #patch.set_width(0.5)
@@ -1005,7 +577,6 @@ class PLGUILive(LivePlotGUI):
         self.line_l = self.axright.axvline(np.min(self.hist_data), color=cmap(0))
         self.line_h = self.axright.axvline(np.max(self.hist_data), color=cmap(0.95))
         self.drag_line = DragVLine(self.line_l, self.line_h, self.update_clim, self.axright)
-        #self.drag_line_h = DragVLine(self.line_h, self.update_clim, self.axright)
         
         return [self.area, self.cross, self.zoom, self.drag_line]
     
@@ -1013,7 +584,6 @@ class PLGUILive(LivePlotGUI):
         vmin = self.line_l.get_xdata()[0]
         vmax = self.line_h.get_xdata()[0]
         self.line.set_clim(vmin, vmax)
-        #self.fig.canvas.draw()
         
                       
 class AreaSelector():
@@ -1031,7 +601,7 @@ class AreaSelector():
         self.selector = RectangleSelector(ax, self.onselect, interactive=True, useblit=False, button=[1], 
                                           props=dict(alpha=0.8, fill=False, 
                                                      linestyle='-', color=self.color)) 
-        #set blit=True has weird bug, or implement this myself
+        #set blit=True has weird bug, or implement RectangleSelector myself
         
     
         
@@ -1094,8 +664,6 @@ class AreaSelector():
         if not active:
             self.selector.set_active(False)
             
-            #for artist in self.selector.artists:
-            #    artist.remove()
 
 
 class CrossSelector():
@@ -1223,7 +791,6 @@ class ZoomPan():
                     , self.y_center - scale_factor*(ylim_min - self.y_center)]
             
             if self.image_type == 'imshow':
-                #self.ax.set_facecolor = self.color
                 self.ax.set_xlim(xlim)
                 self.ax.set_ylim(ylim)
             else:
@@ -1257,7 +824,6 @@ class DragVLine():
     def on_draw(self, event):
         self.background = self.ax.figure.canvas.copy_from_bbox(self.ax.bbox)
         for line in self.ax.lines:
-        #    #line.set_animated(True)
             self.ax.draw_artist(line)
 
 
@@ -1275,8 +841,7 @@ class DragVLine():
         else:
             self.is_on_h = True
             self.press = self.line_h.get_xdata(), event.xdata
-        #self.line.set_animated(True)
-        #self.press = self.line.get_xdata(), event.xdata
+
         self.background = self.ax.figure.canvas.copy_from_bbox(self.ax.bbox)
 
     def on_motion(self, event):
@@ -1350,6 +915,7 @@ class DataFigure():
         self.p0 = None
         self.fit = None
         self.text = None
+        self.log_info = '' # information for log output
         if selector is None:
             self.selector = []
         else:
@@ -1383,6 +949,13 @@ class DataFigure():
         current_date = time.strftime("%Y-%m-%d", current_time)
         current_time_formatted = time.strftime("%H:%M:%S", current_time)
         time_str = current_date.replace('-', '_') + '_' + current_time_formatted.replace(':', '_')
+
+        if addr=='':
+            pass
+        elif not os.path.exists(addr):
+            os.makedirs(addr)
+
+
         self.fig.savefig(addr + self.mode + time_str + '.jpg', dpi=300)
         
         if self.mode == 'PLE':
@@ -1433,6 +1006,7 @@ class DataFigure():
             result_list = [f'{name} = {value}' for name, value in zip(popt_str, formatted_popt)]
             formatted_popt_str = '\n'.join(result_list)
             result = f'{formatted_popt_str}'
+            self.log_info = result
             # format popt to display as text
                 
             
@@ -1482,15 +1056,12 @@ class DataFigure():
             patch.set_x(spl/x)
             patch.set_width(spl/(x + width) - spl/(x))
             
-        # set Zoom pan center
+        # set Zoom pan center, and moves all selectors accordingly
         if self.selector == []:
             pass
         else:
-            #print(self.selector)
             zoom_pan_handle = self.selector[2]
-            #print('zoom', zoom_pan_handle.x_center)
             zoom_pan_handle.x_center = spl/zoom_pan_handle.x_center
-            #print('zoom', zoom_pan_handle.x_center)
             
             area_handle = self.selector[0]
             if area_handle.range[0] is not None:
@@ -1605,445 +1176,3 @@ def pl_gui(center, coordinates_x, coordinates_y, exposure, config_instances, fig
     fig, selector = liveplot.plot()
     data_figure = DataFigure(fig, selector)
     return fig, data_figure
-
-
-
-
-class MplCanvas(FigureCanvasQTAgg):
-    """
-    labels = [xlabel, ylabel]
-    """
-    def __init__(self, parent=None, labels=None, mode=None):
-        plt.close()
-        self.fig = plt.figure()
-        self.axes = self.fig.add_subplot(111)
-        if labels is not None:
-            self.axes.set_xlabel(labels[0])
-            self.axes.set_ylabel(labels[1])
-            
-        if mode=='PL':
-            
-            line = self.axes.imshow(1e4*np.random.random((100, 100)), animated=True, cmap='inferno')
-            cbar = self.fig.colorbar(line)
-            cbar.set_label(labels[2])
-        elif mode=='PLdis':
-            
-            divider = make_axes_locatable(self.axes)
-            axright = divider.append_axes("top", size="20%", pad=0.25)
-            cax = divider.append_axes("right", size="5%", pad=0.15)
-            
-            line = self.axes.imshow(1e4*np.random.random((100, 100)), animated=True, cmap='inferno')
-            cbar = self.fig.colorbar(line, cax = cax)
-            cbar.set_label(labels[2])
-        elif mode=='PLE':
-            self.axes.set_ylim(0, 1000)
-            pass
-            #line = self.axes.plot(np.linspace(730, 737, 100), animated=True)
-            
-        self.fig.tight_layout()
-            
-        super(MplCanvas, self).__init__(self.fig)
-
-
-class MainWindow(QMainWindow):
-    def __init__(self, config_instances):
-        super().__init__()
-        self.config_instances = config_instances
-        self.is_running = False
-        self.selector_PLE = []
-        self.selector_PL = []
-        self.selector_Live = []
-        self.is_wavelength_PL_flag = False
-        self.is_wavelength_Live_flag = False
-        self.data_figure_PL = None
-        self.data_figure_PLE = None
-        self.cur_plot = 'PL'
-        self.is_fit = False
-        self.spl = 299792458
-        self.is_save_to_jupyter_flag = True
-
-        uic.loadUi("PLandPLE.ui", self)
-
-
-        
-        self.widget_figure_PLE = self.findChild(QWidget, 'widget_figure_PLE')
-        layout = QVBoxLayout(self.widget_figure_PLE)
-        layout.setContentsMargins(0, 0, 0, 0)
-
-        self.canvas_PLE = MplCanvas(self.widget_figure_PLE, labels=['Wavelength (nm)', 'Counts'], mode='PLE')
-        layout.addWidget(self.canvas_PLE)
-        
-        
-        self.widget_figure_PL = self.findChild(QWidget, 'widget_figure_PL')
-        layout = QVBoxLayout(self.widget_figure_PL)
-        layout.setContentsMargins(0, 0, 0, 0) 
-
-        self.canvas_PL = MplCanvas(self.widget_figure_PL, labels=['X', 'Y', 'Counts'], mode='PLdis')
-        layout.addWidget(self.canvas_PL)
-        
-        self.widget_figure_Live = self.findChild(QWidget, 'widget_figure_Live')
-        layout = QVBoxLayout(self.widget_figure_Live)
-        layout.setContentsMargins(0, 0, 0, 0) 
-
-        self.canvas_Live = MplCanvas(self.widget_figure_Live, labels=['Data', 'Counts'], mode='PLE')
-        layout.addWidget(self.canvas_Live)
-        
-
-                
-
-        self.pushButton_start_PLE.clicked.connect(self.start_plot_PLE)
-        self.pushButton_start_PL.clicked.connect(self.start_plot_PL)
-        self.pushButton_start_Live.clicked.connect(self.start_plot_Live)
-        self.pushButton_stop_PLE.clicked.connect(self.stop_and_show)
-        self.pushButton_stop_PL.clicked.connect(self.stop_and_show)
-        self.pushButton_stop_Live.clicked.connect(self.stop_and_show)
-        
-        self.radioButton_is_wavelength_PL.toggled.connect(self.is_wavelength_PL)
-        self.radioButton_is_wavelength_Live.toggled.connect(self.is_wavelength_Live)
-        self.checkBox_log.toggled.connect(self.is_save_to_jupyter)
-        
-        self.pushButton_wavelength_PL.clicked.connect(self.read_wavelength_PL)
-        self.pushButton_wavelength_Live.clicked.connect(self.read_wavelength_Live)
-        self.pushButton_range_PL.clicked.connect(self.read_range_PL)
-        self.pushButton_range_PLE.clicked.connect(self.read_range_PLE)
-        self.pushButton_lorent.clicked.connect(self.fit_lorent)
-        self.pushButton_unit.clicked.connect(self.change_unit)
-        self.pushButton_save_PL.clicked.connect(self.save_PL)
-        self.pushButton_save_PLE.clicked.connect(self.save_PLE)
-        self.pushButton_XY.clicked.connect(self.read_xy)
-        self.show()
-        
-    def print_log(self, text):
-        self.lineEdit_print.setText(text)
-        
-    def read_xy(self):
-        if self.selector_PL == []:
-            return
-        _xy = self.selector_PL[1].xy #cross selector
-        
-        if _xy is not None:
-                self.doubleSpinBox_X.setValue(_xy[0])
-                self.doubleSpinBox_Y.setValue(_xy[1])
-                self.doubleSpinBox_X_Live.setValue(_xy[0])
-                self.doubleSpinBox_Y_Live.setValue(_xy[1])
-                
-    def is_save_to_jupyter(self, checked):
-        if checked:
-            self.is_save_to_jupyter_flag = True
-        else:
-            self.is_save_to_jupyter_flag = False
-                
-    def save_to_jupyter(self, fig):
-        buffer = io.BytesIO()
-        fig.savefig(buffer, format='png')
-        buffer.seek(0)
-        img_data = buffer.getvalue()
-        img = PILImage.open(io.BytesIO(img_data))
-        print(
-        f"""
-        {time.time()}
-        """)
-        display(IPImage(img_data, format='png'))
-        fig.canvas.draw()
-        
-        
-    def save_PL(self):
-        if self.data_figure_PL is None:
-            return
-        self.data_figure_PL.save()
-        
-        if self.is_save_to_jupyter_flag:
-            self.save_to_jupyter(self.canvas_PL.fig)
-            
-        self.print_log('save PL')
-        
-    def save_PLE(self):
-        if self.data_figure_PLE is None:
-            return
-        self.data_figure_PLE.save()   
-        
-        if self.is_save_to_jupyter_flag:
-            self.save_to_jupyter(self.canvas_PLE.fig)
-            
-        self.print_log('save PLE')
-        
-        
-    def change_unit(self):
-        if self.data_figure_PLE is None:
-            return
-        if self.data_figure_PLE.unit == 'nm':
-            self.data_figure_PLE.to_GHz()
-        else:
-            self.data_figure_PLE.to_nm()
-        
-    def fit_lorent(self):
-        if self.data_figure_PLE is None:
-            return
-        if self.is_fit:
-            self.data_figure_PLE.clear()
-            self.is_fit = False
-        else:
-            self.data_figure_PLE.lorent()
-            self.is_fit = True
-        
-        
-    def is_wavelength_PL(self, checked):
-        if checked:
-            self.doubleSpinBox_wavelength_PL.setDisabled(False)
-            self.is_wavelength_PL_flag = True
-        else:
-            self.doubleSpinBox_wavelength_PL.setDisabled(True)
-            self.is_wavelength_PL_flag = False
-            
-    def is_wavelength_Live(self, checked):
-        if checked:
-            self.doubleSpinBox_wavelength_Live.setDisabled(False)
-            self.is_wavelength_Live_flag = True
-        else:
-            self.doubleSpinBox_wavelength_Live.setDisabled(True)
-            self.is_wavelength_Live_flag = False
-            
-    def read_wavelength_PL(self):
-        if self.selector_PLE == []:
-            return
-        _wavelength = self.selector_PLE[1].wavelength
-        
-        if _wavelength is not None:
-            if self.data_figure_PLE.unit == 'nm':
-                self.doubleSpinBox_wavelength_PL.setValue(_wavelength)
-            else:
-                self.doubleSpinBox_wavelength_PL.setValue(self.spl/_wavelength)
-        #set double spin box to _wavelength
-        
-    def read_wavelength_Live(self):
-        if self.selector_PLE == []:
-            return
-        _wavelength = self.selector_PLE[1].wavelength
-        
-        if _wavelength is not None:
-            if self.data_figure_PLE.unit == 'nm':
-                self.doubleSpinBox_wavelength_Live.setValue(_wavelength)
-            else:
-                self.doubleSpinBox_wavelength_Live.setValue(self.spl/_wavelength)
-        
-    def read_range_PL(self):
-        if self.selector_PL == []:
-            return
-        xl, xh, yl, yh = self.selector_PL[0].range
-        
-        if xl is None:
-            return
-        
-        self.doubleSpinBox_xl.setValue(xl)
-        self.doubleSpinBox_xu.setValue(xh)
-        self.doubleSpinBox_yl.setValue(yl)
-        self.doubleSpinBox_yu.setValue(yh)
-        
-    def read_range_PLE(self):
-        if self.selector_PLE == []:
-            return
-        xl, xh, yl, yh = self.selector_PLE[0].range
-        
-        if xl is None:
-            return
-        
-        if self.data_figure_PLE.unit == 'nm':
-            self.doubleSpinBox_wl.setValue(xl)
-            self.doubleSpinBox_wu.setValue(xh)
-        else:
-            self.doubleSpinBox_wl.setValue(self.spl/xl)
-            self.doubleSpinBox_wu.setValue(self.spl/xh)
-        
-        
-    def read_data_PLE(self):
-        for attr in ['exposure_PLE', 'wl', 'wu', 'step_PLE']: # Read from GUI panel
-            value = getattr(self, f'doubleSpinBox_{attr}').value()
-            setattr(self, attr, value)
-            
-        for attr in ['center', 'height', 'width']:
-            value = self.config_instances.get(attr)
-            setattr(self, attr, value)
-            
-    def read_data_PL(self):
-        for attr in ['exposure_PL', 'xl', 'xu', 'yl', 'yu', 'step_PL', 'wavelength_PL']:
-            value = getattr(self, f'doubleSpinBox_{attr}').value()
-            #print(attr, value)
-            setattr(self, attr, value)
-            
-    def read_data_Live(self):
-        for attr in ['exposure_Live', 'many', 'wavelength_Live']:
-            value = getattr(self, f'doubleSpinBox_{attr}').value()
-            #print(attr, value)
-            setattr(self, attr, value)
-            
-
-    def start_plot_PLE(self):
-        self.cur_plot = 'PLE'
-        self.stop_plot()
-        self.is_running = True
-                    
-        
-        self.read_data_PLE()
-        
-        data_x = np.arange(self.wl, self.wu, self.step_PLE)
-        data_y = np.zeros(len(data_x))
-        self.data_generator_PLE = PLEAcquire(exposure = self.exposure_PLE, \
-                                         data_x=data_x, data_y=data_y, config_instances=self.config_instances)
-        self.live_plot_PLE = PLELive(labels=['Wavelength (nm)', f'Counts/{self.exposure_PLE:.2f}s'], 
-                                     update_time=1, data_generator=self.data_generator_PLE, data=[data_x, data_y],\
-                                    fig=self.canvas_PLE.fig)
-        
-
-        self.live_plot_PLE.init_figure_and_data()
-        
-        
-        self.timer = QtCore.QTimer()
-        self.timer.setInterval(1000*self.live_plot_PLE.update_time)  # Interval in milliseconds
-        self.timer.timeout.connect(self.update_plot)
-        self.timer.start()
-            
-            
-    def start_plot_PL(self):
-        self.cur_plot = 'PL'
-        self.stop_plot()
-        self.is_running = True
-            
-            
-        self.read_data_PL()
-                
-        center = [0,0]
-        data_x = np.arange(self.xl, self.xu, self.step_PL) + center[0]
-        data_y = np.arange(self.yl, self.yu, self.step_PL) + center[1]
-        data_z = np.zeros((len(data_y), len(data_x)))
-        # reverse for compensate x,y order of imshow
-        if self.is_wavelength_PL_flag:
-            _wavelength = self.wavelength_PL
-        else:
-            _wavelength = None
-        self.data_generator_PL = PLAcquire(exposure = self.exposure_PL, data_x = data_x, data_y = data_y, \
-                               data_z = data_z, config_instances=self.config_instances, wavelength=_wavelength)
-            
-        self.live_plot_PL = PLGUILive(labels=['X', 'Y', f'Counts/{self.exposure_PL:.2f}s'], \
-                        update_time=1, data_generator=self.data_generator_PL, data=[data_x, data_y, data_z],\
-                                       fig=self.canvas_PL.fig)
-        
-        
-        self.live_plot_PL.init_figure_and_data()
-        
-        self.timer = QtCore.QTimer()
-        self.timer.setInterval(1000*self.live_plot_PL.update_time)  # Interval in milliseconds
-        self.timer.timeout.connect(self.update_plot)
-        self.timer.start()
-        
-            
-    def start_plot_Live(self):
-        self.cur_plot = 'Live'
-        self.stop_plot()
-        self.is_running = True
-        self.read_data_Live()
-        
-        
-        data_x = np.arange(self.many)
-        data_y = np.zeros(len(data_x))
-        
-        if self.is_wavelength_Live_flag:
-            _wavelength = self.wavelength_Live
-        else:
-            _wavelength = None
-            
-        self.data_generator_Live = LiveAcquire(exposure = self.exposure_Live, data_x=data_x, data_y=data_y, \
-                                     config_instances=self.config_instances, wavelength=_wavelength, is_finite=False)
-        self.live_plot_Live = PLELive(labels=['Data', f'Counts/{self.exposure_Live:.2f}s'], \
-                            update_time=0.05, data_generator=self.data_generator_Live, data=[data_x, data_y],\
-                                         fig=self.canvas_Live.fig)
-        
-        
-        self.live_plot_Live.init_figure_and_data()
-        
-        self.timer = QtCore.QTimer()
-        self.timer.setInterval(1000*self.live_plot_Live.update_time)  # Interval in milliseconds
-        self.timer.timeout.connect(self.update_plot)
-        self.timer.start()
-        
-    def update_plot(self):
-        
-        attr = self.cur_plot
-        live_plot_handle = getattr(self, f'live_plot_{attr}')
-
-        if live_plot_handle.data_generator.is_alive() and self.is_running:
-
-            live_plot_handle.update_figure()
-
-        else:
-
-            self.timer.stop()
-
-            live_plot_handle.update_figure()  
-            live_plot_handle.line.set_animated(False)                
-            live_plot_handle.axes.set_autoscale_on(False)     
-            setattr(self, f'selector_{attr}', live_plot_handle.choose_selector())
-            live_plot_handle.stop()
-            cur_fig = (getattr(self, f'canvas_{attr}')).fig
-            cur_selector = getattr(self, f'selector_{attr}')
-            setattr(self, f'data_figure_{attr}', DataFigure(cur_fig, cur_selector))
-            
-    
-    def stop_plot(self):
-        
-        self.is_running = False
-        attr = self.cur_plot
-        
-        for selector in getattr(self, f'selector_{attr}'):
-            selector.set_active(False)
-        setattr(self, f'selector_{attr}', []) #disable all selector
-        setattr(self, f'data_figure_{attr}', None) #disable DataFigure
-        
-        if hasattr(self, 'timer'):
-            self.timer.stop()
-            
-            
-        if hasattr(self, 'live_plot_PLE') and self.live_plot_PLE is not None:
-            #print('stop plot', 'PLE')
-            self.live_plot_PLE.stop()
-            
-        if hasattr(self, 'live_plot_PL') and self.live_plot_PL is not None:
-            #print('stop plot', 'PL')
-            self.live_plot_PL.stop()
-            
-        if hasattr(self, 'live_plot_Live') and self.live_plot_Live is not None:
-            #print('stop plot', 'Live')
-            self.live_plot_Live.stop()
-            
-            
-            
-            
-    def stop_and_show(self):
-        self.is_running = False
-
-
-            
-    def closeEvent(self, event):
-        self.stop_plot()
-            
-        event.accept()
-        QtWidgets.QApplication.quit()  # Ensure application exits completely
-
-
-
-def GUI(config_instances):
-    """
-    The function opens pyqt GUI for PLE, PL, live counts, and pulse control.
-    Save button will also output data and figure to jupyter notebook.
-   
-    Examples
-    --------
-    >>> GUI()
-    """
-    
-    app = QtCore.QCoreApplication.instance()
-    if app is None:
-        app = QtWidgets.QApplication(sys.argv)
-
-    w = MainWindow(config_instances)
-    app.setStyle('Windows')
-    app.exec_()

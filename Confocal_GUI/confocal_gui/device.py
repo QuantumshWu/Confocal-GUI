@@ -163,9 +163,9 @@ class WaveMeter671():
         self.tn.close()
 
         
-def read_counts(duration):
+def read_counts(duration, parent):
     """
-    software gated counter for USB-6211, and reset pulse every time but maybe good enough
+    software gated counter for USB-6211, and reset pulse every time, but maybe good enough
     """
     with nidaqmx.Task() as task:
         task.ci_channels.add_ci_count_edges_chan("Dev3/ctr0")
@@ -220,90 +220,5 @@ class AFG3052C():
     
 
 
-        
-class USB6211():
-    """
-    class for counter NI USB-6211
-    
-    example
-    
-    >>> with USB6211(duration=1, clock_rate=1000, samples=1000) as counter:
-    
-    within block
-    >>> counter.read_counts
-    >>> 100
-    >>> counter.read_bins
-    >>> [1, 0, 1..., 1]
-    
-    
-    can also call
-    >>> counter.connect
-    # start task
-    >>> counter.disconnect
-    # end task
-    
-    
-    """
-    
-    def __init__(self, duration, clock_rate=None):
-        if clock_rate==None:
-            clock_rate = int((1/duration)*1000)
 
-        self.duration = duration
-        self.clock_rate = clock_rate
-        self.samples = int(duration*clock_rate)
-        
-        
-    def connect(self):
-        co_task = nidaqmx.Task()
-        co_task.co_channels.add_co_pulse_chan_freq('Dev3/ctr1', freq=self.clock_rate)
-        co_task.timing.cfg_implicit_timing(sample_mode=nidaqmx.constants.AcquisitionType.CONTINUOUS)
-        co_task.start()
-        # set task for clock
-        
-        task = nidaqmx.Task()
-        task.ci_channels.add_ci_count_edges_chan("Dev3/ctr0")
-        task.timing.cfg_samp_clk_timing(rate=self.clock_rate, source='/Dev3/ctr1InternalOutput', \
-                                        sample_mode=nidaqmx.constants.AcquisitionType.CONTINUOUS)
-        
-        task.start()
-        # set task for counter
-        
-        self.co_task = co_task
-        self.task = task
-        
-    def disconnect(self):
-        self.task.stop()
-        self.task.close()
-        self.co_task.stop()
-        self.co_task.close()
-    
-    
-    def __enter__(self):
-        self.connect()
-        
-    def __exit__(self):
-        self.disconnect()
-    
-    def read_counts(self):
-        self.task.in_stream.offset = 0
-        self.task.in_stream.relative_to = nidaqmx.constants.ReadRelativeTo.MOST_RECENT_SAMPLE
-        self.task.read(number_of_samples_per_channel=1)    
-        self.task.in_stream.relative_to = nidaqmx.constants.ReadRelativeTo.MOST_RECENT_SAMPLE
-        data = self.task.read(number_of_samples_per_channel=(self.samples+1))
-        # read to enforce read the most recent information 'MOST_RECENT_SAMPLE', 
-        # refer to https://github.com/ni/nidaqmx-python/issues/49
-        # number_of_samples_per_channel=(self.samples+1) to make sure safely skip the first one
-        return np.sum(np.diff(data, prepend=data[0]))
-            
-    def read_bins(self):        
-        self.task.in_stream.offset = 0
-        self.task.in_stream.relative_to = nidaqmx.constants.ReadRelativeTo.MOST_RECENT_SAMPLE
-        self.task.read(number_of_samples_per_channel=1)    
-        self.task.in_stream.relative_to = nidaqmx.constants.ReadRelativeTo.MOST_RECENT_SAMPLE
-        data = self.task.read(number_of_samples_per_channel=(self.samples+1))
-        # read to enforce read the most recent information 'MOST_RECENT_SAMPLE', 
-        # refer to https://github.com/ni/nidaqmx-python/issues/49
-        # number_of_samples_per_channel=(self.samples+1) to make sure safely skip the first one
-        return np.diff(data, prepend=data[0])[1:]
 
