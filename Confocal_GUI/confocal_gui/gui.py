@@ -560,6 +560,7 @@ class MainWindow(QMainWindow):
     def stop_plot(self):
         
         self.is_running = False
+        self.is_fit = False
         attr = self.cur_plot
         
         for selector in getattr(self, f'selector_{attr}'):

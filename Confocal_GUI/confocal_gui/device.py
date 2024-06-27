@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 import telnetlib, time
-import sys
+import sys, os
 import clr
 from System.Text import StringBuilder
 from System import Int32
@@ -8,6 +8,8 @@ from System.Reflection import Assembly
 clr.AddReference(r'mscorlib')
 sys.path.append('C:\\Program Files\\New Focus\\New Focus Tunable Laser Application\\')
 # location of new focus laser driver file
+current_directory = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(current_directory)
 clr.AddReference('UsbDllWrap')
 import Newport
 import pyvisa

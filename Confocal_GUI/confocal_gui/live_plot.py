@@ -333,7 +333,7 @@ class PLELive(LivePlotGUI):
             self.bg_fig = self.fig.canvas.copy_from_bbox(self.fig.bbox)  # update ylim so need redraw
 
         self.fig.canvas.restore_region(self.bg_fig)
-        self.line.set_ydata(self.data_y)
+        self.line.set_data(self.data_x[:self.data_generator.points_done], self.data_y[:self.data_generator.points_done])
         
     def choose_selector(self):
         self.area = AreaSelector(self.fig.axes[0])
@@ -370,6 +370,10 @@ class PLLive(LivePlotGUI):
             vmin = np.min(self.data_z[self.data_z!=0])
 
         vmax = np.max(self.data_z)
+
+        if vmax == vmin:
+                vmax = vmin + 1
+
         if vmin*0.8 < self.vmin or self.vmax < vmax*1.2:
             self.vmin = vmin*0.8
             self.vmax = vmax*1.2
@@ -433,6 +437,8 @@ class PLDisLive(LivePlotGUI):
         else:
             vmin = np.min(self.data_z[self.data_z!=0])
             vmax = np.max(self.data_z)
+            if vmax == vmin:
+                vmax = vmin + 1
             self.hist_data = [i for i in self.data_z.flatten() if i != 0]
 
         self.n, _ = np.histogram(self.hist_data, bins=self.bins)
@@ -535,6 +541,8 @@ class PLGUILive(LivePlotGUI):
         else:
             vmin = np.min(self.data_z[self.data_z!=0])
             vmax = np.max(self.data_z)
+            if vmax == vmin:
+                vmax = vmin + 1
             self.hist_data = [i for i in self.data_z.flatten() if i != 0]
 
         self.n, _ = np.histogram(self.hist_data, bins=self.bins)
@@ -1179,6 +1187,28 @@ def pl_gui(center, coordinates_x, coordinates_y, exposure, config_instances, fig
                                data_z = data_z, config_instances = config_instances, wavelength=wavelength)
     liveplot = PLGUILive(labels=['X', 'Y', f'Counts/{exposure}s'], \
                         update_time=1, data_generator=data_generator, data=[data_x, data_y, data_z], fig=fig)
+    fig, selector = liveplot.plot()
+    data_figure = DataFigure(fig, selector)
+    return fig, data_figure
+
+def area(wavelength_array, exposure, coordinates_x, coordinates_y, config_instances, mode = 'PLE'):
+                
+    data_x = wavelength_array
+    if mode == 'PLE':
+        data_y = np.zeros(len(data_x))
+    elif mode == 'PLE':
+        data_y = np.zeros((len(coordinates_y), len(coordinates_x)))
+
+    data_generator = AreaAcquire(exposure = exposure, data_x=data_x, data_y=data_y, 
+                                    data_x_area = coordinates_x, data_y_area = coordinates_y,
+                                     config_instances = config_instances, mode = mode)
+    if mode == 'PLE':
+        liveplot = PLELive(labels=['Wavelength (nm)', f'Counts/{exposure}s'], \
+                            update_time=0.1, data_generator=data_generator, data=[data_x, data_y])
+    elif mode == 'PL':
+        liveplot = PLDisLive(labels=['X', 'Y', f'Counts/{exposure}s'], \
+                        update_time=1, data_generator=data_generator, data=[coordinates_x, coordinates_y, data_y])
+
     fig, selector = liveplot.plot()
     data_figure = DataFigure(fig, selector)
     return fig, data_figure

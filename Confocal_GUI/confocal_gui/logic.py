@@ -391,3 +391,102 @@ class LiveAcquire(threading.Thread):
     def __exit__(self, exc_type, exc_value, exc_traceback):
         #print('exit')
         self.stop()
+
+
+class AreaAcquire(threading.Thread):
+    """
+    class for ple measurement (sum) for SiVs in selected area
+
+    data_x, data_y for wavelength
+
+    data_x_area, data_y_area for scanner
+
+    type = 'PLE' for PLE type sum, 'PL' for PL type sum
+    """
+    def __init__(self, exposure, data_x, data_y, data_x_area, data_y_area, config_instances, mode = 'PLE'):
+        super().__init__()
+        self.exposure = exposure
+        self.data_x = data_x
+        self.data_y = data_y
+        self.daemon = True
+        self.is_running = True
+        self.is_done = False
+        self.counter = config_instances.get('counter')
+        self.scanner = config_instances.get('scanner')
+        self.config_instances = config_instances
+        self.points_done = 0
+        self.data_x_area = data_x_area
+        self.data_y_area = data_y_area
+        self.mode = mode
+        
+    
+    def run(self):
+        
+        
+        self.laser_stabilizer = LaserStabilizer(config_instances = self.config_instances)
+        self.laser_stabilizer.start()
+
+        if self.mode == 'PLE':
+        
+            for i, wavelength in enumerate(self.data_x):
+                self.laser_stabilizer.set_wavelength(wavelength)
+                while self.is_running:
+                    time.sleep(0.01)
+                    if self.laser_stabilizer.is_ready:
+                        break
+                else:
+                    return 
+                
+                counts = 0
+                for x in self.data_x_area:
+                    self.scanner.x = x
+                    for y in self.data_y_area:
+                        self.scanner.y = y
+                        
+                        counts += self.counter(self.exposure, self)
+                        
+                self.points_done += 1
+
+                self.data_y[i] += counts
+
+        elif self.mode == 'PL':
+               
+            for j, y in enumerate(self.data_y_area):
+                self.scanner.y = y
+                for i, x in enumerate(self.data_x_area):
+                    self.scanner.x = x
+                    counts = 0
+                    for ii, wavelength in enumerate(self.data_x):
+                        self.laser_stabilizer.set_wavelength(wavelength)
+                        while self.is_running:
+                            time.sleep(0.01)
+                            if self.laser_stabilizer.is_ready:
+                                break
+                        else:
+                            return
+                    
+                        counts += self.counter(self.exposure, self)
+                    
+                    self.points_done += 1
+
+                    self.data_y[j][i] += counts
+
+
+            
+        self.is_done = True
+        #finish all data
+        self.laser_stabilizer.stop()
+        # stop and join child thread
+        
+    def stop(self):
+        self.laser_stabilizer.stop()
+        if self.is_alive():
+            self.is_running = False
+            self.join()
+        
+        
+    def __enter__(self):
+        return self
+    
+    def __exit__(self, exc_type, exc_value, exc_traceback):
+        self.stop()
