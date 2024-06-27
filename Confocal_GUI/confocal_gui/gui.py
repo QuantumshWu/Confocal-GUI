@@ -548,7 +548,7 @@ class MainWindow(QMainWindow):
             live_plot_handle.stop()
             cur_fig = (getattr(self, f'canvas_{attr}')).fig
             cur_selector = getattr(self, f'selector_{attr}')
-            setattr(self, f'data_figure_{attr}', DataFigure(cur_fig, cur_selector))
+            setattr(self, f'data_figure_{attr}', DataFigure(cur_fig, cur_selector, self.config_instances))
             self.is_running = False
 
             if attr == 'PL':

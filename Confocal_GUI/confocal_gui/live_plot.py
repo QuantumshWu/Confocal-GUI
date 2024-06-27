@@ -36,36 +36,36 @@ from .logic import *
 
 _new_black = '#373737'
 params_inline = {
-	'axes.labelsize': 13,
-	'legend.fontsize': 13,
-	'xtick.labelsize': 13,
-	'ytick.labelsize': 13,
-	'figure.figsize': [3.5, 2.625],
-	'lines.linewidth': 2,
-	'scatter.edgecolors': 'black',
-	'legend.numpoints': 2,
-	'lines.markersize': 4,
-	'ytick.major.size': 6,  # major tick size in points
-	'ytick.major.width': 0.8,  # major tick width in points
-	'xtick.major.size': 6,  # major tick size in points
-	'xtick.major.width': 0.8,  # major tick width in points
-	'axes.linewidth': 0.8,
-	'figure.subplot.left': 0,
-	'figure.subplot.right': 1,
-	'figure.subplot.bottom': 0,
-	'figure.subplot.top': 1,
-	'grid.linestyle': '--',
-	'axes.grid': False,
-	'text.usetex': False,
-	'font.family' : 'sans-serif',
-	'font.sans-serif' : 'Arial',
+    'axes.labelsize': 13,
+    'legend.fontsize': 13,
+    'xtick.labelsize': 13,
+    'ytick.labelsize': 13,
+    'figure.figsize': [3.5, 2.625],
+    'lines.linewidth': 2,
+    'scatter.edgecolors': 'black',
+    'legend.numpoints': 2,
+    'lines.markersize': 4,
+    'ytick.major.size': 6,  # major tick size in points
+    'ytick.major.width': 0.8,  # major tick width in points
+    'xtick.major.size': 6,  # major tick size in points
+    'xtick.major.width': 0.8,  # major tick width in points
+    'axes.linewidth': 0.8,
+    'figure.subplot.left': 0,
+    'figure.subplot.right': 1,
+    'figure.subplot.bottom': 0,
+    'figure.subplot.top': 1,
+    'grid.linestyle': '--',
+    'axes.grid': False,
+    'text.usetex': False,
+    'font.family' : 'sans-serif',
+    'font.sans-serif' : 'Arial',
     'axes.unicode_minus' : False,
-	'text.latex.preamble' : r'\usepackage{libertine} \usepackage[libertine]{newtxmath} \usepackage{sfmath}',
-	"xtick.direction": "in",
-	"ytick.direction": "in",
-	'legend.frameon': False,
-	'savefig.bbox' : 'tight',
-	'savefig.pad_inches' : 0.05,
+    'text.latex.preamble' : r'\usepackage{libertine} \usepackage[libertine]{newtxmath} \usepackage{sfmath}',
+    "xtick.direction": "in",
+    "ytick.direction": "in",
+    'legend.frameon': False,
+    'savefig.bbox' : 'tight',
+    'savefig.pad_inches' : 0.05,
     'figure.dpi' : 150,
     
     'text.color': _new_black,
@@ -82,35 +82,35 @@ params_inline = {
 
 
 params_nbagg = {
-	'axes.labelsize': 13,
-	'legend.fontsize': 13,
-	'xtick.labelsize': 13,
-	'ytick.labelsize': 13,
-	'figure.figsize': [3.5*1.2, 2.625*1.2],
-	'lines.linewidth': 2,
-	'scatter.edgecolors':  _new_black,
-	'legend.numpoints': 2,
-	'lines.markersize': 4,
-	'ytick.major.size': 6,  # major tick size in points
-	'ytick.major.width': 0.8,  # major tick width in points
-	'xtick.major.size': 6,  # major tick size in points
-	'xtick.major.width': 0.8,  # major tick width in points
-	'axes.linewidth': 0.8,
-	'figure.subplot.left': 0,
-	'figure.subplot.right': 1,
-	'figure.subplot.bottom': 0,
-	'figure.subplot.top': 1,
-	'grid.linestyle': '--',
-	'axes.grid': False,
-	'text.usetex': False,
-	'font.family' : 'sans-serif',
-	'font.sans-serif' : 'Arial',
-	'text.latex.preamble' : r'\usepackage{libertine} \usepackage[libertine]{newtxmath} \usepackage{sfmath}',
-	"xtick.direction": "in",
-	"ytick.direction": "in",
-	'legend.frameon': False,
-	'savefig.bbox' : 'tight',
-	'savefig.pad_inches' : 0.05,
+    'axes.labelsize': 13,
+    'legend.fontsize': 13,
+    'xtick.labelsize': 13,
+    'ytick.labelsize': 13,
+    'figure.figsize': [3.5*1.2, 2.625*1.2],
+    'lines.linewidth': 2,
+    'scatter.edgecolors':  _new_black,
+    'legend.numpoints': 2,
+    'lines.markersize': 4,
+    'ytick.major.size': 6,  # major tick size in points
+    'ytick.major.width': 0.8,  # major tick width in points
+    'xtick.major.size': 6,  # major tick size in points
+    'xtick.major.width': 0.8,  # major tick width in points
+    'axes.linewidth': 0.8,
+    'figure.subplot.left': 0,
+    'figure.subplot.right': 1,
+    'figure.subplot.bottom': 0,
+    'figure.subplot.top': 1,
+    'grid.linestyle': '--',
+    'axes.grid': False,
+    'text.usetex': False,
+    'font.family' : 'sans-serif',
+    'font.sans-serif' : 'Arial',
+    'text.latex.preamble' : r'\usepackage{libertine} \usepackage[libertine]{newtxmath} \usepackage{sfmath}',
+    "xtick.direction": "in",
+    "ytick.direction": "in",
+    'legend.frameon': False,
+    'savefig.bbox' : 'tight',
+    'savefig.pad_inches' : 0.05,
     'figure.dpi' : 150,
     
     'text.color': _new_black,
@@ -924,7 +924,7 @@ class DataFigure():
     >>> data_figure.clear()
     'remove lorent fit and text'
     """
-    def __init__(self, fig, selector=None):
+    def __init__(self, fig, selector=None, config_instances=None):
         self.fig = fig
         self.p0 = None
         self.fit = None
@@ -935,6 +935,10 @@ class DataFigure():
         else:
             self.selector = selector
         self.unit = 'nm'
+        self.config_instances = config_instances
+        self.info = {}
+        self.read_info()
+        # load all necessary info defined in device.info for device in config_instances
         
         artist = fig.axes[0].get_children()[0]
         if isinstance(artist, matplotlib.image.AxesImage):
@@ -950,6 +954,19 @@ class DataFigure():
             self.data_array = fig.axes[0].images[0].get_array()
             self.extent = fig.axes[0].images[0].get_extent()
             self._data = [self.data_array, self.extent]
+
+    def read_info(self):
+        if self.config_instances is None:
+            return
+        else:
+            for name, instance in self.config_instances.items():
+
+                if not hasattr(instance, 'info'):
+                    continue # continue if have not .info attribute
+
+                for key, param in instance.info.items():
+                    self.info[(name + '_' + key)] = getattr(instance, param)
+                    # instance name + attribute name
     
     @property
     def data(self):
@@ -973,9 +990,9 @@ class DataFigure():
         self.fig.savefig(addr + self.mode + time_str + '.jpg', dpi=300)
         
         if self.mode == 'PLE':
-            np.savez(addr + self.mode + time_str + '.npz', data_x = self.data_x, data_y = self.data_y)
+            np.savez(addr + self.mode + time_str + '.npz', data_x = self.data_x, data_y = self.data_y, info = self.info)
         else:
-            np.savez(addr + self.mode + time_str + '.npz', array = self.data_array, extent = self.extent)
+            np.savez(addr + self.mode + time_str + '.npz', extent = self.extent, array = self.data_array, info = self.info)
         
         
     def lorent(self, p0=None, is_print=True, is_save=False):
@@ -1131,7 +1148,7 @@ def ple(wavelength_array, exposure, config_instances):
     liveplot = PLELive(labels=['Wavelength (nm)', f'Counts/{exposure}s'], \
                         update_time=0.1, data_generator=data_generator, data=[data_x, data_y])
     fig, selector = liveplot.plot()
-    data_figure = DataFigure(fig, selector)
+    data_figure = DataFigure(fig, selector, config_instances)
     return fig, data_figure
 
 def pl(center, coordinates_x, coordinates_y, exposure, config_instances, is_dis = False, wavelength=None):
@@ -1155,7 +1172,7 @@ def pl(center, coordinates_x, coordinates_y, exposure, config_instances, is_dis 
         liveplot = PLLive(labels=['X', 'Y', f'Counts/{exposure}s'], \
                             update_time=1, data_generator=data_generator, data=[data_x, data_y, data_z])
     fig, selector = liveplot.plot()
-    data_figure = DataFigure(fig, selector)
+    data_figure = DataFigure(fig, selector, config_instances)
     return fig, data_figure
 
 
@@ -1168,7 +1185,7 @@ def live(data_array, exposure, config_instances, wavelength=None, is_finite=Fals
     liveplot = PLELive(labels=['Data', f'Counts/{exposure}s'], \
                         update_time=0.1, data_generator=data_generator, data=[data_x, data_y])
     fig, selector = liveplot.plot()
-    data_figure = DataFigure(fig, selector)
+    data_figure = DataFigure(fig, selector, config_instances)
     return fig, data_figure
 
 def pl_gui(center, coordinates_x, coordinates_y, exposure, config_instances, fig = None, wavelength=None):
@@ -1188,7 +1205,7 @@ def pl_gui(center, coordinates_x, coordinates_y, exposure, config_instances, fig
     liveplot = PLGUILive(labels=['X', 'Y', f'Counts/{exposure}s'], \
                         update_time=1, data_generator=data_generator, data=[data_x, data_y, data_z], fig=fig)
     fig, selector = liveplot.plot()
-    data_figure = DataFigure(fig, selector)
+    data_figure = DataFigure(fig, selector, config_instances)
     return fig, data_figure
 
 def area(wavelength_array, exposure, coordinates_x, coordinates_y, config_instances, mode = 'PLE'):
@@ -1210,5 +1227,5 @@ def area(wavelength_array, exposure, coordinates_x, coordinates_y, config_instan
                         update_time=1, data_generator=data_generator, data=[coordinates_x, coordinates_y, data_y])
 
     fig, selector = liveplot.plot()
-    data_figure = DataFigure(fig, selector)
+    data_figure = DataFigure(fig, selector, config_instances)
     return fig, data_figure

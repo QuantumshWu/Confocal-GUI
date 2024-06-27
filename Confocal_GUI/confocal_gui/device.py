@@ -100,6 +100,8 @@ class TLB6700(Laser):
         
         self.piezo_min = 0
         self.piezo_max = 100
+        self.info = {'laser_wavelength':'_wavelength'}
+        # defines what information is important and will be saved with figure and data
         
     def connect(self):
         self.__tlb_open()
@@ -147,6 +149,8 @@ class WaveMeter671():
         self.tn.write(b'*IDN?\r\n')
         time.sleep(0.5)
         self.tn.read_very_eager()
+        self.info = {'wavemeter_wavelength':'_wavelength'}
+        # defines what information is important and will be saved with figure and data
         
     
     @property
@@ -195,6 +199,8 @@ class AFG3052C():
     def __init__(self):       
         rm = pyvisa.ResourceManager()
         self.handle = rm.open_resource('GPIB2::11::INSTR')
+        self.info = {'scanner_x':'_x', 'scanner_y':'_y'}
+        # defines what information is important and will be saved with figure and data
     
     @property
     def x(self):
