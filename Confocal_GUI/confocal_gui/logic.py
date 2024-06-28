@@ -187,6 +187,9 @@ class PLEAcquire(threading.Thread):
         self.counter = config_instances.get('counter')
         self.config_instances = config_instances
         self.points_done = 0
+        self.scanner = config_instances.get('scanner')
+        self.info = {'data_generator':'PLEAcquire', 'exposure':self.exposure, 'scanner':[self.scanner.x, self.scanner.y]}
+        # important information to be saved with figures 
         
     
     def run(self):
@@ -259,6 +262,8 @@ class PLAcquire(threading.Thread):
         self.is_running = True
         self.is_done = False
         self.points_done = 0
+        self.info = {'data_generator':'PLAcquire', 'exposure':self.exposure, 'wavelength':self.wavelength}
+        # important information to be saved with figures 
         
     
     def run(self):
@@ -338,6 +343,9 @@ class LiveAcquire(threading.Thread):
         self.is_running = True
         self.is_done = False
         self.points_done = 0
+        self.info = {'data_generator':'LiveAcquire', 'exposure':self.exposure, 
+                    'wavelength':self.wavelength, 'scanner':[self.scanner.x, self.scanner.y]}
+        # important information to be saved with figures 
         
     
     def run(self):
@@ -418,6 +426,9 @@ class AreaAcquire(threading.Thread):
         self.data_x_area = data_x_area
         self.data_y_area = data_y_area
         self.mode = mode
+        self.info = {'data_generator':'AreaAcquire', 'exposure':self.exposure, 
+                    'wavelength_range':self.data_x, 'scanner_range':[self.data_x_area, self.data_y_area]}
+        # important information to be saved with figures 
         
     
     def run(self):

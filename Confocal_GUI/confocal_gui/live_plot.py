@@ -207,6 +207,8 @@ class LivePlotGUI():
 
         self.points_done = 0
         # track how many data points have done
+        self.selector = None
+        # assign value by self.choose_selector()
         
     def init_figure_and_data(self):
         change_to_nbagg(params_type = 'nbagg')
@@ -282,9 +284,7 @@ class LivePlotGUI():
         
         self.line.set_animated(False)        
         self.axes.set_autoscale_on(False)
-        
-
-        self.selector = self.choose_selector()
+        self.choose_selector()
 
         return self.fig, self.selector
 
@@ -340,7 +340,7 @@ class PLELive(LivePlotGUI):
         self.cross = CrossSelector(self.fig.axes[0])
         self.zoom = ZoomPan(self.fig.axes[0])
         
-        return [self.area, self.cross, self.zoom]
+        self.selector = [self.area, self.cross, self.zoom]
         
 
 class PLLive(LivePlotGUI):
@@ -392,7 +392,7 @@ class PLLive(LivePlotGUI):
         self.cross = CrossSelector(self.fig.axes[0])
         self.zoom = ZoomPan(self.fig.axes[0])
         
-        return [self.area, self.cross, self.zoom]
+        self.selector = [self.area, self.cross, self.zoom]
 
 class PLDisLive(LivePlotGUI):
 
@@ -488,7 +488,7 @@ class PLDisLive(LivePlotGUI):
         self.line_h = self.axright.axvline(np.max(self.hist_data), color=cmap(0.95))
         self.drag_line = DragVLine(self.line_l, self.line_h, self.update_clim, self.axright)
         
-        return [self.area, self.cross, self.zoom, self.drag_line]
+        self.selector = [self.area, self.cross, self.zoom, self.drag_line]
     
     def update_clim(self):
         vmin = self.line_l.get_xdata()[0]
@@ -592,7 +592,7 @@ class PLGUILive(LivePlotGUI):
         self.line_h = self.axright.axvline(np.max(self.hist_data), color=cmap(0.95))
         self.drag_line = DragVLine(self.line_l, self.line_h, self.update_clim, self.axright)
         
-        return [self.area, self.cross, self.zoom, self.drag_line]
+        self.selector = [self.area, self.cross, self.zoom, self.drag_line]
     
     def update_clim(self):
         vmin = self.line_l.get_xdata()[0]
@@ -906,12 +906,12 @@ class DataFigure():
     
     Parameters
     ----------
-    fig : matplotlib fig object
+    live_plot :instance of class LivePlot
     
     
     Examples
     --------
-    >>> data_figure = DataFigure(fig)
+    >>> data_figure = DataFigure(live_plot)
     
     >>> data_x, data_y = data_figure.data
     
@@ -924,49 +924,32 @@ class DataFigure():
     >>> data_figure.clear()
     'remove lorent fit and text'
     """
-    def __init__(self, fig, selector=None, config_instances=None):
-        self.fig = fig
+    def __init__(self, live_plot):
+        self.fig = live_plot.fig
         self.p0 = None
         self.fit = None
         self.text = None
         self.log_info = '' # information for log output
-        if selector is None:
-            self.selector = []
-        else:
-            self.selector = selector
+        self.selector = live_plot.selector
         self.unit = 'nm'
-        self.config_instances = config_instances
-        self.info = {}
-        self.read_info()
+        self.info = live_plot.data_generator.info
         # load all necessary info defined in device.info for device in config_instances
         
-        artist = fig.axes[0].get_children()[0]
+        artist = self.fig.axes[0].get_children()[0]
         if isinstance(artist, matplotlib.image.AxesImage):
             self.mode = 'PL'
         else:
             self.mode = 'PLE'
         
         if self.mode == 'PLE':
-            self.data_x = fig.axes[0].lines[0].get_xdata()
-            self.data_y = fig.axes[0].lines[0].get_ydata()
+            self.data_x = self.fig.axes[0].lines[0].get_xdata()
+            self.data_y = self.fig.axes[0].lines[0].get_ydata()
             self._data = [self.data_x, self.data_y]
         else:#PL
-            self.data_array = fig.axes[0].images[0].get_array()
-            self.extent = fig.axes[0].images[0].get_extent()
+            self.data_array = self.fig.axes[0].images[0].get_array()
+            self.extent = self.fig.axes[0].images[0].get_extent()
             self._data = [self.data_array, self.extent]
 
-    def read_info(self):
-        if self.config_instances is None:
-            return
-        else:
-            for name, instance in self.config_instances.items():
-
-                if not hasattr(instance, 'info'):
-                    continue # continue if have not .info attribute
-
-                for key, param in instance.info.items():
-                    self.info[(name + '_' + key)] = getattr(instance, param)
-                    # instance name + attribute name
     
     @property
     def data(self):
@@ -993,6 +976,8 @@ class DataFigure():
             np.savez(addr + self.mode + time_str + '.npz', data_x = self.data_x, data_y = self.data_y, info = self.info)
         else:
             np.savez(addr + self.mode + time_str + '.npz', extent = self.extent, array = self.data_array, info = self.info)
+
+        print(f'saved fig as {addr}{self.mode}{time_str}.npz')
         
         
     def lorent(self, p0=None, is_print=True, is_save=False):
@@ -1148,7 +1133,7 @@ def ple(wavelength_array, exposure, config_instances):
     liveplot = PLELive(labels=['Wavelength (nm)', f'Counts/{exposure}s'], \
                         update_time=0.1, data_generator=data_generator, data=[data_x, data_y])
     fig, selector = liveplot.plot()
-    data_figure = DataFigure(fig, selector, config_instances)
+    data_figure = DataFigure(liveplot)
     return fig, data_figure
 
 def pl(center, coordinates_x, coordinates_y, exposure, config_instances, is_dis = False, wavelength=None):
@@ -1172,7 +1157,7 @@ def pl(center, coordinates_x, coordinates_y, exposure, config_instances, is_dis 
         liveplot = PLLive(labels=['X', 'Y', f'Counts/{exposure}s'], \
                             update_time=1, data_generator=data_generator, data=[data_x, data_y, data_z])
     fig, selector = liveplot.plot()
-    data_figure = DataFigure(fig, selector, config_instances)
+    data_figure = DataFigure(liveplot)
     return fig, data_figure
 
 
@@ -1185,7 +1170,7 @@ def live(data_array, exposure, config_instances, wavelength=None, is_finite=Fals
     liveplot = PLELive(labels=['Data', f'Counts/{exposure}s'], \
                         update_time=0.1, data_generator=data_generator, data=[data_x, data_y])
     fig, selector = liveplot.plot()
-    data_figure = DataFigure(fig, selector, config_instances)
+    data_figure = DataFigure(liveplot)
     return fig, data_figure
 
 def pl_gui(center, coordinates_x, coordinates_y, exposure, config_instances, fig = None, wavelength=None):
@@ -1205,7 +1190,7 @@ def pl_gui(center, coordinates_x, coordinates_y, exposure, config_instances, fig
     liveplot = PLGUILive(labels=['X', 'Y', f'Counts/{exposure}s'], \
                         update_time=1, data_generator=data_generator, data=[data_x, data_y, data_z], fig=fig)
     fig, selector = liveplot.plot()
-    data_figure = DataFigure(fig, selector, config_instances)
+    data_figure = DataFigure(liveplot)
     return fig, data_figure
 
 def area(wavelength_array, exposure, coordinates_x, coordinates_y, config_instances, mode = 'PLE'):
@@ -1227,5 +1212,5 @@ def area(wavelength_array, exposure, coordinates_x, coordinates_y, config_instan
                         update_time=1, data_generator=data_generator, data=[coordinates_x, coordinates_y, data_y])
 
     fig, selector = liveplot.plot()
-    data_figure = DataFigure(fig, selector, config_instances)
+    data_figure = DataFigure(liveplot)
     return fig, data_figure

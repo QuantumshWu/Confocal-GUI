@@ -544,11 +544,10 @@ class MainWindow(QMainWindow):
             live_plot_handle.update_figure()  
             live_plot_handle.line.set_animated(False)                
             live_plot_handle.axes.set_autoscale_on(False)     
-            setattr(self, f'selector_{attr}', live_plot_handle.choose_selector())
+            live_plot_handle.choose_selector()
+            setattr(self, f'selector_{attr}', live_plot_handle.selector)
             live_plot_handle.stop()
-            cur_fig = (getattr(self, f'canvas_{attr}')).fig
-            cur_selector = getattr(self, f'selector_{attr}')
-            setattr(self, f'data_figure_{attr}', DataFigure(cur_fig, cur_selector, self.config_instances))
+            setattr(self, f'data_figure_{attr}', DataFigure(live_plot_handle))
             self.is_running = False
 
             if attr == 'PL':

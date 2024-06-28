@@ -99,11 +99,9 @@ class VirtualScanner():
     >>> afg3052c.x = 20
     
     """
-    def __init__(self):    
-        self._x = 0
-        self._y = 0   
-        self.info = {'scanner_x':'_x', 'scanner_y':'_y'}
-        # defines what information is important and will be saved with figure and data
+    def __init__(self):
+        self.x = 0
+        self.y = 0
     
     @property
     def x(self):
