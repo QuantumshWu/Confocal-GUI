@@ -30,6 +30,57 @@ for i in range(len(chanels)):
 def Off_pulse():
     pb_stop()
     pb_close()
+
+
+class Pulse:
+    # class for spincore, defines how to enable and disable pulse gating
+    def __init__(self):
+        pass 
+    def off_pulse(self):
+        Off_pulse()
+        
+    def on_pulse(self):
+        
+        Off_pulse()
+        time.sleep(0.5)
+        
+        def check_chs(array):
+            chs = 0b0
+            for ii, i in enumerate(array[1:]):
+                chs += chanels[ii]*int(i)
+            return chs
+        
+        data_matrix = self.read_data()
+        count = len(data_matrix)
+        
+        pb_set_debug(1)
+        if pb_init() != 0:
+            print("Error initializing board: %s" % pb_get_error())
+            input("Please press a key to continue.")
+            exit(-1)
+
+        # Configure the core clock
+        pb_core_clock(500)
+
+        # Program the pulse program
+
+        pb_start_programming(PULSE_PROGRAM)
+        
+        if(count == 1):
+            start = pb_inst_pbonly64(check_chs(data_matrix[0])+disable, Inst.CONTINUE, 0, data_matrix[0][0])
+            pb_inst_pbonly64(check_chs(data_matrix[-1])+disable, Inst.BRANCH, start, data_matrix[-1][0])
+
+        else:
+            start = pb_inst_pbonly64(check_chs(data_matrix[0])+disable, Inst.CONTINUE, 0, data_matrix[0][0])
+            for i in range(count-2):
+                pb_inst_pbonly64(check_chs(data_matrix[i+1])+disable, Inst.CONTINUE, 0, data_matrix[i+1][0])
+            pb_inst_pbonly64(check_chs(data_matrix[-1])+disable, Inst.BRANCH, start, data_matrix[-1][0])
+
+        pb_stop_programming()
+
+        # Trigger the board
+        pb_reset() 
+        pb_start() 
     
 
     
@@ -231,51 +282,7 @@ class MainWindow(QMainWindow):
             
         return data_matrix
     
-    def off_pulse(self):
-        Off_pulse()
-        
-    def on_pulse(self):
-        
-        Off_pulse()
-        time.sleep(0.5)
-        
-        def check_chs(array):
-            chs = 0b0
-            for ii, i in enumerate(array[1:]):
-                chs += chanels[ii]*int(i)
-            return chs
-        
-        data_matrix = self.read_data()
-        count = len(data_matrix)
-        
-        pb_set_debug(1)
-        if pb_init() != 0:
-            print("Error initializing board: %s" % pb_get_error())
-            input("Please press a key to continue.")
-            exit(-1)
 
-        # Configure the core clock
-        pb_core_clock(500)
-
-        # Program the pulse program
-
-        pb_start_programming(PULSE_PROGRAM)
-        
-        if(count == 1):
-            start = pb_inst_pbonly64(check_chs(data_matrix[0])+disable, Inst.CONTINUE, 0, data_matrix[0][0])
-            pb_inst_pbonly64(check_chs(data_matrix[-1])+disable, Inst.BRANCH, start, data_matrix[-1][0])
-
-        else:
-            start = pb_inst_pbonly64(check_chs(data_matrix[0])+disable, Inst.CONTINUE, 0, data_matrix[0][0])
-            for i in range(count-2):
-                pb_inst_pbonly64(check_chs(data_matrix[i+1])+disable, Inst.CONTINUE, 0, data_matrix[i+1][0])
-            pb_inst_pbonly64(check_chs(data_matrix[-1])+disable, Inst.BRANCH, start, data_matrix[-1][0])
-
-        pb_stop_programming()
-
-        # Trigger the board
-        pb_reset() 
-        pb_start() 
         
     def remove_row(self):
         count = self.layout_dataset.count()

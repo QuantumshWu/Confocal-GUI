@@ -125,21 +125,37 @@ params_nbagg = {
 
 }
 
-def change_to_inline(params_type):
+def scale_params(params, scale):
+    scaled_params = params.copy()
+    scaled_params['figure.figsize'] = [dim * scale for dim in scaled_params['figure.figsize']]
+    for key in ['axes.labelsize', 'legend.fontsize', 'xtick.labelsize', 
+                'ytick.labelsize', 'lines.linewidth', 'lines.markersize', 
+                'ytick.major.size', 'ytick.major.width', 'xtick.major.size', 
+                'xtick.major.width', 'axes.linewidth']:
+        if key in scaled_params:
+            scaled_params[key] = scaled_params[key] * scale
+    return scaled_params
+
+
+def change_to_inline(params_type, scale):
     get_ipython().run_line_magic('matplotlib', 'inline')
     if params_type == 'inline':
-        matplotlib.rcParams.update(params_inline)
+        scaled_params = scale_params(params_inline, scale)
+        matplotlib.rcParams.update(scaled_params)
     elif params_type == 'nbagg':
-        matplotlib.rcParams.update(params_nbagg)
+        scaled_params = scale_params(params_nbagg, scale)
+        matplotlib.rcParams.update(scaled_params)
     else:
         print('wrong params_type')
 
-def change_to_nbagg(params_type):
+def change_to_nbagg(params_type, scale):
     get_ipython().run_line_magic('matplotlib', 'nbagg')
     if params_type == 'inline':
-        matplotlib.rcParams.update(params_inline)
+        scaled_params = scale_params(params_inline, scale)
+        matplotlib.rcParams.update(scaled_params)
     elif params_type == 'nbagg':
-        matplotlib.rcParams.update(params_nbagg)
+        scaled_params = scale_params(params_nbagg, scale)
+        matplotlib.rcParams.update(scaled_params)
     else:
         print('wrong params_type')
 
@@ -178,7 +194,7 @@ class LivePlotGUI():
     data = [data_x, data_y, data_z] # data_z n*m array, data_z[x, y] has coordinates (x, y)
     """
     
-    def __init__(self, labels, update_time, data_generator, data, fig=None):
+    def __init__(self, labels, update_time, data_generator, data, fig=None, config_instances=None):
         
         if len(data) == 3: #PL
             self.xlabel = labels[0]
@@ -209,9 +225,14 @@ class LivePlotGUI():
         # track how many data points have done
         self.selector = None
         # assign value by self.choose_selector()
+        if config_instances is None:
+            self.config_instances = {'display_scale':1}
+        else:
+            self.config_instances = config_instances
+        self.scale = self.config_instances['display_scale']
         
     def init_figure_and_data(self):
-        change_to_nbagg(params_type = 'nbagg')
+        change_to_nbagg(params_type = 'nbagg', scale=self.scale)
         hide_elements()
         # make sure environment enables interactive then updating figure
         
@@ -1131,7 +1152,7 @@ def ple(wavelength_array, exposure, config_instances):
     data_y = np.zeros(len(data_x))
     data_generator = PLEAcquire(exposure = exposure, data_x=data_x, data_y=data_y, config_instances = config_instances)
     liveplot = PLELive(labels=['Wavelength (nm)', f'Counts/{exposure}s'], \
-                        update_time=0.1, data_generator=data_generator, data=[data_x, data_y])
+                        update_time=0.1, data_generator=data_generator, data=[data_x, data_y], config_instances = config_instances)
     fig, selector = liveplot.plot()
     data_figure = DataFigure(liveplot)
     return fig, data_figure
@@ -1152,10 +1173,10 @@ def pl(center, coordinates_x, coordinates_y, exposure, config_instances, is_dis 
                                data_z = data_z, config_instances = config_instances, wavelength=wavelength)
     if is_dis:
         liveplot = PLDisLive(labels=['X', 'Y', f'Counts/{exposure}s'], \
-                        update_time=1, data_generator=data_generator, data=[data_x, data_y, data_z])
+                        update_time=1, data_generator=data_generator, data=[data_x, data_y, data_z], config_instances = config_instances)
     else:
         liveplot = PLLive(labels=['X', 'Y', f'Counts/{exposure}s'], \
-                            update_time=1, data_generator=data_generator, data=[data_x, data_y, data_z])
+                            update_time=1, data_generator=data_generator, data=[data_x, data_y, data_z], config_instances = config_instances)
     fig, selector = liveplot.plot()
     data_figure = DataFigure(liveplot)
     return fig, data_figure
@@ -1168,7 +1189,7 @@ def live(data_array, exposure, config_instances, wavelength=None, is_finite=Fals
     data_generator = LiveAcquire(exposure = exposure, data_x=data_x, data_y=data_y, \
                                  config_instances = config_instances, wavelength=wavelength, is_finite=is_finite)
     liveplot = PLELive(labels=['Data', f'Counts/{exposure}s'], \
-                        update_time=0.1, data_generator=data_generator, data=[data_x, data_y])
+                        update_time=0.1, data_generator=data_generator, data=[data_x, data_y], config_instances = config_instances)
     fig, selector = liveplot.plot()
     data_figure = DataFigure(liveplot)
     return fig, data_figure
@@ -1188,7 +1209,7 @@ def pl_gui(center, coordinates_x, coordinates_y, exposure, config_instances, fig
     data_generator = PLAcquire(exposure = exposure, data_x = data_x, data_y = data_y, \
                                data_z = data_z, config_instances = config_instances, wavelength=wavelength)
     liveplot = PLGUILive(labels=['X', 'Y', f'Counts/{exposure}s'], \
-                        update_time=1, data_generator=data_generator, data=[data_x, data_y, data_z], fig=fig)
+                        update_time=1, data_generator=data_generator, data=[data_x, data_y, data_z], fig=fig, config_instances = config_instances)
     fig, selector = liveplot.plot()
     data_figure = DataFigure(liveplot)
     return fig, data_figure
@@ -1206,10 +1227,10 @@ def area(wavelength_array, exposure, coordinates_x, coordinates_y, config_instan
                                      config_instances = config_instances, mode = mode)
     if mode == 'PLE':
         liveplot = PLELive(labels=['Wavelength (nm)', f'Counts/{exposure}s'], \
-                            update_time=0.1, data_generator=data_generator, data=[data_x, data_y])
+                            update_time=0.1, data_generator=data_generator, data=[data_x, data_y], config_instances = config_instances)
     elif mode == 'PL':
         liveplot = PLDisLive(labels=['X', 'Y', f'Counts/{exposure}s'], \
-                        update_time=1, data_generator=data_generator, data=[coordinates_x, coordinates_y, data_y])
+                        update_time=1, data_generator=data_generator, data=[coordinates_x, coordinates_y, data_y], config_instances = config_instances)
 
     fig, selector = liveplot.plot()
     data_figure = DataFigure(liveplot)

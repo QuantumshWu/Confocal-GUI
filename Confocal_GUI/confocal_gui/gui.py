@@ -15,7 +15,7 @@ import time
 import threading
 from decimal import Decimal
 from PyQt5 import QtCore, QtWidgets
-from PyQt5.QtWidgets import QHBoxLayout, QWidget, QPushButton, QLabel, QLineEdit, QDoubleSpinBox
+from PyQt5.QtWidgets import QHBoxLayout, QWidget, QPushButton, QLabel, QLineEdit, QDoubleSpinBox, QSizePolicy
 from PyQt5.QtCore import QThread, pyqtSignal
 from matplotlib.figure import Figure
 from threading import Event
@@ -23,7 +23,7 @@ import io
 from PIL import Image as PILImage
 from IPython.display import display, Image as IPImage
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg
-from PyQt5.QtCore import QThread, pyqtSignal, Qt
+from PyQt5.QtCore import QThread, pyqtSignal, Qt, QSize
 from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QPushButton, QWidget
 from PyQt5 import uic
 from scipy.optimize import curve_fit
@@ -39,9 +39,9 @@ class MplCanvas(FigureCanvasQTAgg):
     """
     labels = [xlabel, ylabel]
     """
-    def __init__(self, parent=None, labels=None, mode=None):
+    def __init__(self, parent=None, labels=None, mode=None, scale=1):
 
-        change_to_inline(params_type = 'nbagg')
+        change_to_inline(params_type = 'nbagg', scale=scale)
 
         self.fig = plt.figure()
         self.axes = self.fig.add_subplot(111)
@@ -93,13 +93,20 @@ class MainWindow(QMainWindow):
 
         ui_path = os.path.join(os.path.dirname(__file__), "GUI.ui")
         uic.loadUi(ui_path, self)
+
+        self.scale = self.config_instances['display_scale']
+        self.init_size = self.size()
+        self.setMaximumSize(self.init_size.width()*self.scale, self.init_size.height()*self.scale)
+        self.setMinimumSize(self.init_size.width()*self.scale, self.init_size.height()*self.scale)
+        self.scale_widgets(self.centralwidget, self.scale, is_recursive=True)
+        # set size
         
         
         self.widget_figure_PLE = self.findChild(QWidget, 'widget_figure_PLE')
         layout = QVBoxLayout(self.widget_figure_PLE)
         layout.setContentsMargins(0, 0, 0, 0)
 
-        self.canvas_PLE = MplCanvas(self.widget_figure_PLE, labels=['Wavelength (nm)', 'Counts'], mode='PLE')
+        self.canvas_PLE = MplCanvas(self.widget_figure_PLE, labels=['Wavelength (nm)', 'Counts'], mode='PLE', scale=self.scale)
         # makes sure overwirte format
         layout.addWidget(self.canvas_PLE)
         
@@ -108,14 +115,14 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(self.widget_figure_PL)
         layout.setContentsMargins(0, 0, 0, 0) 
 
-        self.canvas_PL = MplCanvas(self.widget_figure_PL, labels=['X', 'Y', 'Counts'], mode='PLdis')
+        self.canvas_PL = MplCanvas(self.widget_figure_PL, labels=['X', 'Y', 'Counts'], mode='PLdis', scale=self.scale)
         layout.addWidget(self.canvas_PL)
         
         self.widget_figure_Live = self.findChild(QWidget, 'widget_figure_Live')
         layout = QVBoxLayout(self.widget_figure_Live)
         layout.setContentsMargins(0, 0, 0, 0) 
 
-        self.canvas_Live = MplCanvas(self.widget_figure_Live, labels=['Data', 'Counts'], mode='PLE')
+        self.canvas_Live = MplCanvas(self.widget_figure_Live, labels=['Data', 'Counts'], mode='PLE', scale=self.scale)
         layout.addWidget(self.canvas_Live)
         
 
@@ -163,6 +170,31 @@ class MainWindow(QMainWindow):
 
         self.init_widget()
         self.show()
+
+    def scale_widgets(self, widget, scale_factor, is_recursive):
+        #print('name',widget.objectName(), 'init width', widget.font().pointSizeF(), 'fa', fa.objectName())
+
+
+        widget.setGeometry(widget.x()* scale_factor, widget.y()* scale_factor, 
+                            widget.width() * scale_factor, widget.height() * scale_factor)
+
+        font = widget.font()
+        if isinstance(widget, QDoubleSpinBox):
+            font.setPointSizeF(16 * scale_factor)
+        else:
+            font.setPointSizeF(12 * scale_factor)
+        widget.setFont(font)
+
+
+        size_policy = QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        widget.setSizePolicy(size_policy)
+
+        #print('name',widget.objectName(), 'width', widget.font().pointSizeF())
+        #widget.updateGeometry()
+        if is_recursive:
+            for child in widget.findChildren(QWidget):
+                self.scale_widgets(child, scale_factor, is_recursive=False)
+
 
     def step_PLE_in_MHz(self):
 
@@ -447,7 +479,7 @@ class MainWindow(QMainWindow):
                                          data_x=data_x, data_y=data_y, config_instances=self.config_instances)
         self.live_plot_PLE = PLELive(labels=['Wavelength (nm)', f'Counts/{self.exposure_PLE:.2f}s'], 
                                      update_time=1, data_generator=self.data_generator_PLE, data=[data_x, data_y],\
-                                    fig=self.canvas_PLE.fig)
+                                    fig=self.canvas_PLE.fig, config_instances=self.config_instances)
         
 
         self.live_plot_PLE.init_figure_and_data()
@@ -482,7 +514,7 @@ class MainWindow(QMainWindow):
             
         self.live_plot_PL = PLGUILive(labels=['X', 'Y', f'Counts/{self.exposure_PL:.2f}s'], \
                         update_time=1, data_generator=self.data_generator_PL, data=[data_x, data_y, data_z],\
-                                       fig=self.canvas_PL.fig)
+                                       fig=self.canvas_PL.fig, config_instances=self.config_instances)
         
         
         self.live_plot_PL.init_figure_and_data()
@@ -513,7 +545,7 @@ class MainWindow(QMainWindow):
                                      config_instances=self.config_instances, wavelength=_wavelength, is_finite=False)
         self.live_plot_Live = PLELive(labels=['Data', f'Counts/{self.exposure_Live:.2f}s'], \
                             update_time=0.05, data_generator=self.data_generator_Live, data=[data_x, data_y],\
-                                         fig=self.canvas_Live.fig)
+                                         fig=self.canvas_Live.fig, config_instances=self.config_instances)
         
         
         self.live_plot_Live.init_figure_and_data()
@@ -627,6 +659,13 @@ def GUI(config_instances):
 
 	Move sacnner moves scanner to x, y displayed 
     """
+
+    if hasattr(QtCore.Qt, 'AA_EnableHighDpiScaling'):
+        QtWidgets.QApplication.setAttribute(QtCore.Qt.AA_EnableHighDpiScaling, True)
+
+    if hasattr(QtCore.Qt, 'AA_UseHighDpiPixmaps'):
+        QtWidgets.QApplication.setAttribute(QtCore.Qt.AA_UseHighDpiPixmaps, True)
+        
     
     app = QtCore.QCoreApplication.instance()
     if app is None:
