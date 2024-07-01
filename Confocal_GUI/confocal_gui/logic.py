@@ -343,6 +343,7 @@ class LiveAcquire(threading.Thread):
         self.is_running = True
         self.is_done = False
         self.points_done = 0
+        self.scanner = config_instances.get('scanner')
         self.info = {'data_generator':'LiveAcquire', 'exposure':self.exposure, 
                     'wavelength':self.wavelength, 'scanner':[self.scanner.x, self.scanner.y]}
         # important information to be saved with figures 

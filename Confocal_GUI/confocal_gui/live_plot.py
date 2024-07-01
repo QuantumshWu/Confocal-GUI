@@ -234,6 +234,7 @@ class LivePlotGUI():
     def init_figure_and_data(self):
         change_to_nbagg(params_type = 'nbagg', scale=self.scale)
         hide_elements()
+        plt.ion()
         # make sure environment enables interactive then updating figure
         
         if self.fig is None:

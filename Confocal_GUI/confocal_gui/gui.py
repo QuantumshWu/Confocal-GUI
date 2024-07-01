@@ -202,7 +202,7 @@ class MainWindow(QMainWindow):
         self.lineEdit_step_PLE.setText(f'{step_in_MHz:.2f}MHz')
 
     def estimate_PL_time(self):
-        if self.is_running:
+        if self.is_running and self.cur_plot=='PL':
             points_total = self.live_plot_PL.points_total
             points_done = self.live_plot_PL.points_done
             ratio = points_done/points_total
@@ -215,7 +215,7 @@ class MainWindow(QMainWindow):
             self.time_PL = time
 
     def estimate_PLE_time(self):
-        if self.is_running:
+        if self.is_running and self.cur_plot=='PLE':
             points_total = self.live_plot_PLE.points_total
             points_done = self.live_plot_PLE.points_done
             ratio = points_done/points_total
@@ -308,7 +308,7 @@ class MainWindow(QMainWindow):
         {time_str}
         """)
         display(IPImage(img_data, format='png'))
-        fig.canvas.draw()
+        #fig.canvas.draw()
         
         
     def save_PL(self):
@@ -438,8 +438,8 @@ class MainWindow(QMainWindow):
             self.doubleSpinBox_wl.setValue(xl)
             self.doubleSpinBox_wu.setValue(xh)
         else:
-            self.doubleSpinBox_wl.setValue(self.spl/xl)
-            self.doubleSpinBox_wu.setValue(self.spl/xh)
+            self.doubleSpinBox_wl.setValue(self.spl/xh)# lower wavelength is higher frequency
+            self.doubleSpinBox_wu.setValue(self.spl/xl)
 
         self.print_log(f'PLE range updated')
         
