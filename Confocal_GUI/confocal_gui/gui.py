@@ -70,12 +70,35 @@ class MplCanvas(FigureCanvasQTAgg):
             
         super(MplCanvas, self).__init__(self.fig)
 
+class DetachedWindow(QMainWindow):
+    def __init__(self, widget, parent=None):
+        super().__init__()
+        self.widget = widget
+        self.setCentralWidget(self.widget)
+        self.setWindowTitle('Live')
+        self.parent_window = parent
+        self.resize(640, 700)
+
+        self.scale = self.parent_window.config_instances['display_scale']
+        self.init_size = self.size()
+        self.setMaximumSize(self.init_size.width()*self.scale, self.init_size.height()*self.scale)
+        self.setMinimumSize(self.init_size.width()*self.scale, self.init_size.height()*self.scale)
+
+        self.widget.show()
+
+
+
+    def closeEvent(self, event):
+        self.parent_window.reattach_page()
+        event.accept()
+
 
 class MainWindow(QMainWindow):
     def __init__(self, config_instances):
         super().__init__()
         self.config_instances = config_instances
         self.scanner = self.config_instances['scanner']
+        self.wavemeter = self.config_instances.get('wavemeter')
         self.is_running = False
         self.selector_PLE = []
         self.selector_PL = []
@@ -90,8 +113,9 @@ class MainWindow(QMainWindow):
         self.is_save_to_jupyter_flag = True
         self.time_PL = 0
         self.time_PLE = 0
+        self.laser_stabilizer = None
 
-        ui_path = os.path.join(os.path.dirname(__file__), "GUI.ui")
+        ui_path = os.path.join(os.path.dirname(__file__), "GUIv2.ui")
         uic.loadUi(ui_path, self)
 
         self.scale = self.config_instances['display_scale']
@@ -135,12 +159,10 @@ class MainWindow(QMainWindow):
         self.pushButton_stop_PL.clicked.connect(self.stop_and_show)
         self.pushButton_stop_Live.clicked.connect(self.stop_and_show)
         
-        self.radioButton_is_wavelength_PL.toggled.connect(self.is_wavelength_PL)
-        self.radioButton_is_wavelength_Live.toggled.connect(self.is_wavelength_Live)
+        #self.radioButton_is_wavelength_PL.toggled.connect(self.is_wavelength_PL)
         self.checkBox_log.toggled.connect(self.is_save_to_jupyter)
         
-        self.pushButton_wavelength_PL.clicked.connect(self.read_wavelength_PL)
-        self.pushButton_wavelength_Live.clicked.connect(self.read_wavelength_Live)
+        self.pushButton_wavelength.clicked.connect(self.read_wavelength)
         self.pushButton_range_PL.clicked.connect(self.read_range_PL)
         self.pushButton_range_PLE.clicked.connect(self.read_range_PLE)
         self.pushButton_lorent.clicked.connect(self.fit_lorent)
@@ -150,7 +172,6 @@ class MainWindow(QMainWindow):
         self.pushButton_XY.clicked.connect(self.read_xy)
 
         self.pushButton_scanner.clicked.connect(self.move_scanner)
-        self.pushButton_scanner_Live.clicked.connect(self.move_scanner_Live)
 
         self.doubleSpinBox_exposure_PL.valueChanged.connect(self.estimate_PL_time)
         self.doubleSpinBox_xl.valueChanged.connect(self.estimate_PL_time)
@@ -168,8 +189,100 @@ class MainWindow(QMainWindow):
         # recalculate plot time of PLE
 
 
+        self.pushButton_detach.clicked.connect(self.detach_page)
+        self.pushButton_reattach.clicked.connect(self.reattach_page)
+        self.pushButton_reattach.setEnabled(False)  # Initially disabled
+
+        # Placeholder for detached window
+        self.detached_window = None
+
+        self.timer_scanner = QtCore.QTimer()
+        self.timer_scanner.setInterval(200)  # Interval in milliseconds
+        self.timer_scanner.timeout.connect(self.read_scanner)
+        self.timer_scanner.start()
+        # real time scanner read
+
+        self.timer_wavemeter = QtCore.QTimer()
+        self.timer_wavemeter.setInterval(500)  # Interval in milliseconds
+        self.timer_wavemeter.timeout.connect(self.read_wavemeter)
+        self.timer_wavemeter.start()
+        # real time wavemeter read
+
+
+        self.doubleSpinBox_X.valueChanged.connect(self.bind_set)
+        self.doubleSpinBox_Y.valueChanged.connect(self.bind_set)
+        self.checkBox_is_bind.toggled.connect(self.bind_set)
+
+
+        self.checkBox_is_stabilizer.toggled.connect(self.is_stabilizer)
+        self.doubleSpinBox_wavelength.valueChanged.connect(self.is_stabilizer)
+
+
+
         self.init_widget()
         self.show()
+
+    def is_stabilizer(self):
+
+        if not self.checkBox_is_stabilizer.isChecked():
+            if self.laser_stabilizer is not None:
+                self.laser_stabilizer.stop()
+            return
+        # else, stabilizer is checked
+
+        if (self.laser_stabilizer is None) or (not self.laser_stabilizer.is_alive()):
+            self.laser_stabilizer = LaserStabilizer(config_instances = self.config_instances)
+            self.laser_stabilizer.start()
+
+
+        self.wavelength = self.doubleSpinBox_wavelength.value()
+        self.laser_stabilizer.set_wavelength(self.wavelength)
+
+
+    def bind_set(self):
+        if self.checkBox_is_bind.isChecked():
+            self.move_scanner()
+
+
+    def read_scanner(self):
+        x = self.scanner.x
+        y = self.scanner.y
+
+        self.lineEdit_X.setText(f'{x}')
+        self.lineEdit_Y.setText(f'{y}')
+
+
+    def read_wavemeter(self):
+        if self.wavemeter is not None:
+            wavelength = self.wavemeter.wavelength
+            self.lineEdit_wavelength.setText(f'{wavelength}')
+
+
+    def detach_page(self):
+        # Remove the second tab and detach it into a new window
+        page_widget = self.tabWidget.widget(1)
+        #self.tabWidget.removeTab(1)
+
+        # Create and show the detached window
+        self.detached_window = DetachedWindow(page_widget, parent=self)
+        self.detached_window.show()
+
+        # Update button states
+        self.pushButton_detach.setEnabled(False)
+        self.pushButton_reattach.setEnabled(True)
+
+    def reattach_page(self):
+        # Add the widget back to the tab widget
+        if self.detached_window:
+            page_widget = self.detached_window.widget
+            self.tabWidget.addTab(page_widget, "Live")
+            self.detached_window.close()
+            self.detached_window = None
+
+
+        # Update button states
+        self.pushButton_detach.setEnabled(True)
+        self.pushButton_reattach.setEnabled(False)
 
     def scale_widgets(self, widget, scale_factor, is_recursive):
         #print('name',widget.objectName(), 'init width', widget.font().pointSizeF(), 'fa', fa.objectName())
@@ -252,7 +365,7 @@ class MainWindow(QMainWindow):
 
         self.scanner.x = x
         self.scanner.y = y
-        self.print_log(f'moved scanner to (x = {x}, y = {y})')
+        #self.print_log(f'moved scanner to (x = {x}, y = {y})')
 
     def move_scanner_Live(self):
 
@@ -278,8 +391,6 @@ class MainWindow(QMainWindow):
         if _xy is not None:
             self.doubleSpinBox_X.setValue(_xy[0])
             self.doubleSpinBox_Y.setValue(_xy[1])
-            self.doubleSpinBox_X_Live.setValue(_xy[0])
-            self.doubleSpinBox_Y_Live.setValue(_xy[1])
             self.print_log(f'read x = {_xy[0]}, y = {_xy[1]}')
         else:
             self.print_log(f'read x = None, y = None')
@@ -316,7 +427,10 @@ class MainWindow(QMainWindow):
             return
         addr = self.lineEdit_save.text()
         self.data_figure_PL.save(addr = addr)
-        
+
+        info = self.data_figure_PL.info
+        self.print_log(f'info: {info}')
+
         if self.is_save_to_jupyter_flag:
             self.save_to_jupyter(self.canvas_PL.fig)
             
@@ -326,8 +440,11 @@ class MainWindow(QMainWindow):
         if self.data_figure_PLE is None:
             return
         addr = self.lineEdit_save.text()
-        self.data_figure_PLE.save(addr = addr)  
-        
+        self.data_figure_PLE.save(addr = addr) 
+
+        info = self.data_figure_PLE.info
+        self.print_log(f'info: {info}')
+
         if self.is_save_to_jupyter_flag:
             self.save_to_jupyter(self.canvas_PLE.fig)
             
@@ -359,24 +476,8 @@ class MainWindow(QMainWindow):
             log_info = self.data_figure_PLE.log_info
             self.print_log(f'curve fitted, {log_info}')
         
-        
-    def is_wavelength_PL(self, checked):
-        if checked:
-            self.doubleSpinBox_wavelength_PL.setDisabled(False)
-            self.is_wavelength_PL_flag = True
-        else:
-            self.doubleSpinBox_wavelength_PL.setDisabled(True)
-            self.is_wavelength_PL_flag = False
             
-    def is_wavelength_Live(self, checked):
-        if checked:
-            self.doubleSpinBox_wavelength_Live.setDisabled(False)
-            self.is_wavelength_Live_flag = True
-        else:
-            self.doubleSpinBox_wavelength_Live.setDisabled(True)
-            self.is_wavelength_Live_flag = False
-            
-    def read_wavelength_PL(self):
+    def read_wavelength(self):
         if self.selector_PLE == []:
             self.print_log(f'No wavelength to read')
             return
@@ -384,28 +485,14 @@ class MainWindow(QMainWindow):
         
         if _wavelength is not None:
             if self.data_figure_PLE.unit == 'nm':
-                self.doubleSpinBox_wavelength_PL.setValue(_wavelength)
+                self.doubleSpinBox_wavelength.setValue(_wavelength)
             else:
-                self.doubleSpinBox_wavelength_PL.setValue(self.spl/_wavelength)
+                self.doubleSpinBox_wavelength.setValue(self.spl/_wavelength)
             self.print_log(f'wavelength was read to PL')
         else:
             self.print_log(f'No wavelength to read')
         #set double spin box to _wavelength
         
-    def read_wavelength_Live(self):
-        if self.selector_PLE == []:
-            self.print_log(f'No wavelength to read')
-            return
-        _wavelength = self.selector_PLE[1].wavelength
-        
-        if _wavelength is not None:
-            if self.data_figure_PLE.unit == 'nm':
-                self.doubleSpinBox_wavelength_Live.setValue(_wavelength)
-            else:
-                self.doubleSpinBox_wavelength_Live.setValue(self.spl/_wavelength)
-            self.print_log(f'wavelength was read to Live')
-        else:
-            self.print_log(f'No wavelength to read')
         
     def read_range_PL(self):
         if self.selector_PL == []:
@@ -454,12 +541,12 @@ class MainWindow(QMainWindow):
             setattr(self, attr, value)
             
     def read_data_PL(self):
-        for attr in ['exposure_PL', 'xl', 'xu', 'yl', 'yu', 'step_PL', 'wavelength_PL']:
+        for attr in ['exposure_PL', 'xl', 'xu', 'yl', 'yu', 'step_PL']:
             value = getattr(self, f'doubleSpinBox_{attr}').value()
             setattr(self, attr, value)
             
     def read_data_Live(self):
-        for attr in ['exposure_Live', 'many', 'wavelength_Live']:
+        for attr in ['exposure_Live', 'many']:
             value = getattr(self, f'doubleSpinBox_{attr}').value()
             setattr(self, attr, value)
             
@@ -475,6 +562,16 @@ class MainWindow(QMainWindow):
         
         data_x = np.arange(self.wl, self.wu, self.step_PLE)
         data_y = np.zeros(len(data_x))
+
+        self.checkBox_is_stabilizer.setChecked(False)
+        self.checkBox_is_stabilizer.setDisabled(True)
+        self.doubleSpinBox_wavelength.setDisabled(True)
+        self.checkBox_is_bind.setChecked(False)
+        self.checkBox_is_bind.setDisabled(True)
+
+        self.print_log(f'scanner: (x={self.scanner.x}, y={self.scanner.y})')
+
+
         self.data_generator_PLE = PLEAcquire(exposure = self.exposure_PLE, \
                                          data_x=data_x, data_y=data_y, config_instances=self.config_instances)
         self.live_plot_PLE = PLELive(labels=['Wavelength (nm)', f'Counts/{self.exposure_PLE:.2f}s'], 
@@ -505,10 +602,18 @@ class MainWindow(QMainWindow):
         data_y = np.arange(self.yl, self.yu, self.step_PL) + center[1]
         data_z = np.zeros((len(data_y), len(data_x)))
         # reverse for compensate x,y order of imshow
-        if self.is_wavelength_PL_flag:
-            _wavelength = self.wavelength_PL
+        if self.checkBox_is_stabilizer.isChecked():
+            _wavelength = self.doubleSpinBox_wavelength.value()
         else:
             _wavelength = None
+
+        self.print_log(f'wavelength: {_wavelength}')
+
+        self.checkBox_is_stabilizer.setDisabled(True)
+        self.doubleSpinBox_wavelength.setDisabled(True)
+        self.checkBox_is_bind.setChecked(False)
+        self.checkBox_is_bind.setDisabled(True)
+
         self.data_generator_PL = PLAcquire(exposure = self.exposure_PL, data_x = data_x, data_y = data_y, \
                                data_z = data_z, config_instances=self.config_instances, wavelength=_wavelength)
             
@@ -536,10 +641,7 @@ class MainWindow(QMainWindow):
         data_x = np.arange(self.many)
         data_y = np.zeros(len(data_x))
         
-        if self.is_wavelength_Live_flag:
-            _wavelength = self.wavelength_Live
-        else:
-            _wavelength = None
+        _wavelength = None
             
         self.data_generator_Live = LiveAcquire(exposure = self.exposure_Live, data_x=data_x, data_y=data_y, \
                                      config_instances=self.config_instances, wavelength=_wavelength, is_finite=False)
@@ -586,6 +688,10 @@ class MainWindow(QMainWindow):
                 self.estimate_PL_time()
             elif attr == 'PLE':
                 self.estimate_PLE_time()
+
+            self.checkBox_is_stabilizer.setDisabled(False)
+            self.doubleSpinBox_wavelength.setDisabled(False)
+            self.checkBox_is_bind.setDisabled(False)
             
     
     def stop_plot(self):
@@ -620,8 +726,8 @@ class MainWindow(QMainWindow):
         self.print_log(f'Plot stopped')
         self.is_running = False
 
-        if hasattr(self, 'timer'):
-            self.timer.setInterval(50)
+        #if hasattr(self, 'timer'):
+        #    self.timer.stop()
 
         if hasattr(self, 'live_plot_PLE') and self.live_plot_PLE is not None:
             self.estimate_PLE_time()
@@ -630,10 +736,14 @@ class MainWindow(QMainWindow):
             self.estimate_PL_time()
 
 
+
             
     def closeEvent(self, event):
         self.stop_plot()
         plt.close('all') # make sure close all plots which avoids error message
+
+        if self.detached_window is not None:
+            self.detached_window.close()
             
         event.accept()
         QtWidgets.QApplication.quit()  # Ensure application exits completely

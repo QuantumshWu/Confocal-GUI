@@ -84,8 +84,19 @@ def virtual_read_counts(duration, parent):
         
         
     else: # None of these cases
+        pl_dict = {'pl_height':None, 'pl_width':None, 'pl_center':None, 'pl_bg':None}
+        for key in pl_dict.keys():
+            pl_dict[key] = parent.config_instances.get(key)
+        
         time.sleep(duration)
-        return np.random.poisson(duration*10000)
+        position = np.array([parent.scanner.x, parent.scanner.y])
+        distance = np.linalg.norm(np.array(pl_dict['pl_center']) - position)
+        
+        lambda_counts = parent.exposure*(pl_dict['pl_height']*(pl_dict['pl_width']/2)**2\
+                                 /((distance)**2 + (pl_dict['pl_width']/2)**2) + pl_dict['pl_bg'])
+        return np.random.poisson(lambda_counts)
+        #time.sleep(duration)
+        #return np.random.poisson(duration*10000)
 
 
 class VirtualScanner():
