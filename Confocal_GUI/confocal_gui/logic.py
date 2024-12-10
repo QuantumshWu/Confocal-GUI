@@ -127,6 +127,7 @@ class LaserStabilizerCore():
         self.v_max = self.laser.piezo_min + 0.95*(self.laser.piezo_max - self.laser.piezo_min)
         self.freq_recent = self.spl/self.wavemeter.wavelength
         self.freq_thre = 0.05 #50MHz threshold defines when to return is_ready
+        self.P = 0.8 #scaling factor of PID control
         # leaves about 10% extra space
         
     @property
@@ -140,10 +141,11 @@ class LaserStabilizerCore():
     def run(self):
         
         freq_desired = self.spl/self.wavelength
-        freq_diff_guess = freq_desired - self.freq_recent
-        v_diff = freq_diff_guess/self.ratio 
+        wave_cache = self.wavemeter.wavelength
+        freq_diff_guess = freq_desired - self.spl/wave_cache#freq_desired - self.freq_recent
+        v_diff = self.P*freq_diff_guess/self.ratio 
         v_0 = self.laser.piezo
-        
+        #print(f'read wave {wave_cache}')
         if (v_0+v_diff)<self.v_min or (v_0+v_diff)>self.v_max:
             
             wavelength_now = self.laser.wavelength
@@ -157,26 +159,95 @@ class LaserStabilizerCore():
             self.laser.wavelength = wavelength_set
             wavelength_delta = wavelength_set - wavelength_now
             time.sleep(max(np.abs(wavelength_delta)*50, 5))
+            #print(f'move wave')
         else:
             self.laser.piezo = v_0+v_diff
-
-        
-        
+            #print(f'move piezo')
+        #print(f'piezo {self.laser.piezo}, v_diff: {v_diff}')
+        time.sleep(0.2)# wait for piezo stable and measurement converge
         freq_actual = self.spl/self.wavemeter.wavelength #wait
+        #print(f'wave actual {self.wavemeter.wavelength}')
         freq_diff = freq_desired - freq_actual
         if np.abs(freq_diff) <= self.freq_thre:
             self.is_ready = True
         else:
             self.is_ready = False
-        self.freq_recent = freq_actual    
+        self.freq_recent = freq_actual   
+        #print(f'recent:{freq_actual}, actual:{self.spl/self.wavemeter.wavelength}, ')
         return
+
+class LoadAcquire(threading.Thread):
+    """
+    class for load existing .npz data
+    """
+    def __init__(self, address, config_instances=None):
+        super().__init__()
+
+
+        loaded = np.load(address, allow_pickle=True)
+        keys = loaded.files
+        print("Keys in npz file:", keys)
+
+        #for key in keys:
+            #print(f"Data under key '{key}':")
+            #print(loaded[key])
+
+        self.info = loaded['info'].item()
+        # important information to be saved with figures 
+
+        if self.info['data_generator'] == 'PLEAcquire':
+            self.type = 'PLE'
+        elif self.info['data_generator'] == 'CPTAcquire':
+            self.type = 'CPT'
+        else:
+            self.type = 'PL'
+
+
+        self.exposure = loaded['info'].item()['exposure']
+        if self.type == 'PL':
+
+            #self.data_z = loaded['array']
+            #self.data_x = np.arange(len(self.data_z))
+            #self.data_y = np.arange(len(self.data_z))
+
+            self.data_x = loaded['data_x']
+            self.data_y = loaded['data_y']
+            self.data_z = loaded['data_z']
+
+        else:
+            self.data_x = loaded['data_x']
+            self.data_y = loaded['data_y']
+        self.daemon = True
+        self.is_running = True
+        self.is_done = False
+        self.points_done = len(self.data_x) #how many data points have done, will control display
+        
+    
+    def run(self):
+        
+        self.is_done = True
+        #finish all data
+ 
+        
+    def stop(self):
+        if self.is_alive():
+            self.is_running = False
+            self.join()
+        
+        
+    def __enter__(self):
+        return self
+    
+    def __exit__(self, exc_type, exc_value, exc_traceback):
+        self.stop()
+
         
         
 class PLEAcquire(threading.Thread):
     """
     class for ple measurement
     """
-    def __init__(self, exposure, data_x, data_y, config_instances):
+    def __init__(self, exposure, data_x, data_y, config_instances, repeat=1):
         super().__init__()
         self.exposure = exposure
         self.data_x = data_x
@@ -188,7 +259,9 @@ class PLEAcquire(threading.Thread):
         self.config_instances = config_instances
         self.points_done = 0
         self.scanner = config_instances.get('scanner')
-        self.info = {'data_generator':'PLEAcquire', 'exposure':self.exposure, 'scanner':[self.scanner.x, self.scanner.y]}
+        self.repeat = repeat
+        self.repeat_done = 1
+        self.info = {'data_generator':'PLEAcquire', 'exposure':self.exposure, 'scanner':[self.scanner.x, self.scanner.y], 'repeat':self.repeat}
         # important information to be saved with figures 
         
     
@@ -198,19 +271,20 @@ class PLEAcquire(threading.Thread):
         self.laser_stabilizer = LaserStabilizer(config_instances = self.config_instances)
         self.laser_stabilizer.start()
         
-        for i, wavelength in enumerate(self.data_x):
-            self.laser_stabilizer.set_wavelength(wavelength)
-            while self.is_running:
-                time.sleep(0.01)
-                if self.laser_stabilizer.is_ready:
-                    break
-            else:
-                return 
+        for self.repeat_done in range(self.repeat):
+            for i, wavelength in enumerate(self.data_x):
+                self.laser_stabilizer.set_wavelength(wavelength)
+                while self.is_running:
+                    time.sleep(0.01)
+                    if self.laser_stabilizer.is_ready:
+                        break
+                else:
+                    return 
 
-            counts = self.counter(self.exposure, self)
-            self.points_done += 1
+                counts = self.counter(self.exposure, self)
+                self.points_done += 1
 
-            self.data_y[i] += counts
+                self.data_y[i] += counts
             
         self.is_done = True
         #finish all data
@@ -502,3 +576,65 @@ class AreaAcquire(threading.Thread):
     
     def __exit__(self, exc_type, exc_value, exc_traceback):
         self.stop()
+
+
+"""
+from TimeTagger import *
+class TaggerAcquire(threading.Thread):
+"""
+    #class for time tagger measurement
+"""
+    def __init__(self, click_channel, start_channel, binwidth, n_bins, data_x, data_y, duration, config_instances):
+        super().__init__()
+
+        tagger = createTimeTagger('1809000LGG')
+        tagger.reset()
+        self.tagger = tagger
+        self.duration = duration
+        self.data_x = data_x
+        self.data_y = data_y
+        self.daemon = True
+        self.is_running = True
+        self.is_done = False
+        self.config_instances = config_instances
+        self.points_done = n_bins
+        self.binwidth = binwidth
+        self.scanner = config_instances['scanner']
+        self.wavemeter = config_instances['wavemeter']
+
+        self.info = {'data_generator':'PLEAcquire', 'exposure':self.duration, 'binwidth':self.binwidth, \
+            'wavelength':self.wavemeter.wavelength, 'scanner':[self.scanner.x, self.scanner.y]}
+        # important information to be saved with figures 
+
+        self.click_channel = click_channel
+        self.start_channel = start_channel
+        self.n_bins = n_bins
+        
+    
+    def run(self):
+        
+        self.histogram = Histogram(tagger=self.tagger, click_channel=self.click_channel , \
+            start_channel=self.start_channel , binwidth=self.binwidth , n_bins=self.n_bins )
+        self.histogram.startFor(int(self.duration*1e12))
+        while self.histogram.isRunning():
+            time.sleep(1)
+            self.data_y[:] = self.histogram.getData()
+            
+        self.is_done = True
+        #finish all data
+        self.histogram.stop()
+        # stop and join child thread
+        
+    def stop(self):
+        self.histogram.stop()
+        if self.is_alive():
+            self.is_running = False
+            self.join()
+        
+        
+    def __enter__(self):
+        return self
+    
+    def __exit__(self, exc_type, exc_value, exc_traceback):
+        self.stop()
+"""

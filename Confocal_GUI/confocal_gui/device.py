@@ -181,6 +181,301 @@ def read_counts(duration, parent):
     return data_counts
 
 
+import wlmData
+import wlmConst
+class HighFiness():
+    """
+    class for HighFiness wavemeter
+    
+    wavelength returns wavelength in GHz
+    
+    need to unselect auto expsosure before start stabilizer
+    """
+    def __init__(self):
+        self.spl = 299792458
+    
+        DLL_PATH = "wlmData.dll"
+        try:
+            wlmData.LoadDLL(DLL_PATH)
+        except:
+            sys.exit("Error: Couldn't find DLL on path %s. Please check the DLL_PATH variable!" % DLL_PATH)
+
+        # Checks the number of WLM server instance(s)
+        if wlmData.dll.GetWLMCount(0) == 0:
+            print("There is no running wlmServer instance(s).")
+        else:
+            # Read Type, Version, Revision and Build number
+            Version_type = wlmData.dll.GetWLMVersion(0)
+            Version_ver = wlmData.dll.GetWLMVersion(1)
+            Version_rev = wlmData.dll.GetWLMVersion(2)
+            Version_build = wlmData.dll.GetWLMVersion(3)
+            print("WLM Version: [%s.%s.%s.%s]" % (Version_type, Version_ver, Version_rev, Version_build))
+            
+    @property
+    def wavelength(self):
+        # Read frequency
+        Frequency = wlmData.dll.GetFrequency(0.0)
+        if Frequency == wlmConst.ErrWlmMissing:
+            StatusString = "WLM inactive"
+        elif Frequency == wlmConst.ErrNoSignal:
+            StatusString = 'No Signal'
+        elif Frequency == wlmConst.ErrBadSignal:
+            StatusString = 'Bad Signal'
+        elif Frequency == wlmConst.ErrLowSignal:
+            StatusString = 'Low Signal'
+        elif Frequency == wlmConst.ErrBigSignal:
+            StatusString = 'High Signal'
+        else:
+            StatusString = 'WLM is running'
+            
+        if Frequency == wlmConst.ErrOutOfRange:
+            print("Ch1 Error: Out of Range")
+        elif Frequency <= 0:
+            print("Ch1 Error code: %d" % Frequency)
+        else:
+            pass#print("Ch1 Frequency: %.3f GHz" % Frequency)
+            
+        return self.spl/(float(Frequency)*1000)
+    
+
+class Keysight():
+    """
+    class for Keysight RF generator
+    
+    amp in V-pp
+    frequency for frequency of sine wave
+    """
+    
+    def __init__(self):
+        rm = pyvisa.ResourceManager()
+        self.handle = rm.open_resource('TCPIP0::localhost::hislip0::INSTR')
+        self._power = 1
+        self._frequency = 1.1e9
+        self.handle.write(':ABOR')
+        self._on = False
+        self.addr = os.path.join(os.getcwd(), 'tmp.txt') # addr for txt file
+        self.frequency = 1.1e9
+        
+    @property
+    def on(self):
+        return self._on
+    
+    @on.setter
+    def on(self, on_in):
+        self._on = on_in
+        if on_in is True:
+            # from False to True
+            self.handle.write(':INIT:IMM')
+        else:
+            # from True to False
+            self.handle.write(':ABOR')
+        
+    @property
+    def power(self):
+        return self._power
+    
+    @power.setter
+    def power(self, power_in):
+        self._power = power_in
+        self.handle.write(f'VOLT {self._power}')
+    
+    @property
+    def frequency(self):
+        return self._frequency
+    
+    @frequency.setter
+    def frequency(self, frequency_in):
+        self.handle.write(':SOUR:FREQ:RAST 64000000000') # set sampling rate to 64G/s
+        self._frequency = frequency_in
+        self._generate_waveform_txt()
+        self._load_waveform_txt()
+        
+    def _generate_waveform_txt(self):
+        #if os.path.exists(self.addr):
+        #    os.remove(self.addr)
+        # aiming for 1/10000 frequency accuracy for 5GHz, and assuming 64GHz sampling rate
+        # sample number must be 64*n otherwise error?
+        n_period = int(round(1000/(64e9/self.frequency))) + 1
+        n_sample = int(round(n_period*(64e9/self.frequency)))
+        waveform = np.sin(np.linspace(0, 2*np.pi*n_period*16, n_sample*16))
+        print('n', n_period, n_sample, np.min(waveform), np.max(waveform))
+        np.savetxt(self.addr, waveform)
+    
+    def _load_waveform_txt(self):
+        self.handle.write(f':TRAC1:IMP 1, "{self.addr}", TXT, IONLy, ON, ALEN')
+        
+def read_counts_6212(duration, parent):
+    """
+    software gated counter for USB-6211, and reset pulse every time, but maybe good enough
+    """
+    with nidaqmx.Task() as task:
+        task.ci_channels.add_ci_count_edges_chan("Dev1/ctr1")
+        task.triggers.pause_trigger.dig_lvl_src = '/Dev1/PFI4'
+        task.triggers.pause_trigger.trig_type = nidaqmx.constants.TriggerType.DIGITAL_LEVEL
+        task.triggers.pause_trigger.dig_lvl_when = nidaqmx.constants.Level.LOW
+        task.start()
+        time.sleep(duration)
+        data_counts = task.read()
+        task.stop()
+    return data_counts
+
+
+from TimeTagger import createTimeTagger, Histogram, CountBetweenMarkers
+class TimeTaggerCounter():
+
+    def __init__(self, click_channel, begin_channel, end_channel, n_values=int(1e6)):
+        tagger = createTimeTagger('1809000LGG')
+        tagger.reset()
+
+        self.counter_handle = CountBetweenMarkers(tagger=tagger, click_channel=click_channel, begin_channel=begin_channel, \
+            end_channel=end_channel, n_values=n_values)
+
+    def counter(self, duration, parent=None):
+        self.counter_handle.startFor(int(duration*1e12))
+        time.sleep(duration)
+        counts = np.sum(self.counter_handle.getData())
+        self.counter_handle.stop()
+        return counts
+
+
+import atexit
+class USB6212():
+    """
+    class for NI DAQ USB-6212
+    
+    will be used for scanner: ao0, ao1 for X and Y of Galvo
+    
+    and for counter, CTR1 PFI3, PFI4 for src and gate.
+    
+    exit_handler method defines how to close task when exit
+    """
+    
+    def __init__(self):
+        self.task = nidaqmx.Task()
+        self.task.ao_channels.add_ao_voltage_chan('Dev1/ao0', min_val=-1, max_val=1)
+        self.task.ao_channels.add_ao_voltage_chan('Dev1/ao1', min_val=-1, max_val=1)
+        
+        #self.task.ci_channels.add_ci_count_edges_chan("Dev1/ctr0")
+        #self.task.triggers.pause_trigger.dig_lvl_src = '/Dev1/PFI1'
+        #self.task.triggers.pause_trigger.trig_type = nidaqmx.constants.TriggerType.DIGITAL_LEVEL
+        #self.task.triggers.pause_trigger.dig_lvl_when = nidaqmx.constants.Level.LOW
+        
+        self.task.start()
+        atexit.register(self.exit_handler)
+        self._x = 0
+        self._y = 0
+        
+    @property
+    def x(self):
+        return self._x
+    
+    @x.setter
+    def x(self, x_in):
+        self._x = int(x_in) # in mV 
+        self.task.write([self._x/1000, self._y/1000], auto_start=True) # in V
+        self.task.stop()
+        
+    @property
+    def y(self):
+        return self._y
+    
+    @y.setter
+    def y(self, y_in):
+        self._y = int(y_in) # in mV 
+        self.task.write([self._x/1000, self._y/1000], auto_start=True) # in V
+        self.task.stop()
+    
+    def read_counts(self, duration, parent):
+        self.task.stop()
+        self.task.start()
+        time.sleep(duration)
+        data_counts = self.task.read()
+        self.task.stop()
+        return data_counts
+    
+    def exit_handler(self):
+        self.task.stop()
+        self.task.close()
+        
+class SGS100A():
+    """
+    class for RF generator SGS100A
+    
+    power in dbm
+    
+    frequency for frequency
+    
+    iq for if iq is on
+    
+    on for if output is on
+    """
+    
+    def __init__(self):
+        rm = pyvisa.ResourceManager()
+        self.handle = rm.open_resource('TCPIP::169.254.2.20::INSTR')
+        self._power = int(self.handle.query('SOURce:Power?')[:-1])
+        self._frequency = int(self.handle.query('SOURce:FREQuency?')[:-1])
+        self._iq = False # if IQ modulation is on
+        self._on = False # if output is on
+        
+    @property
+    def power(self):
+        self._power = int(self.handle.query('SOURce:Power?')[:-1])
+        return self._power
+    
+    @power.setter
+    def power(self, power_in):
+        self._power = power_in
+        self.handle.write(f'SOURce:Power {self._power}')
+    
+    @property
+    def frequency(self):
+        self._frequency = int(self.handle.query('SOURce:Frequency?')[:-1])
+        return self._frequency
+    
+    @frequency.setter
+    def frequency(self, frequency_in):
+        self._frequency = frequency_in
+        self.handle.write(f'SOURce:Frequency {self._frequency}')
+        
+        
+    @property
+    def on(self):
+        return self._on
+    
+    @on.setter
+    def on(self, on_in):
+        #if on_in is self._on:
+        #    return
+        self._on = on_in
+        if on_in is True:
+            # from False to True
+            self.handle.write('OUTPut:STATe ON')
+        else:
+            # from True to False
+            self.handle.write('OUTPut:STATe OFF')
+    
+    @property
+    def iq(self):
+        return self._iq
+    
+    @iq.setter
+    def iq(self, iq_in):
+        if iq_in is self._iq:
+            return
+        
+        self._iq = iq_in
+        if iq_in is True:
+            # iq from False to True
+            self.handle.write('SOURce:IQ:IMPairment:STATe ON')
+            self.handle.write('SOURce:IQ:STATe ON')
+        else:
+            # iq from True to False
+            self.handle.write('SOURce:IQ:IMPairment:STATe OFF')
+            self.handle.write('SOURce:IQ:STATe OFF')
+            
+
+
 class AFG3052C():
     """
     class for scanner AFG3052C
@@ -219,6 +514,554 @@ class AFG3052C():
         self.handle.write(f'SOURce2:VOLTage:LEVel:IMMediate:OFFSet {y_in}mV')
         result_str = self.handle.query('SOURce2:VOLTage:LEVel:IMMediate:OFFSet?')
         self._y = int(1000*eval(result_str[:-1]))
+
+
+import socket
+class AMI():
+    def __init__(self):
+        # x, y, z ip are strings
+        ip_dict = {"x": '169.254.157.64', "y": '169.254.26.126', "z": '169.254.155.71'}
+        PORT = 7180
+        magnet_state = [
+            '0 Return Value Meaning',
+            '1 RAMPING to target field/current',
+            '2 HOLDING at the target field/current',
+            '3 PAUSED',
+            '4 Ramping in MANUAL UP mode',
+            '5 Ramping in MANUAL DOWN mode',
+            '6 ZEROING CURRENT (in progress)',
+            '7 Quench detected',
+            '8 At ZERO current',
+            '9 Heating persistent switch',
+            '10 Cooling persistent switch',
+            '11 External Rampdown active',
+        ]
+
+        z = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        z.connect((ip_dict["z"], PORT))
+        print(z.recv(2000).decode())
+
+        #are these right for x and y?
+        x = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        x.connect((ip_dict["x"], PORT))
+        print(x.recv(2000).decode())
+
+        y = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        y.connect((ip_dict["y"], PORT))
+        print(y.recv(2000).decode())
+
+        self.x = x
+        self.y = y
+        self.z = z
+        self.magnet_state = magnet_state
+
+    @property
+    def field(self):
+        self._field = [self.get_field(self.x), self.get_field(self.y), self.get_field(self.z)]
+        return self._field
+
+    @field.setter
+    def field(self, field_in):
+
+        if len(field_in)!=3:
+            print('wrong field')
+            return
+        if max(field_in)>10 or min(field_in)<-10:
+            print('wrong field')
+            return
+
+        self.set_target_field(self.x, field_in[0])
+        self.set_target_field(self.y, field_in[1])
+        self.set_target_field(self.z, field_in[2])
+
+        self.ramp(self.x)
+        self.ramp(self.y)
+        self.ramp(self.z)
+
+        while(1):
+            time.sleep(0.5)
+            state_x = self.get_state(self.x)
+            state_y = self.get_state(self.y)
+            state_z = self.get_state(self.z)
+
+            if state_x==self.magnet_state[2] \
+                and state_y==self.magnet_state[2] \
+                and state_z==self.magnet_state[2]:
+                print(f'x, y, z is {self.get_field(self.x)}, {self.get_field(self.y)}, {self.get_field(self.z)} (in kGauss)')
+                break
+            else:
+                print(f'{self.field}'.ljust(50), end='\r')
+
+
+
+
+    # below are private methods
+
+    def get_field_unit(self, handler):
+        handler.sendall("FIELD:UNITS?\n".encode())
+        reply = handler.recv(2000).decode()
+        reply = int(reply.strip())
+        return ['kilogauss', 'tesla'][reply]
+
+    def get_field(self, handler):
+        handler.sendall("FIELD:Magnet?\n".encode())
+        reply = handler.recv(2000).decode()
+        return float(reply.strip())
+
+    def get_error(self, handler):
+        handler.sendall("SYSTEM:ERROR?\n".encode())
+        reply = handler.recv(2000).decode()
+        return reply.strip()
+
+    def ramp(self, handler):
+        handler.sendall("RAMP\n".encode())
+        print('ramping')
+
+    def set_target_field(self, handler, kilogauss):
+        message = "CONFigure:FIELD:TARGet:{kilogauss:.5f}\n"
+        message = message.format(kilogauss = kilogauss)
+        print(message)
+        handler.sendall(message.encode())
+
+    def get_state(self, handler):
+        handler.sendall("State?\n".encode())
+        reply = self.magnet_state[int(handler.recv(2000).decode())]
+        return reply
+
+    def make_triangle(self, max_field, num_points):
+        mat = np.linspace(0, max_field, num_points)
+        mat = np.hstack([mat[:-1], mat[::-1]])
+        return np.hstack([mat[:-1], -mat])
+
+
+from pulsestreamer import PulseStreamer, Sequence 
+class Pulse():
+    """
+    class for calling pulse streamer in jupyter notebook, refer to pulse_stremer.py gui 
+
+    self.set_timing(timing_matrix)
+    timming matrix is n_sequence*(1+8) matrix, one for during, eight for channels
+    duraing is in ns
+    channels is 1 for on, 0 for off
+
+    self.set_delay(delay_array)
+
+
+
+    """
+
+    def __init__(self, ip=None):
+
+        if ip is None:
+            self.ip = '169.254.8.2'
+        else:
+            self.ip = ip
+        self.ps = PulseStreamer(self.ip)
+
+        self.delay_array = np.array([0,]*8)
+
+        self.data_matrix = np.array([[1e3, 1,1,1,1,1,1,1,1], [1e3, 1,1,1,1,1,1,1,1]])
+
+
+    def off_pulse(self):
+
+
+        # Create a sequence object
+        sequence = self.ps.createSequence()
+
+        # Create sequence and assign pattern to digital channel 0
+        pattern_off = [(1e3, 0), (1e3, 0)]
+        pattern_on = [(1e3, 1), (1e3, 1)]
+        for channel in range(0, 8):
+            sequence.setDigital(channel, pattern_off)# couter gate
+        for channel in range(0, 2):
+            sequence.setAnalog(channel, pattern_on)
+        # Stream the sequence and repeat it indefinitely
+        n_runs = PulseStreamer.REPEAT_INFINITELY
+        self.ps.stream(sequence, n_runs)
+        
+    def on_pulse(self):
+        
+        self.off_pulse()
+        time.sleep(0.5)
+        
+        def check_chs(array): # return a bool(0, 1) list for channels
+            return array[1:]
+        
+        data_matrix = self.read_data()
+        count = len(data_matrix)
+        sequence = self.ps.createSequence()
+        pattern_on = [(2, 1), (2, 1)]
+        
+        
+        #if(count == 1):
+        #    start = pb_inst_pbonly64(check_chs(data_matrix[0])+disable, Inst.CONTINUE, 0, data_matrix[0][0])
+        #    pb_inst_pbonly64(check_chs(data_matrix[-1])+disable, Inst.BRANCH, start, data_matrix[-1][0])
+
+        #else:
+        #    start = pb_inst_pbonly64(check_chs(data_matrix[0])+disable, Inst.CONTINUE, 0, data_matrix[0][0])
+        #    for i in range(count-2):
+        #        pb_inst_pbonly64(check_chs(data_matrix[i+1])+disable, Inst.CONTINUE, 0, data_matrix[i+1][0])
+         #   pb_inst_pbonly64(check_chs(data_matrix[-1])+disable, Inst.BRANCH, start, data_matrix[-1][0])
+
+        for channel in range(0, 8):
+            pattern = []
+            pattern.append((data_matrix[0][0], check_chs(data_matrix[0])[channel]))
+            for i in range(count-2):
+                pattern.append((data_matrix[i+1][0], check_chs(data_matrix[i+1])[channel]))
+            pattern.append((data_matrix[-1][0], check_chs(data_matrix[-1])[channel]))
+            #print(channel, pattern)
+            sequence.setDigital(channel, pattern)
+
+        for channel in range(0, 2):
+            sequence.setAnalog(channel, pattern_on)
+        # Stream the sequence and repeat it indefinitely
+        n_runs = PulseStreamer.REPEAT_INFINITELY
+        #print(sequence.getData())
+        #print('du', sequence.getDuration())
+        self.ps.stream(sequence, n_runs)
+
+    def set_timing_simple(self, timing_matrix):
+        # set_timing_simple([[duration0, [channels0, ]], [], [], []])
+        # eg. 
+        # set_timing_simple([[100, (3)], [100, (3,5)]])
+        # channel0 - channel7
+        n_sequence = len(timing_matrix)
+        data_matrix = np.zeros((n_sequence, 9))
+
+        for i in range(n_sequence):
+            data_matrix[i][0] = timing_matrix[i][0]
+
+            for channel in timing_matrix[i][1]:
+                data_matrix[i][channel+1] = 1
+
+
+        self.data_matrix = data_matrix
+
+    def set_timing(self, timing_matrix):
+        # timming matrix is n_sequence*(1+8) matrix, one for during, eight for channels
+        # duraing is in ns
+        # channels is 1 for on, 0 for off
+        self.data_matrix = timing_matrix
+
+    def set_delay(self, delay_array):
+        self.delay_array = delay_array
+
+
+
+                    
+    def read_data(self):
+        
+        data_delay_matrix = self.delay(self.data_matrix)
+        
+        return data_delay_matrix
+    
+    def delay(self, data_matrix):
+        # add delay, separate by all channels' time slices
+        
+        def extract_time_slice(data_matrix):
+            # extract data_matrix[:,i+1]'s time slice in format [(time_i, enable_i), ...] such that enable_i for time_i-1 to time_i
+            time_slice_array = [[(0, 0)] for i in range(len(data_matrix[0]) - 1)]
+            cur_time = 0
+            for ii, pulse in enumerate(data_matrix):
+                #print(pulse)
+                cur_time += pulse[0]
+                for channel in range(len(data_matrix[0]) - 1):
+                    time_slice_array[channel].append((cur_time, pulse[channel+1]))
+
+            return time_slice_array
+    
+        def combine_time_slice(time_slice_array):
+            time_all = []
+            for i, time_slice in enumerate(time_slice_array):
+                for i, time_label in enumerate(time_slice):
+                    if(time_label[0] not in time_all):
+                        time_all.append(time_label[0])
+
+            data_matrix = np.zeros((len(time_all), len(time_slice_array)+1))
+            data_matrix[:, 0] = np.sort(time_all)
+
+            time_all = np.sort(time_all)
+
+            for i, time_slice in enumerate(time_slice_array):
+                cur_ref_index = 0 #time_slice
+                cur_status = 0
+                for j in range(len(time_all)):
+                    cur_status = time_slice[cur_ref_index + 1][1]
+                    data_matrix[j, i+1] += cur_status
+                    #print(time_slice, time_all, cur_status, i, j)
+                    if(time_all[j]>=time_slice[cur_ref_index + 1][0]):
+                        cur_ref_index += 1
+
+            cur = 0
+            last = 0
+            for pulse in data_matrix[1:]:
+                cur = pulse[0]
+                pulse[0] = pulse[0] - last
+                last = cur
+            return np.array(data_matrix[1:], dtype=int)
+
+        def delay_channel(time_slice_array, channel_i, delay_time):
+            # channel_i from 0 to n
+            total_time = time_slice_array[0][-1][0] # first channel, last time stamp, time
+            delay_time = delay_time%total_time
+            if delay_time==0:
+                return time_slice_array
+            time_slice = time_slice_array[channel_i]
+            time_slice_delayed = []
+            is_boundary = 0
+            is_delay_at_boundary = 0
+            for i, time_stamp in enumerate(time_slice[1:]):# skip (0,0) since the (total_time, i) works
+                if not is_boundary and (time_stamp[0]+delay_time) >= total_time:
+                    is_boundary = 1
+                    boundary_i = i
+                time_stamp_delayed = ((time_stamp[0]+delay_time)%total_time, time_stamp[1])
+                if time_stamp_delayed[0]==0:
+                    is_delay_at_boundary = 1
+                time_slice_delayed.append(time_stamp_delayed)
+
+            #print(boundary_i, time_slice_delayed)
+            if is_delay_at_boundary:
+                time_slice_delayed = [(0,0)] + time_slice_delayed[boundary_i:][1:] + time_slice_delayed[:boundary_i] \
+                                    + [(total_time, time_slice_delayed[boundary_i][1])]
+            else:
+                time_slice_delayed = [(0,0)] + time_slice_delayed[boundary_i:] + time_slice_delayed[:boundary_i] \
+                                    + [(total_time, time_slice_delayed[boundary_i][1])]
+            time_slice_array[channel_i] = time_slice_delayed
+
+            return time_slice_array
+
+        def delay_sequence(data_matrix, channel_i, delay_time):
+            time_slice_array = extract_time_slice(data_matrix)
+            time_slice_array = delay_channel(time_slice_array, channel_i, delay_time)
+            data_matrix = combine_time_slice(time_slice_array)
+            return data_matrix
+        
+        for j in range(8):
+            data_matrix =  delay_sequence(data_matrix, j, self.delay_array[j])
+            
+        return data_matrix
+
+
+class Pulsev2():
+    """
+    class for calling pulse streamer in jupyter notebook, refer to pulse_stremer.py gui 
+
+    self.set_timing(timing_matrix)
+    timming matrix is n_sequence*(1+8) matrix, one for during, eight for channels
+    duraing is in ns
+    channels is 1 for on, 0 for off
+
+    self.set_delay(delay_array)
+
+
+
+    """
+
+    def __init__(self, ip=None, analog_V=None):
+
+        if ip is None:
+            self.ip = '169.254.8.2'
+        else:
+            self.ip = ip
+        self.ps = PulseStreamer(self.ip)
+
+        self.delay_array = np.array([0,]*10)
+
+        self.data_matrix = np.array([[1e3, 1,1,1,1,1,1,1,1,1,1], [1e3, 1,1,1,1,1,1,1,1,1,1]])
+
+        if analog_V is None:
+            self.analog_V = [1, 1]
+        else:
+            self.analog_V = analog_V
+
+
+    def off_pulse(self):
+
+
+        # Create a sequence object
+        sequence = self.ps.createSequence()
+
+        # Create sequence and assign pattern to digital channel 0
+        pattern_off = [(1e3, 0), (1e3, 0)]
+        pattern_on = [(1e3, 1), (1e3, 1)]
+        for channel in range(0, 8):
+            sequence.setDigital(channel, pattern_off)# couter gate
+        for channel in range(8, 10):
+            sequence.setAnalog(channel-8, pattern_off)
+        # Stream the sequence and repeat it indefinitely
+        n_runs = PulseStreamer.REPEAT_INFINITELY
+        self.ps.stream(sequence, n_runs)
+        
+    def on_pulse(self):
+        
+        self.off_pulse()
+        time.sleep(0.5)
+        
+        def check_chs(array): # return a bool(0, 1) list for channels
+            return array[1:]
+        
+        data_matrix = self.read_data()
+        count = len(data_matrix)
+        sequence = self.ps.createSequence()
+        pattern_on = [(2, 1), (2, 1)]
+        
+        
+        #if(count == 1):
+        #    start = pb_inst_pbonly64(check_chs(data_matrix[0])+disable, Inst.CONTINUE, 0, data_matrix[0][0])
+        #    pb_inst_pbonly64(check_chs(data_matrix[-1])+disable, Inst.BRANCH, start, data_matrix[-1][0])
+
+        #else:
+        #    start = pb_inst_pbonly64(check_chs(data_matrix[0])+disable, Inst.CONTINUE, 0, data_matrix[0][0])
+        #    for i in range(count-2):
+        #        pb_inst_pbonly64(check_chs(data_matrix[i+1])+disable, Inst.CONTINUE, 0, data_matrix[i+1][0])
+         #   pb_inst_pbonly64(check_chs(data_matrix[-1])+disable, Inst.BRANCH, start, data_matrix[-1][0])
+
+        for channel in range(0, 8):
+            pattern = []
+            pattern.append((data_matrix[0][0], check_chs(data_matrix[0])[channel]))
+            for i in range(count-2):
+                pattern.append((data_matrix[i+1][0], check_chs(data_matrix[i+1])[channel]))
+            pattern.append((data_matrix[-1][0], check_chs(data_matrix[-1])[channel]))
+            #print(channel, pattern)
+            sequence.setDigital(channel, pattern)
+
+        for channel in range(8, 10):
+            cur_V = self.analog_V[channel-8]
+            pattern = []
+            pattern.append((data_matrix[0][0], cur_V*check_chs(data_matrix[0])[channel]))
+            for i in range(count-2):
+                pattern.append((data_matrix[i+1][0], cur_V*check_chs(data_matrix[i+1])[channel]))
+            pattern.append((data_matrix[-1][0], cur_V*check_chs(data_matrix[-1])[channel]))
+            sequence.setAnalog(channel-8, pattern)
+        # Stream the sequence and repeat it indefinitely
+        n_runs = PulseStreamer.REPEAT_INFINITELY
+        #print(sequence.getData())
+        #print('du', sequence.getDuration())
+        self.ps.stream(sequence, n_runs)
+
+    def set_timing_simple(self, timing_matrix):
+        # set_timing_simple([[duration0, [channels0, ]], [], [], []])
+        # eg. 
+        # set_timing_simple([[100, (3)], [100, (3,5)]])
+        # channel0 - channel7
+        n_sequence = len(timing_matrix)
+        data_matrix = np.zeros((n_sequence, 11))
+
+        for i in range(n_sequence):
+            data_matrix[i][0] = timing_matrix[i][0]
+
+            for channel in timing_matrix[i][1]:
+                data_matrix[i][channel+1] = 1
+
+
+        self.data_matrix = data_matrix
+
+    def set_timing(self, timing_matrix):
+        # timming matrix is n_sequence*(1+8) matrix, one for during, eight for channels
+        # duraing is in ns
+        # channels is 1 for on, 0 for off
+        self.data_matrix = timing_matrix
+
+    def set_delay(self, delay_array):
+        self.delay_array = delay_array
+
+
+
+                    
+    def read_data(self):
+        
+        data_delay_matrix = self.delay(self.data_matrix)
+        
+        return data_delay_matrix
+    
+    def delay(self, data_matrix):
+        # add delay, separate by all channels' time slices
+        
+        def extract_time_slice(data_matrix):
+            # extract data_matrix[:,i+1]'s time slice in format [(time_i, enable_i), ...] such that enable_i for time_i-1 to time_i
+            time_slice_array = [[(0, 0)] for i in range(len(data_matrix[0]) - 1)]
+            cur_time = 0
+            for ii, pulse in enumerate(data_matrix):
+                #print(pulse)
+                cur_time += pulse[0]
+                for channel in range(len(data_matrix[0]) - 1):
+                    time_slice_array[channel].append((cur_time, pulse[channel+1]))
+
+            return time_slice_array
+    
+        def combine_time_slice(time_slice_array):
+            time_all = []
+            for i, time_slice in enumerate(time_slice_array):
+                for i, time_label in enumerate(time_slice):
+                    if(time_label[0] not in time_all):
+                        time_all.append(time_label[0])
+
+            data_matrix = np.zeros((len(time_all), len(time_slice_array)+1))
+            data_matrix[:, 0] = np.sort(time_all)
+
+            time_all = np.sort(time_all)
+
+            for i, time_slice in enumerate(time_slice_array):
+                cur_ref_index = 0 #time_slice
+                cur_status = 0
+                for j in range(len(time_all)):
+                    cur_status = time_slice[cur_ref_index + 1][1]
+                    data_matrix[j, i+1] += cur_status
+                    #print(time_slice, time_all, cur_status, i, j)
+                    if(time_all[j]>=time_slice[cur_ref_index + 1][0]):
+                        cur_ref_index += 1
+
+            cur = 0
+            last = 0
+            for pulse in data_matrix[1:]:
+                cur = pulse[0]
+                pulse[0] = pulse[0] - last
+                last = cur
+            return np.array(data_matrix[1:], dtype=int)
+
+        def delay_channel(time_slice_array, channel_i, delay_time):
+            # channel_i from 0 to n
+            total_time = time_slice_array[0][-1][0] # first channel, last time stamp, time
+            delay_time = delay_time%total_time
+            if delay_time==0:
+                return time_slice_array
+            time_slice = time_slice_array[channel_i]
+            time_slice_delayed = []
+            is_boundary = 0
+            is_delay_at_boundary = 0
+            for i, time_stamp in enumerate(time_slice[1:]):# skip (0,0) since the (total_time, i) works
+                if not is_boundary and (time_stamp[0]+delay_time) >= total_time:
+                    is_boundary = 1
+                    boundary_i = i
+                time_stamp_delayed = ((time_stamp[0]+delay_time)%total_time, time_stamp[1])
+                if time_stamp_delayed[0]==0:
+                    is_delay_at_boundary = 1
+                time_slice_delayed.append(time_stamp_delayed)
+
+            #print(boundary_i, time_slice_delayed)
+            if is_delay_at_boundary:
+                time_slice_delayed = [(0,0)] + time_slice_delayed[boundary_i:][1:] + time_slice_delayed[:boundary_i] \
+                                    + [(total_time, time_slice_delayed[boundary_i][1])]
+            else:
+                time_slice_delayed = [(0,0)] + time_slice_delayed[boundary_i:] + time_slice_delayed[:boundary_i] \
+                                    + [(total_time, time_slice_delayed[boundary_i][1])]
+            time_slice_array[channel_i] = time_slice_delayed
+
+            return time_slice_array
+
+        def delay_sequence(data_matrix, channel_i, delay_time):
+            time_slice_array = extract_time_slice(data_matrix)
+            time_slice_array = delay_channel(time_slice_array, channel_i, delay_time)
+            data_matrix = combine_time_slice(time_slice_array)
+            return data_matrix
+        
+        for j in range(10):
+            data_matrix =  delay_sequence(data_matrix, j, self.delay_array[j])
+            
+        return data_matrix
+
+
     
 
 

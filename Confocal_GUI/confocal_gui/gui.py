@@ -255,7 +255,7 @@ class MainWindow(QMainWindow):
     def read_wavemeter(self):
         if self.wavemeter is not None:
             wavelength = self.wavemeter.wavelength
-            self.lineEdit_wavelength.setText(f'{wavelength}')
+            self.lineEdit_wavelength.setText(f'{wavelength:.5f}')
 
 
     def detach_page(self):
@@ -744,6 +744,9 @@ class MainWindow(QMainWindow):
 
         if self.detached_window is not None:
             self.detached_window.close()
+
+        if self.laser_stabilizer is not None:
+            self.laser_stabilizer.stop()
             
         event.accept()
         QtWidgets.QApplication.quit()  # Ensure application exits completely
