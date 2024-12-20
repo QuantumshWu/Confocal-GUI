@@ -1,22 +1,10 @@
 from abc import ABC, abstractmethod
-import telnetlib, time
+import time
 import sys, os
-import clr
-from System.Text import StringBuilder
-from System import Int32
-from System.Reflection import Assembly
-clr.AddReference(r'mscorlib')
-sys.path.append('C:\\Program Files\\New Focus\\New Focus Tunable Laser Application\\')
 # location of new focus laser driver file
 current_directory = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(current_directory)
-clr.AddReference('UsbDllWrap')
-import Newport
 import pyvisa
-import nidaqmx
-from nidaqmx.constants import AcquisitionType
-from nidaqmx.constants import TerminalConfiguration
-from nidaqmx.stream_readers import AnalogMultiChannelReader
 import numpy as np
         
 
@@ -24,7 +12,19 @@ class Laser(ABC):
     """
     class for all lasers, only few methods to use
     """
+
+
     def __init__(self, model: str):
+        import clr
+        from System.Text import StringBuilder
+        from System import Int32
+        from System.Reflection import Assembly
+        import Newport
+        clr.AddReference(r'mscorlib')
+        sys.path.append('C:\\Program Files\\New Focus\\New Focus Tunable Laser Application\\')
+        # location of new focus laser driver file
+        clr.AddReference('UsbDllWrap')
+
         self.model = model
         self._wavelength = None
         self._piezo = None
@@ -142,6 +142,7 @@ class WaveMeter671():
     
 
     def __init__(self):
+        import telnetlib
         self.HOST = '10.199.199.1'
         self.tn = telnetlib.Telnet(self.HOST, timeout=1)
         self.tn.write(b'*IDN?\r\n')
@@ -181,8 +182,6 @@ def read_counts(duration, parent):
     return data_counts
 
 
-import wlmData
-import wlmConst
 class HighFiness():
     """
     class for HighFiness wavemeter
@@ -191,7 +190,13 @@ class HighFiness():
     
     need to unselect auto expsosure before start stabilizer
     """
+
     def __init__(self):
+
+        import wlmData
+        import wlmConst
+
+
         self.spl = 299792458
     
         DLL_PATH = "wlmData.dll"
@@ -320,10 +325,10 @@ def read_counts_6212(duration, parent):
     return data_counts
 
 
-from TimeTagger import createTimeTagger, Histogram, CountBetweenMarkers
 class TimeTaggerCounter():
 
     def __init__(self, click_channel, begin_channel, end_channel, n_values=int(1e6)):
+        from TimeTagger import createTimeTagger, Histogram, CountBetweenMarkers
         tagger = createTimeTagger('1809000LGG')
         tagger.reset()
 
@@ -338,7 +343,6 @@ class TimeTaggerCounter():
         return counts
 
 
-import atexit
 class USB6212():
     """
     class for NI DAQ USB-6212
@@ -349,8 +353,17 @@ class USB6212():
     
     exit_handler method defines how to close task when exit
     """
+
     
     def __init__(self):
+
+        import atexit
+        import nidaqmx
+        from nidaqmx.constants import AcquisitionType
+        from nidaqmx.constants import TerminalConfiguration
+        from nidaqmx.stream_readers import AnalogMultiChannelReader
+
+
         self.task = nidaqmx.Task()
         self.task.ao_channels.add_ao_voltage_chan('Dev1/ao0', min_val=-1, max_val=1)
         self.task.ao_channels.add_ao_voltage_chan('Dev1/ao1', min_val=-1, max_val=1)
@@ -396,6 +409,111 @@ class USB6212():
     def exit_handler(self):
         self.task.stop()
         self.task.close()
+
+
+class USB6346():
+    """
+    class for NI DAQ USB-6346
+    
+    will be used for scanner: ao0, ao1 for X and Y of Galvo
+    
+    and for counter, CTR1 PFI3, PFI4 for src and gate.
+    
+    exit_handler method defines how to close task when exit
+    """
+    _instance = None
+    
+    def __init__(self, exposure=1):
+
+        import atexit
+        import nidaqmx
+        from nidaqmx.constants import AcquisitionType
+        from nidaqmx.constants import TerminalConfiguration
+        from nidaqmx.stream_readers import AnalogMultiChannelReader
+
+
+        self.task = nidaqmx.Task()
+        self.nidaqmx = nidaqmx
+        self.task.ao_channels.add_ao_voltage_chan('Dev1/ao0', min_val=-1, max_val=1)
+        self.task.ao_channels.add_ao_voltage_chan('Dev1/ao1', min_val=-1, max_val=1)
+        
+        self.task_counter_ai = nidaqmx.Task()
+        self.task_counter_ai.ai_channels.add_ai_voltage_chan("Dev1/ai0")
+        self.exposure = None
+        self.set_timing(exposure)
+        #self.task.timing.cfg_samp_clk_timing(1000.0, sample_mode=nidaqmx.constants.AcquisitionType.FINITE, samps_per_chan=1000)
+        #self.task.triggers.pause_trigger.dig_lvl_src = '/Dev1/PFI1'
+        #self.task.triggers.pause_trigger.trig_type = nidaqmx.constants.TriggerType.DIGITAL_LEVEL
+        #self.task.triggers.pause_trigger.dig_lvl_when = nidaqmx.constants.Level.LOW
+        
+        self.task.start()
+        self.task_counter_ai.start()
+        atexit.register(self.exit_handler)
+        self._x = 0
+        self._y = 0
+
+    def __new__(cls, *args, **kwargs):
+
+        if cls._instance is not None:
+            cls._instance.exit_handler()
+
+        cls._instance = super().__new__(cls)
+        return cls._instance
+
+        
+    @property
+    def x(self):
+        return self._x
+    
+    @x.setter
+    def x(self, x_in):
+        self._x = int(x_in) # in mV 
+        self.task.write([self._x/1000, self._y/1000], auto_start=True) # in V
+        self.task.stop()
+        
+    @property
+    def y(self):
+        return self._y
+    
+    @y.setter
+    def y(self, y_in):
+        self._y = int(y_in) # in mV 
+        self.task.write([self._x/1000, self._y/1000], auto_start=True) # in V
+        self.task.stop()
+
+
+    def set_timing(self, exposure, clock=1000):
+        self.task_counter_ai.stop()
+        if exposure == self.exposure:
+            return
+        self.exposure = exposure
+        self.task_counter_ai.timing.cfg_samp_clk_timing(clock, sample_mode=self.nidaqmx.constants.AcquisitionType.FINITE, samps_per_chan=int(round(clock*exposure)))
+
+    def read_counts_inst(self, duration, parent):
+        pass
+    
+    def read_counts(self, duration, parent):
+
+        self.set_timing(duration)
+
+        self.task_counter_ai.stop()
+        self.task_counter_ai.start()
+        time.sleep(duration)
+        data_counts = float(np.mean(self.task_counter_ai.read(self.nidaqmx.constants.READ_ALL_AVAILABLE)))
+        self.task_counter_ai.stop()
+        return data_counts
+    
+    @classmethod
+    def exit_handler(cls):
+
+        if cls._instance is not None:
+            cls._instance.task.stop()
+            cls._instance.task.close()
+
+            cls._instance.task_counter_ai.stop()
+            cls._instance.task_counter_ai.close()
+
+            cls._instance = None
         
 class SGS100A():
     """
@@ -431,6 +549,84 @@ class SGS100A():
     @property
     def frequency(self):
         self._frequency = int(self.handle.query('SOURce:Frequency?')[:-1])
+        return self._frequency
+    
+    @frequency.setter
+    def frequency(self, frequency_in):
+        self._frequency = frequency_in
+        self.handle.write(f'SOURce:Frequency {self._frequency}')
+        
+        
+    @property
+    def on(self):
+        return self._on
+    
+    @on.setter
+    def on(self, on_in):
+        #if on_in is self._on:
+        #    return
+        self._on = on_in
+        if on_in is True:
+            # from False to True
+            self.handle.write('OUTPut:STATe ON')
+        else:
+            # from True to False
+            self.handle.write('OUTPut:STATe OFF')
+    
+    @property
+    def iq(self):
+        return self._iq
+    
+    @iq.setter
+    def iq(self, iq_in):
+        if iq_in is self._iq:
+            return
+        
+        self._iq = iq_in
+        if iq_in is True:
+            # iq from False to True
+            self.handle.write('SOURce:IQ:IMPairment:STATe ON')
+            self.handle.write('SOURce:IQ:STATe ON')
+        else:
+            # iq from True to False
+            self.handle.write('SOURce:IQ:IMPairment:STATe OFF')
+            self.handle.write('SOURce:IQ:STATe OFF')
+
+
+class DSG836():
+    """
+    class for RF generator DSG836
+    
+    power in dbm
+    
+    frequency for frequency
+    
+    iq for if iq is on
+    
+    on for if output is on
+    """
+    
+    def __init__(self):
+        rm = pyvisa.ResourceManager()
+        self.handle = rm.open_resource('USB0::0x1AB1::0x099C::DSG8M267M00006::INSTR')
+        self._power = eval(self.handle.query('SOURce:Power?')[:-1])
+        self._frequency = eval(self.handle.query('SOURce:FREQuency?')[:-1])
+        self._iq = False # if IQ modulation is on
+        self._on = False # if output is on
+        
+    @property
+    def power(self):
+        self._power = eval(self.handle.query('SOURce:Power?')[:-1])
+        return self._power
+    
+    @power.setter
+    def power(self, power_in):
+        self._power = power_in
+        self.handle.write(f'SOURce:Power {self._power}')
+    
+    @property
+    def frequency(self):
+        self._frequency = eval(self.handle.query('SOURce:Frequency?')[:-1])
         return self._frequency
     
     @frequency.setter
@@ -516,10 +712,12 @@ class AFG3052C():
         self._y = int(1000*eval(result_str[:-1]))
 
 
-import socket
 class AMI():
     def __init__(self):
+
         # x, y, z ip are strings
+        import socket
+
         ip_dict = {"x": '169.254.157.64', "y": '169.254.26.126', "z": '169.254.155.71'}
         PORT = 7180
         magnet_state = [
@@ -634,7 +832,6 @@ class AMI():
         return np.hstack([mat[:-1], -mat])
 
 
-from pulsestreamer import PulseStreamer, Sequence 
 class Pulse():
     """
     class for calling pulse streamer in jupyter notebook, refer to pulse_stremer.py gui 
@@ -651,7 +848,7 @@ class Pulse():
     """
 
     def __init__(self, ip=None):
-
+        from pulsestreamer import PulseStreamer, Sequence 
         if ip is None:
             self.ip = '169.254.8.2'
         else:

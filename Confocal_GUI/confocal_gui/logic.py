@@ -447,7 +447,7 @@ class LiveAcquire(threading.Thread):
                 finite_counter += 1
             # roll data as live counts, from left most to right most, [:] makes sure not create new arr
 
-            counts = self.counter(self.exposure, self)
+            counts = self.counter(self.exposure, self)*1e6
             self.points_done += 1
 
             self.data_y[:] = np.roll(self.data_y, 1)
