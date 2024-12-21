@@ -229,6 +229,7 @@ class LivePlotGUI():
         self.update_time = update_time
         self.data_generator = data_generator
         self.ylim_max = 100
+        self.ylim_min = 0
         self.fig = fig
         if fig is None:
             self.have_init_fig = False
@@ -269,8 +270,7 @@ class LivePlotGUI():
             
         self.clear_all() #makes sure no residual artist
         self.axes.set_autoscale_on(True)
-        self.init_core()            
-        self.ylim_max = 100
+        self.init_core()         
 
         
         
@@ -358,7 +358,60 @@ class LivePlotGUI():
                 text.remove()
 
         self.fig.canvas.draw()
-            
+
+
+    def relim(self):
+        # return 1 if need redraw
+        # accept relim mode 'tight' or 'normal'
+        # 'tight' will relim to fit upper and lower bound
+        # 'normal' will relim to fit 0 and upper bound
+        
+        if 0<self.points_done<self.points_total:
+            max_data_y = np.max(self.data_y[:self.points_done])
+            min_data_y = np.min(self.data_y[:self.points_done])
+
+        else:
+            max_data_y = np.max(self.data_y)
+            min_data_y = np.min(self.data_y)
+
+        if max_data_y == 0:
+            return 0
+        # no new data
+
+        if self.relim_mode == 'normal':
+            data_range = max_data_y - 0
+        elif self.relim_mode == 'tight':
+            data_range = max_data_y - min_data_y
+
+        if self.relim_mode == 'normal':
+
+            if 0<=(self.ylim_max-max_data_y)<=0.5*data_range:
+                return 0
+
+
+            self.ylim_min = 0
+            self.ylim_max = max_data_y*1.2
+
+            self.axes.set_ylim(self.ylim_min, self.ylim_max)
+
+            return 1
+
+        elif self.relim_mode == 'tight':
+
+            if 0<=(self.ylim_max - max_data_y)<=0.25*data_range and 0<=(min_data_y - self.ylim_min)<=0.25*data_range:
+                return 0
+
+            self.ylim_min = min_data_y - 0.1*data_range
+            self.ylim_max = max_data_y + 0.1*data_range
+
+            if self.ylim_min!=self.ylim_max:
+                self.axes.set_ylim(self.ylim_min, self.ylim_max)
+
+            return 1
+
+
+
+
             
             
 class PLELive(LivePlotGUI):
@@ -366,7 +419,7 @@ class PLELive(LivePlotGUI):
     def init_core(self):
         self.line, = self.axes.plot(self.data_x, self.data_y, animated=True, color='grey', alpha=1)
         self.axes.set_xlim(np.min(self.data_x), np.max(self.data_x))
-        self.ylim_min = 0
+        self.axes.set_ylim(self.ylim_min, self.ylim_max)
         
     def update_core(self):
         if len(self.data_y) == 0:
@@ -374,39 +427,25 @@ class PLELive(LivePlotGUI):
         else:
             max_data_y = np.max(self.data_y)
         
-        if self.relim_mode == 'normal':
-            if (self.points_done%self.points_total)==0:
 
-                self.ylim_max = max_data_y + 500
-                self.axes.set_ylim(0, self.ylim_max)
-                self.ylabel = self.labels[1] + f' x{self.points_done//self.points_total + 1}'
-                self.axes.set_ylabel(self.ylabel)
+        if (self.points_done%self.points_total)==0:
+
+            self.ylabel = self.labels[1] + f' x{self.points_done//self.points_total + 1}'
+            self.axes.set_ylabel(self.ylabel)
 
 
-                self.fig.canvas.draw()
-                self.bg_fig = self.fig.canvas.copy_from_bbox(self.fig.bbox)  # update ylim so need redraw
-
-
-            elif not 100 < (self.ylim_max - max_data_y) < 1000:
-                self.ylim_max = max_data_y + 500
-                self.axes.set_ylim(0, self.ylim_max)
-
-
-                self.fig.canvas.draw()
-                self.bg_fig = self.fig.canvas.copy_from_bbox(self.fig.bbox)  # update ylim so need redraw
-
-            else:
-                self.fig.canvas.restore_region(self.bg_fig)
-
-        elif self.relim_mode == 'tight':
-            data_range = np.max(self.data_y) - np.min(self.data_y)
-            self.ylim_max = np.min(self.data_y) + 1.1*data_range + 10
-            self.ylim_min = np.max(self.data_y) - 1.1*data_range -5
-
-            self.axes.set_ylim(self.ylim_min, self.ylim_max)
-
+            is_redraw = self.relim()
             self.fig.canvas.draw()
             self.bg_fig = self.fig.canvas.copy_from_bbox(self.fig.bbox)  # update ylim so need redraw
+        else:
+
+            is_redraw = self.relim()
+            if is_redraw:
+                self.fig.canvas.draw()
+                self.bg_fig = self.fig.canvas.copy_from_bbox(self.fig.bbox)  # update ylim so need redraw
+
+            
+        self.fig.canvas.restore_region(self.bg_fig)
 
 
         self.line.set_data(self.data_x[:self.data_generator.points_done], self.data_y[:self.data_generator.points_done])
@@ -1709,6 +1748,18 @@ def ple(wavelength_array, exposure, config_instances, repeat=1):
     data_generator = PLEAcquire(exposure = exposure, data_x=data_x, data_y=data_y, config_instances = config_instances, repeat=repeat)
     liveplot = PLELive(labels=['Wavelength (nm)', f'Counts/{exposure}s'], \
                         update_time=0.1, data_generator=data_generator, data=[data_x, data_y], config_instances = config_instances)
+    fig, selector = liveplot.plot()
+    data_figure = DataFigure(liveplot)
+    return fig, data_figure
+
+
+def odmr(frequency_array, exposure, power, config_instances, repeat=1):
+                
+    data_x = frequency_array
+    data_y = np.zeros(len(data_x))
+    data_generator = ODMRAcquire(exposure = exposure, data_x=data_x, data_y=data_y, power = power, config_instances = config_instances, repeat=repeat)
+    liveplot = PLELive(labels=['Frequency (Hz)', f'Counts/{exposure}s'], \
+                        update_time=0.1, data_generator=data_generator, data=[data_x, data_y], config_instances = config_instances, relim_mode='tight')
     fig, selector = liveplot.plot()
     data_figure = DataFigure(liveplot)
     return fig, data_figure

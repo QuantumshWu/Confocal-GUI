@@ -482,7 +482,7 @@ class USB6346():
         self.task.stop()
 
 
-    def set_timing(self, exposure, clock=1000):
+    def set_timing(self, exposure, clock=10000):
         self.task_counter_ai.stop()
         if exposure == self.exposure:
             return

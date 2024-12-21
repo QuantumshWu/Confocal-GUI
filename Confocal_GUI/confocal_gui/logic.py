@@ -447,7 +447,7 @@ class LiveAcquire(threading.Thread):
                 finite_counter += 1
             # roll data as live counts, from left most to right most, [:] makes sure not create new arr
 
-            counts = self.counter(self.exposure, self)*1e6
+            counts = self.counter(self.exposure, self)
             self.points_done += 1
 
             self.data_y[:] = np.roll(self.data_y, 1)
@@ -566,6 +566,71 @@ class AreaAcquire(threading.Thread):
         
     def stop(self):
         self.laser_stabilizer.stop()
+        if self.is_alive():
+            self.is_running = False
+            self.join()
+        
+        
+    def __enter__(self):
+        return self
+    
+    def __exit__(self, exc_type, exc_value, exc_traceback):
+        self.stop()
+
+
+class ODMRAcquire(threading.Thread):
+    """
+    class for odmr measurement
+    """
+    def __init__(self, exposure, data_x, data_y, power, config_instances, repeat=1):
+        super().__init__()
+        self.exposure = exposure
+        self.data_x = data_x
+        self.data_y = data_y
+        self.daemon = True
+        self.is_running = True
+        self.is_done = False
+        self.counter = config_instances.get('counter')
+        self.rf = config_instances.get('rf')
+        self.config_instances = config_instances
+        self.points_done = 0
+        self.repeat = repeat
+        self.repeat_done = 1
+        self.power = power
+        self.info = {'data_generator':'PLEAcquire', 'exposure':self.exposure, 'repeat':self.repeat}
+        # important information to be saved with figures 
+
+        self.rf.power = self.power
+        self.rf.on = True
+        
+    
+    def run(self):
+        
+        
+        
+        
+        for self.repeat_done in range(self.repeat):
+
+            for i, frequency in enumerate(self.data_x):
+
+                if not self.is_running:
+                    self.rf.on = False
+                    return 
+
+                self.rf.frequency = frequency
+
+
+                counts = self.counter(self.exposure, self)
+                self.points_done += 1
+
+                self.data_y[i] += counts
+            
+        self.is_done = True
+        self.rf.on = False
+        #finish all data
+        # stop and join child thread
+        
+    def stop(self):
         if self.is_alive():
             self.is_running = False
             self.join()
