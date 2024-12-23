@@ -6,6 +6,83 @@ current_directory = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(current_directory)
 import pyvisa
 import numpy as np
+
+
+def initialize_classes(config, lookup_dict):
+    """
+    config: dict 
+        {
+            "counter": {
+                "type": "VirtualScanner.virtual_read_counts",
+            },
+            "scanner": {
+                "type": "VirtualScanner",
+            },
+            ...
+        }
+    """
+    instances = {}
+
+    def get_callable_from_type(type_name, init_params):
+
+        if "." in type_name:
+            class_part, method_part = type_name.rsplit(".", 1)
+            cls_or_obj = lookup_dict[class_part]
+            if hasattr(cls_or_obj, "__bases__"):  
+                obj = cls_or_obj(**init_params)
+                return getattr(obj, method_part)
+            else:
+                raise ValueError(f"{class_part} is not a class, cannot get method {method_part}.")
+        else:
+            class_or_func = lookup_dict[type_name]
+            if hasattr(class_or_func, "__bases__"):
+
+                return class_or_func(**init_params)
+            else:
+                if init_params:
+                    raise ValueError(
+                        f"'{type_name}' is a function, but you provided extra params {init_params}."
+                    )
+                return class_or_func
+
+
+    for key, raw_params in config.items():
+        params = dict(raw_params)  
+        if "config_instances" not in params:
+            type_name = params.pop("type")
+            result = get_callable_from_type(type_name, params)
+            instances[key] = result
+
+
+    for key, raw_params in config.items():
+        params = dict(raw_params)
+        if "config_instances" in params:
+            type_name = params.pop("type")
+            params.pop("config_instances")  
+            class_or_func = lookup_dict[type_name]
+            if hasattr(class_or_func, "__bases__"):
+
+                obj = class_or_func(instances, **params)
+                instances[key] = obj
+            else:
+
+                func = class_or_func
+                instances[key] = func(instances, **params)
+
+
+    for k, v in instances.items():
+        print(f"{k} => {v}")
+    return instances
+
+
+
+class SingletonMeta(type):
+    # make sure all devices only have one instance
+    _instance_map = {}
+    def __call__(cls, *args, **kwargs):
+        if cls not in cls._instance_map:
+            cls._instance_map[cls] = super().__call__(*args, **kwargs)
+        return cls._instance_map[cls]
         
 
 class Laser(ABC):
@@ -411,7 +488,7 @@ class USB6212():
         self.task.close()
 
 
-class USB6346():
+class USB6346(metaclass=SingletonMeta):
     """
     class for NI DAQ USB-6346
     
@@ -421,7 +498,6 @@ class USB6346():
     
     exit_handler method defines how to close task when exit
     """
-    _instance = None
     
     def __init__(self, exposure=1):
 
@@ -451,14 +527,6 @@ class USB6346():
         atexit.register(self.exit_handler)
         self._x = 0
         self._y = 0
-
-    def __new__(cls, *args, **kwargs):
-
-        if cls._instance is not None:
-            cls._instance.exit_handler()
-
-        cls._instance = super().__new__(cls)
-        return cls._instance
 
         
     @property
