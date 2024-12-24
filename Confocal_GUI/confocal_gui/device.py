@@ -506,6 +506,9 @@ class USB6346(metaclass=SingletonMeta):
         from nidaqmx.constants import AcquisitionType
         from nidaqmx.constants import TerminalConfiguration
         from nidaqmx.stream_readers import AnalogMultiChannelReader
+        import warnings 
+
+        warnings.filterwarnings('ignore', category=nidaqmx.errors.DaqWarning)
 
 
         self.task = nidaqmx.Task()
@@ -518,9 +521,11 @@ class USB6346(metaclass=SingletonMeta):
         self.exposure = None
         self.set_timing(exposure)
         #self.task.timing.cfg_samp_clk_timing(1000.0, sample_mode=nidaqmx.constants.AcquisitionType.FINITE, samps_per_chan=1000)
-        #self.task.triggers.pause_trigger.dig_lvl_src = '/Dev1/PFI1'
-        #self.task.triggers.pause_trigger.trig_type = nidaqmx.constants.TriggerType.DIGITAL_LEVEL
-        #self.task.triggers.pause_trigger.dig_lvl_when = nidaqmx.constants.Level.LOW
+        self.task_counter_ai.triggers.pause_trigger.dig_lvl_src = '/Dev1/PFI1'
+        self.task_counter_ai.triggers.pause_trigger.trig_type = nidaqmx.constants.TriggerType.DIGITAL_LEVEL
+        self.task_counter_ai.triggers.pause_trigger.dig_lvl_when = nidaqmx.constants.Level.LOW
+        #self.task_counter_ai.triggers.pause_trigger.cfg_dig_lvl_pause_trig('/Dev1/PFI1', when=nidaqmx.constants.Level.LOW)
+        self.task_counter_ai.in_stream.read_all_avail_samp = True
         
         self.task.start()
         self.task_counter_ai.start()
@@ -550,25 +555,40 @@ class USB6346(metaclass=SingletonMeta):
         self.task.stop()
 
 
-    def set_timing(self, exposure, clock=10000):
-        self.task_counter_ai.stop()
+    def set_timing(self, exposure, clock=500000):
+        self.clock = clock
+        self.sample_num = int(round(self.clock*exposure))
         if exposure == self.exposure:
             return
+        self.task_counter_ai.stop()
         self.exposure = exposure
-        self.task_counter_ai.timing.cfg_samp_clk_timing(clock, sample_mode=self.nidaqmx.constants.AcquisitionType.FINITE, samps_per_chan=int(round(clock*exposure)))
+        self.task_counter_ai.timing.cfg_samp_clk_timing(clock, sample_mode=self.nidaqmx.constants.AcquisitionType.FINITE, samps_per_chan=self.sample_num)
+        #self.task_counter_ai.timing.cfg_samp_clk_timing(clock, sample_mode=self.nidaqmx.constants.AcquisitionType.CONTINUOUS, samps_per_chan=2000)
 
     def read_counts_inst(self, duration, parent):
         pass
     
     def read_counts(self, duration, parent):
-
-        self.set_timing(duration)
-
         self.task_counter_ai.stop()
+        self.set_timing(duration)
         self.task_counter_ai.start()
         time.sleep(duration)
-        data_counts = float(np.mean(self.task_counter_ai.read(self.nidaqmx.constants.READ_ALL_AVAILABLE)))
-        self.task_counter_ai.stop()
+
+        try:
+            avai_samp = self.task_counter_ai.in_stream.avail_samp_per_chan
+            avai_samp1 = self.task_counter_ai.in_stream.avail_samp_per_chan
+            #print(self.task_counter_ai.in_stream.avail_samp_per_chan, 'all')
+            data_array = self.task_counter_ai.read(self.nidaqmx.constants.READ_ALL_AVAILABLE)
+            #print(len(data_array), self.clock, 'len')
+            if len(data_array) == 0:
+                data_counts = 0
+            else:
+                data_counts = float(np.sum(data_array)/self.sample_num)
+
+        except Exception as e:
+            data_counts = 0
+
+
         return data_counts
     
     @classmethod

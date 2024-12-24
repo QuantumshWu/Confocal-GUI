@@ -439,6 +439,7 @@ class LiveAcquire(threading.Thread):
         finite_counter = 0
         while 1 and finite_counter<len(self.data_x):
 
+
             if not self.is_running:
                 return
             # break loop when interrupt
@@ -446,12 +447,13 @@ class LiveAcquire(threading.Thread):
             if self.is_finite:
                 finite_counter += 1
             # roll data as live counts, from left most to right most, [:] makes sure not create new arr
-
             counts = self.counter(self.exposure, self)
             self.points_done += 1
 
             self.data_y[:] = np.roll(self.data_y, 1)
             self.data_y[0] = counts
+
+
             
         self.is_done = True
         #finish all data

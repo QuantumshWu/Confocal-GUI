@@ -270,7 +270,7 @@ class LivePlotGUI():
             
         self.clear_all() # make sure no residual artist
         self.axes.set_autoscale_on(True)
-        self.axes.ticklabel_format(axis='y', style='sci', scilimits=(-4,4))
+        self.axes.ticklabel_format(axis='y', style='sci', scilimits=(-3,3))
         # make sure no long ticks induce cut off of label
 
         self.init_core()         
@@ -296,6 +296,7 @@ class LivePlotGUI():
         self.data_generator.start()
         
     def update_figure(self):
+
         self.update_core()
             
 
@@ -303,7 +304,6 @@ class LivePlotGUI():
         self.fig.canvas.blit(self.fig.bbox)
         self.fig.canvas.flush_events()
         self.points_done = self.data_generator.points_done
-
         
         
     def init_core(self):
