@@ -573,17 +573,24 @@ class USB6346(metaclass=SingletonMeta):
         self.set_timing(duration)
         self.task_counter_ai.start()
         time.sleep(duration)
-
+        t0 = time.time()
         try:
-            avai_samp = self.task_counter_ai.in_stream.avail_samp_per_chan
-            avai_samp1 = self.task_counter_ai.in_stream.avail_samp_per_chan
-            #print(self.task_counter_ai.in_stream.avail_samp_per_chan, 'all')
+
+            while 1:
+                # tempory solution for read() returns empty array before all sample collected 
+                if self.task_counter_ai.in_stream.avail_samp_per_chan>0:
+                    #print(time.time() - t0)
+                    break
+                else:
+                    if (time.time() - t0)>0.01:
+                        break
+
             data_array = self.task_counter_ai.read(self.nidaqmx.constants.READ_ALL_AVAILABLE)
-            #print(len(data_array), self.clock, 'len')
             if len(data_array) == 0:
                 data_counts = 0
             else:
-                data_counts = float(np.sum(data_array)/self.sample_num)
+                #data_counts = float(np.sum(data_array)/self.sample_num)
+                data_counts = float(np.mean(data_array))
 
         except Exception as e:
             data_counts = 0
