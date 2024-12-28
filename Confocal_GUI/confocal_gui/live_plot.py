@@ -1781,6 +1781,31 @@ def rabi(duration_array, exposure, power, frequency, time_array, config_instance
     data_figure = DataFigure(liveplot)
     return fig, data_figure
 
+def ramsey(duration_array, exposure, power, frequency, time_array, config_instances, repeat=1, is_analog=False, is_dual=False):
+                
+    data_x = duration_array
+    data_y = np.zeros(len(data_x))
+    data_generator = RamseyAcquire(exposure = exposure, data_x=data_x, data_y=data_y, power = power, frequency = frequency, time_array = time_array, \
+        config_instances = config_instances, repeat=repeat, is_analog=is_analog, is_dual=is_dual)
+    liveplot = PLELive(labels=['Duration (ns)', f'Counts/{exposure}s'], \
+                        update_time=0.1, data_generator=data_generator, data=[data_x, data_y], config_instances = config_instances, relim_mode='tight')
+    fig, selector = liveplot.plot()
+    data_figure = DataFigure(liveplot)
+    return fig, data_figure
+
+
+def spinecho(duration_array, exposure, power, frequency, time_array, config_instances, repeat=1, is_analog=False, is_dual=False):
+                
+    data_x = duration_array
+    data_y = np.zeros(len(data_x))
+    data_generator = SpinechoAcquire(exposure = exposure, data_x=data_x, data_y=data_y, power = power, frequency = frequency, time_array = time_array, \
+        config_instances = config_instances, repeat=repeat, is_analog=is_analog, is_dual=is_dual)
+    liveplot = PLELive(labels=['Duration (ns)', f'Counts/{exposure}s'], \
+                        update_time=0.1, data_generator=data_generator, data=[data_x, data_y], config_instances = config_instances, relim_mode='tight')
+    fig, selector = liveplot.plot()
+    data_figure = DataFigure(liveplot)
+    return fig, data_figure
+
 def pl(center, coordinates_x, coordinates_y, exposure, config_instances, is_dis = False, wavelength=None):
     """
     example
