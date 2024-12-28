@@ -1757,12 +1757,25 @@ def ple(wavelength_array, exposure, config_instances, repeat=1):
     return fig, data_figure
 
 
-def odmr(frequency_array, exposure, power, config_instances, repeat=1):
+def odmr(frequency_array, exposure, power, config_instances, repeat=1, is_analog=False, is_dual=False):
                 
     data_x = frequency_array
     data_y = np.zeros(len(data_x))
-    data_generator = ODMRAcquire(exposure = exposure, data_x=data_x, data_y=data_y, power = power, config_instances = config_instances, repeat=repeat)
+    data_generator = ODMRAcquire(exposure = exposure, data_x=data_x, data_y=data_y, power = power, config_instances = config_instances, repeat=repeat, is_analog=is_analog, is_dual=is_dual)
     liveplot = PLELive(labels=['Frequency (Hz)', f'Counts/{exposure}s'], \
+                        update_time=0.1, data_generator=data_generator, data=[data_x, data_y], config_instances = config_instances, relim_mode='tight')
+    fig, selector = liveplot.plot()
+    data_figure = DataFigure(liveplot)
+    return fig, data_figure
+
+
+def rabi(duration_array, exposure, power, frequency, time_array, config_instances, repeat=1, is_analog=False, is_dual=False):
+                
+    data_x = duration_array
+    data_y = np.zeros(len(data_x))
+    data_generator = RabiAcquire(exposure = exposure, data_x=data_x, data_y=data_y, power = power, frequency = frequency, time_array = time_array, \
+        config_instances = config_instances, repeat=repeat, is_analog=is_analog, is_dual=is_dual)
+    liveplot = PLELive(labels=['Duration (ns)', f'Counts/{exposure}s'], \
                         update_time=0.1, data_generator=data_generator, data=[data_x, data_y], config_instances = config_instances, relim_mode='tight')
     fig, selector = liveplot.plot()
     data_figure = DataFigure(liveplot)
@@ -1793,14 +1806,14 @@ def pl(center, coordinates_x, coordinates_y, exposure, config_instances, is_dis 
     return fig, data_figure
 
 
-def live(data_array, exposure, config_instances, wavelength=None, is_finite=False):
+def live(data_array, exposure, config_instances, wavelength=None, is_finite=False, relim_mode='normal'):
                 
     data_x = data_array
     data_y = np.zeros(len(data_x))
     data_generator = LiveAcquire(exposure = exposure, data_x=data_x, data_y=data_y, \
                                  config_instances = config_instances, wavelength=wavelength, is_finite=is_finite)
     liveplot = PLELive(labels=['Data', f'Counts/{exposure}s'], \
-                        update_time=0.01, data_generator=data_generator, data=[data_x, data_y], config_instances = config_instances)
+                        update_time=0.01, data_generator=data_generator, data=[data_x, data_y], config_instances = config_instances, relim_mode=relim_mode)
     fig, selector = liveplot.plot()
     data_figure = DataFigure(liveplot)
     return fig, data_figure

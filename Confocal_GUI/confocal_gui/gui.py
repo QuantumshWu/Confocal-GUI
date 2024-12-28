@@ -653,7 +653,7 @@ class MainWindow(QMainWindow):
         self.live_plot_Live.init_figure_and_data()
         
         self.timer = QtCore.QTimer()
-        self.timer.setInterval(1000*self.live_plot_Live.update_time)  # Interval in milliseconds
+        self.timer.setInterval(int(1000*self.live_plot_Live.update_time))  # Interval in milliseconds
         self.timer.timeout.connect(self.update_plot)
         self.timer.start()
         

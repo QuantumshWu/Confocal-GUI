@@ -513,22 +513,22 @@ class USB6346(metaclass=SingletonMeta):
 
         self.task = nidaqmx.Task()
         self.nidaqmx = nidaqmx
-        self.task.ao_channels.add_ao_voltage_chan('Dev1/ao0', min_val=-1, max_val=1)
-        self.task.ao_channels.add_ao_voltage_chan('Dev1/ao1', min_val=-1, max_val=1)
+        self.task.ao_channels.add_ao_voltage_chan('Dev1/ao0', min_val=-5, max_val=5)
+        self.task.ao_channels.add_ao_voltage_chan('Dev1/ao1', min_val=-5, max_val=5)
         
         self.task_counter_ai = nidaqmx.Task()
         self.task_counter_ai.ai_channels.add_ai_voltage_chan("Dev1/ai0")
+        self.task_counter_ai.ai_channels.add_ai_voltage_chan("Dev1/ai1")
+        self.task_counter_ai.ai_channels.add_ai_voltage_chan("Dev1/ai2")
+
         self.exposure = None
         self.set_timing(exposure)
-        #self.task.timing.cfg_samp_clk_timing(1000.0, sample_mode=nidaqmx.constants.AcquisitionType.FINITE, samps_per_chan=1000)
-        self.task_counter_ai.triggers.pause_trigger.dig_lvl_src = '/Dev1/PFI1'
-        self.task_counter_ai.triggers.pause_trigger.trig_type = nidaqmx.constants.TriggerType.DIGITAL_LEVEL
-        self.task_counter_ai.triggers.pause_trigger.dig_lvl_when = nidaqmx.constants.Level.LOW
-        #self.task_counter_ai.triggers.pause_trigger.cfg_dig_lvl_pause_trig('/Dev1/PFI1', when=nidaqmx.constants.Level.LOW)
-        self.task_counter_ai.in_stream.read_all_avail_samp = True
         
         self.task.start()
         self.task_counter_ai.start()
+        self.reader = self.nidaqmx.stream_readers.AnalogMultiChannelReader(self.task_counter_ai.in_stream)
+        self.data_buffer = None
+        # data_buffer for faster read
         atexit.register(self.exit_handler)
         self._x = 0
         self._y = 0
@@ -555,42 +555,317 @@ class USB6346(metaclass=SingletonMeta):
         self.task.stop()
 
 
-    def set_timing(self, exposure, clock=500000):
+    def set_timing(self, exposure, clock=500e3):
+        self.clock = clock
+        self.sample_num = int(round(self.clock*exposure))
+        self.task_counter_ai.stop()
+        self.exposure = exposure
+        self.task_counter_ai.timing.cfg_samp_clk_timing(clock, sample_mode=self.nidaqmx.constants.AcquisitionType.FINITE, samps_per_chan=self.sample_num)
+
+
+
+    def read_counts(self, duration, parent, is_analog=False, is_dual=False, is_raw=False):
+        if not is_analog:
+            return 0
+
+        self.task_counter_ai.stop()
+
+        if self.data_buffer is None:
+            self.data_buffer = np.zeros((3, self.sample_num), dtype=np.float64)
+
+        if duration != self.exposure:
+            self.set_timing(duration)
+
+            self.data_buffer = np.zeros((3, self.sample_num), dtype=np.float64)
+
+        #reader = self.nidaqmx.stream_readers.AnalogMultiChannelReader(self.task_counter_ai.in_stream)
+
+        self.task_counter_ai.start()
+        time.sleep(duration)
+        self.reader.read_many_sample(self.data_buffer, number_of_samples_per_channel = self.sample_num)
+        self.task_counter_ai.stop()
+
+
+        if is_raw:
+
+            return self.data_buffer
+
+        else:
+
+            if is_dual:
+
+                data = self.data_buffer[0, :]
+                gate1 = self.data_buffer[1, :]
+                gate2 = self.data_buffer[2, :]
+
+                threshold = 2.7
+
+                data_gate1 = np.mean(data[gate1 > threshold])
+                data_gate2 = np.mean(data[gate2 > threshold])
+
+                # seems better than np.sum()/np.sum(), don't know why?
+                # may due to finite sampling rate than they have different array length
+
+                if (data_gate1 == 0) or (data_gate2 == 0):
+                    data_counts = 0
+                else:
+                    data_counts = data_gate1/data_gate2
+
+            else:
+
+                data = self.data_buffer[0, :]
+                gate1 = self.data_buffer[1, :]
+
+                threshold = 2.7
+
+                data_gate1 = np.mean(data[gate1 > threshold])
+
+
+                if (data_gate1 == 0):
+                    data_counts = 0
+                else:
+                    data_counts = data_gate1
+
+
+            return float(data_counts) # ratio between
+
+
+
+    
+    @classmethod
+    def exit_handler(cls):
+
+        if cls._instance is not None:
+            cls._instance.task.stop()
+            cls._instance.task.close()
+
+            cls._instance.task_counter_ai.stop()
+            cls._instance.task_counter_ai.close()
+
+
+            cls._instance = None
+
+
+class USB6346_extra(metaclass=SingletonMeta):
+    """
+    class for NI DAQ USB-6346
+    
+    will be used for scanner: ao0, ao1 for X and Y of Galvo
+    
+    and for counter, CTR1 PFI3, PFI4 for src and gate.
+    
+    exit_handler method defines how to close task when exit
+    """
+    
+    def __init__(self, exposure=1):
+
+        import atexit
+        import nidaqmx
+        from nidaqmx.constants import AcquisitionType
+        from nidaqmx.constants import TerminalConfiguration
+        from nidaqmx.stream_readers import AnalogMultiChannelReader
+        import warnings 
+
+        warnings.filterwarnings('ignore', category=nidaqmx.errors.DaqWarning)
+
+
+        self.task = nidaqmx.Task()
+        self.nidaqmx = nidaqmx
+        self.task.ao_channels.add_ao_voltage_chan('Dev1/ao0', min_val=-1, max_val=1)
+        self.task.ao_channels.add_ao_voltage_chan('Dev1/ao1', min_val=-1, max_val=1)
+        
+        self.task_counter_ai = nidaqmx.Task()
+        self.task_counter_ai.ai_channels.add_ai_voltage_chan("Dev1/ai0")
+        self.task_counter_ai.ai_channels.add_ai_voltage_chan("Dev1/ai1")
+        self.task_counter_ai.ai_channels.add_ai_voltage_chan("Dev1/ai2")
+
+
+        self.task_counter_ctr = nidaqmx.Task()
+        self.task_counter_ctr.ci_channels.add_ci_count_edges_chan("Dev1/ctr1")
+        self.task_counter_ctr_ref = nidaqmx.Task()
+        self.task_counter_ctr_ref.ci_channels.add_ci_count_edges_chan("Dev1/ctr2")
+        #self.task_counter_ai_ref = nidaqmx.Task()
+        #self.task_counter_ai_ref.ai_channels.add_ai_voltage_chan("Dev1/ai0")
+        # ref counter for eliminating experimental fluctuation longer than ~100us
+
+        self.exposure = None
+        self.set_timing(exposure)
+
+        #self.task_counter_ai.triggers.pause_trigger.dig_lvl_src = '/Dev1/PFI0'
+        #self.task_counter_ai.triggers.pause_trigger.trig_type = nidaqmx.constants.TriggerType.DIGITAL_LEVEL
+        #self.task_counter_ai.triggers.pause_trigger.dig_lvl_when = nidaqmx.constants.Level.LOW
+        #self.task_counter_ai.in_stream.read_all_avail_samp = True
+
+
+        self.task_counter_ctr.triggers.pause_trigger.dig_lvl_src = '/Dev1/PFI4'
+        self.task_counter_ctr.ci_channels.all.ci_count_edges_term = '/Dev1/PFI3'
+        self.task_counter_ctr.triggers.pause_trigger.trig_type = nidaqmx.constants.TriggerType.DIGITAL_LEVEL
+        self.task_counter_ctr.triggers.pause_trigger.dig_lvl_when = nidaqmx.constants.Level.LOW
+
+        self.task_counter_ctr_ref.triggers.pause_trigger.dig_lvl_src = '/Dev1/PFI5'
+        self.task_counter_ctr_ref.ci_channels.all.ci_count_edges_term = '/Dev1/PFI3'
+        self.task_counter_ctr_ref.triggers.pause_trigger.trig_type = nidaqmx.constants.TriggerType.DIGITAL_LEVEL
+        self.task_counter_ctr_ref.triggers.pause_trigger.dig_lvl_when = nidaqmx.constants.Level.LOW
+        
+        self.task.start()
+        self.task_counter_ai.start()
+        self.task_counter_ctr.start()
+        self.task_counter_ctr_ref.start()
+        self.reader = self.nidaqmx.stream_readers.AnalogMultiChannelReader(self.task_counter_ai.in_stream)
+        self.data_buffer = None
+        # data_buffer for faster read
+        atexit.register(self.exit_handler)
+        self._x = 0
+        self._y = 0
+
+        
+    @property
+    def x(self):
+        return self._x
+    
+    @x.setter
+    def x(self, x_in):
+        self._x = int(x_in) # in mV 
+        self.task.write([self._x/1000, self._y/1000], auto_start=True) # in V
+        self.task.stop()
+        
+    @property
+    def y(self):
+        return self._y
+    
+    @y.setter
+    def y(self, y_in):
+        self._y = int(y_in) # in mV 
+        self.task.write([self._x/1000, self._y/1000], auto_start=True) # in V
+        self.task.stop()
+
+
+    def set_timing(self, exposure, clock=500e3):
         self.clock = clock
         self.sample_num = int(round(self.clock*exposure))
         if exposure == self.exposure:
             return
         self.task_counter_ai.stop()
+        #self.task_counter_ctr.stop()
         self.exposure = exposure
         self.task_counter_ai.timing.cfg_samp_clk_timing(clock, sample_mode=self.nidaqmx.constants.AcquisitionType.FINITE, samps_per_chan=self.sample_num)
-        #self.task_counter_ai.timing.cfg_samp_clk_timing(clock, sample_mode=self.nidaqmx.constants.AcquisitionType.CONTINUOUS, samps_per_chan=2000)
+        #self.task_counter_ctr.timing.cfg_samp_clk_timing(source='/Dev1/20MHzTimebase', \
+        #    rate=clock, sample_mode=self.nidaqmx.constants.AcquisitionType.FINITE, samps_per_chan=self.sample_num)
 
     def read_counts_inst(self, duration, parent):
         pass
-    
-    def read_counts(self, duration, parent):
+
+
+    def read_counts(self, duration, parent, is_analog=False, is_dual=False, is_raw=False):
+        if not is_analog:
+            return 0
+
         self.task_counter_ai.stop()
-        self.set_timing(duration)
+
+        if self.data_buffer is None:
+            self.data_buffer = np.zeros((3, self.sample_num), dtype=np.float64)
+
+        if duration != self.exposure:
+            self.set_timing(duration)
+            self.data_buffer = np.zeros((3, self.sample_num), dtype=np.float64)
+
+        #reader = self.nidaqmx.stream_readers.AnalogMultiChannelReader(self.task_counter_ai.in_stream)
+
         self.task_counter_ai.start()
+        time.sleep(duration)
+        self.reader.read_many_sample(self.data_buffer, number_of_samples_per_channel = self.sample_num)
+        self.task_counter_ai.stop()
+
+
+        if is_raw:
+
+            return self.data_buffer
+
+        else:
+
+            data = self.data_buffer[0, :]
+            gate1 = self.data_buffer[1, :]
+            gate2 = self.data_buffer[2, :]
+
+            threshold = 2.7
+
+            data_gate1 = np.mean(data[gate1 > threshold])
+            data_gate2 = np.mean(data[gate2 > threshold])
+
+            # seems better than np.sum()/np.sum(), don't know why?
+            # may due to finite sampling rate than they have different array length
+
+            if (data_gate1 == 0) or (data_gate2 == 0):
+                data_counts = 0
+            else:
+                data_counts = data_gate1/data_gate2
+
+
+            return float(data_counts) # ratio between
+
+
+    
+    def read_counts_extra(self, duration, parent, is_analog=False, is_dual=False):
+        # not used
+
+        if is_analog:
+            self.task_counter_ai.stop()
+        else:
+            self.task_counter_ctr.stop()
+            self.task_counter_ctr_ref.stop()
+
+        self.set_timing(duration)
+
+        if is_analog:
+            self.task_counter_ai.start()
+        else:
+            self.task_counter_ctr_ref.start()
+            self.task_counter_ctr.start()
+            #self.task_counter_ctr_ref.start()
+
         time.sleep(duration)
         t0 = time.time()
         try:
 
-            while 1:
-                # tempory solution for read() returns empty array before all sample collected 
-                if self.task_counter_ai.in_stream.avail_samp_per_chan>0:
-                    #print(time.time() - t0)
-                    break
-                else:
-                    if (time.time() - t0)>0.01:
-                        break
 
-            data_array = self.task_counter_ai.read(self.nidaqmx.constants.READ_ALL_AVAILABLE)
-            if len(data_array) == 0:
-                data_counts = 0
+            if is_analog:
+
+                data_counts = self.task_counter_ai.read(self.sample_num)
+                """
+                while 1:
+                    # tempory solution for read() returns empty array before all sample collected 
+                    if self.task_counter_ai.in_stream.avail_samp_per_chan>0:
+                        #print(time.time() - t0)
+                        break
+                    else:
+                        if (time.time() - t0)>0.01:
+                            break
+
+                data_array = self.task_counter_ai.read(self.nidaqmx.constants.READ_ALL_AVAILABLE)
+
+
+                if len(data_array) == 0:
+                    data_counts = 0
+                else:
+                    #data_counts = float(np.sum(data_array)/self.sample_num)
+                    data_counts = float(np.mean(data_array))
+                """
             else:
-                #data_counts = float(np.sum(data_array)/self.sample_num)
-                data_counts = float(np.mean(data_array))
+
+                if is_dual:
+                    data_counts_ref = self.task_counter_ctr_ref.read()
+                    data_counts_ = self.task_counter_ctr.read()
+                    #data_counts_ref = self.task_counter_ctr_ref.read()
+
+                    if data_counts_ref == 0:
+                        data_counts = 0
+                    else:
+                        data_counts = data_counts_/data_counts_ref
+
+                else:
+
+                    data_counts = self.task_counter_ctr.read()
+
 
         except Exception as e:
             data_counts = 0
@@ -607,6 +882,12 @@ class USB6346(metaclass=SingletonMeta):
 
             cls._instance.task_counter_ai.stop()
             cls._instance.task_counter_ai.close()
+
+            cls._instance.task_counter_ctr.stop()
+            cls._instance.task_counter_ctr.close()
+
+            cls._instance.task_counter_ctr_ref.stop()
+            cls._instance.task_counter_ctr_ref.close()
 
             cls._instance = None
         
@@ -703,7 +984,8 @@ class DSG836():
     
     def __init__(self):
         rm = pyvisa.ResourceManager()
-        self.handle = rm.open_resource('USB0::0x1AB1::0x099C::DSG8M267M00006::INSTR')
+        #self.handle = rm.open_resource('USB0::0x1AB1::0x099C::DSG8M267M00006::INSTR')
+        self.handle = rm.open_resource('USB0::0x1AB1::0x099C::DSG8M223900103::INSTR')
         self._power = eval(self.handle.query('SOURce:Power?')[:-1])
         self._frequency = eval(self.handle.query('SOURce:FREQuency?')[:-1])
         self._iq = False # if IQ modulation is on
@@ -944,6 +1226,9 @@ class Pulse():
 
     def __init__(self, ip=None):
         from pulsestreamer import PulseStreamer, Sequence 
+
+        self.PulseStreamer = PulseStreamer
+        self.Sequence = Sequence
         if ip is None:
             self.ip = '169.254.8.2'
         else:
@@ -969,13 +1254,13 @@ class Pulse():
         for channel in range(0, 2):
             sequence.setAnalog(channel, pattern_on)
         # Stream the sequence and repeat it indefinitely
-        n_runs = PulseStreamer.REPEAT_INFINITELY
+        n_runs = self.PulseStreamer.REPEAT_INFINITELY
         self.ps.stream(sequence, n_runs)
         
     def on_pulse(self):
         
         self.off_pulse()
-        time.sleep(0.5)
+        time.sleep(0.1)
         
         def check_chs(array): # return a bool(0, 1) list for channels
             return array[1:]
@@ -1008,7 +1293,7 @@ class Pulse():
         for channel in range(0, 2):
             sequence.setAnalog(channel, pattern_on)
         # Stream the sequence and repeat it indefinitely
-        n_runs = PulseStreamer.REPEAT_INFINITELY
+        n_runs = self.PulseStreamer.REPEAT_INFINITELY
         #print(sequence.getData())
         #print('du', sequence.getDuration())
         self.ps.stream(sequence, n_runs)
