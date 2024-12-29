@@ -1043,7 +1043,7 @@ class DataFigure():
     >>> data_figure.clear()
     'remove lorent fit and text'
     """
-    def __init__(self, live_plot, address=None):
+    def __init__(self, live_plot, address=None, relim_mode='tight'):
 
         if address is None:
             self.fig = live_plot.fig
@@ -1070,19 +1070,19 @@ class DataFigure():
                 data_x = data_generator.data_x
                 data_y = data_generator.data_y
                 _live_plot = PLELive(labels=['Wavelength (nm)', f'Counts/{exposure}s'], \
-                                    update_time=0.1, data_generator=data_generator, data=[data_x, data_y], config_instances = None)
+                                    update_time=0.1, data_generator=data_generator, data=[data_x, data_y], config_instances = None, relim_mode = relim_mode)
             elif data_generator.type == 'CPT':
                 data_x = data_generator.data_x
                 data_y = data_generator.data_y
                 _live_plot = PLELive(labels=['frequency', f'Counts/{exposure}s'], \
-                                    update_time=0.1, data_generator=data_generator, data=[data_x, data_y], config_instances = None)
+                                    update_time=0.1, data_generator=data_generator, data=[data_x, data_y], config_instances = None, relim_mode = relim_mode)
 
             else:
                 data_x = data_generator.data_x
                 data_y = data_generator.data_y
                 data_z = data_generator.data_z
                 _live_plot = PLDisLive(labels=['X', 'Y', f'Counts/{exposure}s'], \
-                        update_time=1, data_generator=data_generator, data=[data_x, data_y, data_z], config_instances = None)
+                        update_time=1, data_generator=data_generator, data=[data_x, data_y, data_z], config_instances = None, relim_mode = relim_mode)
 
             fig, selector = _live_plot.plot()
             self.fig = _live_plot.fig
@@ -1313,6 +1313,83 @@ class DataFigure():
                 self.text = self.fig.axes[0].text(0.025, 0.5, 
                                                   result, transform=self.fig.axes[0].transAxes, 
                                                   color='red', ha='left', va='center')
+            else:
+                self.text.set_text(result)
+                
+            self.fig.canvas.draw()
+            
+        if is_save:
+            self.save(addr='')
+
+        return [popt_str, pcov], _popt
+
+
+    def rabi(self, p0=None, is_print=True, is_save=False, fit=True):
+        if self.mode == 'PL':
+            return 
+        spl = 299792458
+        
+        def _rabi(x, amplitude, offset, omega, decay, phi):
+            return amplitude*np.sin(2*np.pi*omega*x + phi)*np.exp(-x/decay) + offset
+        
+        if p0 is None:# no input
+            guess_amplitude = np.abs(np.max(self.data_y) - np.min(self.data_y))/2
+            guess_offset = np.mean(self.data_y)
+            guess_omega = 0.5/np.abs(self.data_x[np.argmin(self.data_y)] - self.data_x[np.argmax(self.data_y)])
+            guess_decay = np.abs(1/((1 - (np.abs(np.min(self.data_y) - guess_offset)/np.abs(np.max(self.data_y) - guess_offset)))*2*guess_omega))
+            guess_phi = np.pi/2
+
+            data_y_range = np.max(self.data_y) - np.min(self.data_y)
+
+            self.p0 = [guess_amplitude, guess_offset, guess_omega, guess_decay, guess_phi]
+
+            self.bounds = ([guess_amplitude/3, guess_offset - data_y_range, guess_omega*0.5, guess_decay/5, guess_phi - np.pi/10], \
+                [guess_amplitude*3, guess_offset + data_y_range, guess_omega*1.1, guess_decay*5, guess_phi + np.pi/10])
+        else:
+            self.p0 = p0
+
+            guess_amplitude = self.p0[0]
+            guess_offset = self.p0[1]
+            guess_omega = self.p0[2]
+            guess_decay = self.p0[3]
+            guess_phi = self.p0[4]
+
+            data_y_range = np.max(self.data_y) - np.min(self.data_y)
+
+            self.bounds = ([guess_amplitude/3, guess_offset - data_y_range, guess_omega*0.5, guess_decay/5, guess_phi - np.pi/10], \
+                [guess_amplitude*3, guess_offset + data_y_range, guess_omega*1.1, guess_decay*5, guess_phi + np.pi/10])
+        
+        if fit:
+            popt, pcov = curve_fit(_rabi, self.data_x, self.data_y, p0=self.p0, bounds = self.bounds)
+        else:
+            popt, pcov = self.p0, None
+        
+        if is_print:
+            pass
+            #print(f'popt = {popt}, pcov = {pcov}')
+        
+        if self.fit is None:
+            self.fit = self.fig.axes[0].plot(self.data_x, _rabi(self.data_x, *popt), color='orange', linestyle='--')
+        else:
+            self.fit[0].set_ydata(_rabi(self.data_x, *popt))
+        self.fig.canvas.draw()
+        
+        if is_print:
+            
+            _popt = popt
+            popt_str = ['amplitude', 'offset', 'omega', 'decay', 'phi']
+            formatted_popt = [f'{x:.5f}'.rstrip('0') for x in _popt]
+            result_list = [f'{name} = {value}' for name, value in zip(popt_str, formatted_popt)]
+            formatted_popt_str = '\n'.join(result_list)
+            result = f'{formatted_popt_str}'
+            self.log_info = result
+            # format popt to display as text
+                
+            
+            if self.text is None:
+                self.text = self.fig.axes[0].text(1-0.025, 1-0.025, 
+                                                  result, transform=self.fig.axes[0].transAxes, 
+                                                  color='red', ha='right', va='top')
             else:
                 self.text.set_text(result)
                 
@@ -1810,7 +1887,7 @@ def ROduration(duration_array, exposure, power, frequency, time_array, config_in
                 
     data_x = duration_array
     data_y = np.zeros(len(data_x))
-    data_generator = RodurationAcquire(exposure = exposure, data_x=data_x, data_y=data_y, power = power, frequency = frequency, time_array = time_array, \
+    data_generator = ROdurationAcquire(exposure = exposure, data_x=data_x, data_y=data_y, power = power, frequency = frequency, time_array = time_array, \
         config_instances = config_instances, repeat=repeat, is_analog=is_analog, is_dual=is_dual)
     liveplot = PLELive(labels=['Duration (ns)', f'Counts/{exposure}s'], \
                         update_time=0.1, data_generator=data_generator, data=[data_x, data_y], config_instances = config_instances, relim_mode='tight')

@@ -671,7 +671,7 @@ class RabiAcquire(threading.Thread):
         self.power = power
         self.frequency = frequency
         self.time_array = time_array
-        # time array is [init duration, gap1, RF total duration, gap2, Readout duration] in ns
+        # time array is [init duration, gap1, RF total duration, gap2, Readout duration, gap3 with laser on] in ns
         self.info = {'data_generator':'PLEAcquire', 'exposure':self.exposure, 'repeat':self.repeat}
         # important information to be saved with figures 
 
@@ -684,7 +684,10 @@ class RabiAcquire(threading.Thread):
 
         # ch0 is green, ch1 is RF, ch4 is counter
         delay_array = [-3e3, -2e3, 0, 0, 0, 0, 0, 0]
-        data_matrix = [[self.time_array[0], (0, 5)], [self.time_array[1], ()], [duration, (1,)], [self.time_array[3]+self.time_array[2]-duration, ()], [self.time_array[4], (0, 4)]]
+        data_matrix = [[self.time_array[0], (0, )], [self.time_array[1], ()], [duration, (1,)], [self.time_array[3]+self.time_array[2]-duration, ()], \
+        [self.time_array[4], (0, 4)], [self.time_array[5], (0,)],\
+                        [self.time_array[0], (0, )], [self.time_array[1], ()], [duration, ()], [self.time_array[3]+self.time_array[2]-duration, ()], \
+        [self.time_array[4], (0, 5)], [self.time_array[5], (0,)]]
 
         self.pulse.set_timing_simple(data_matrix)
         self.pulse.set_delay(delay_array)
@@ -769,8 +772,12 @@ class RamseyAcquire(threading.Thread):
 
         # ch0 is green, ch1 is RF, ch4 is counter
         delay_array = [-3e3, -2e3, 0, 0, 0, 0, 0, 0]
-        data_matrix = [[self.time_array[0], (0, 5)], [self.time_array[1], ()], [self.time_array[2], (1,)], [duration, ()], \
-        [self.time_array[4], (1,)], [self.time_array[5]+self.time_array[3]-duration, ()], [self.time_array[6], (0, 4)]]
+        data_matrix = [[self.time_array[0], (0,)], [self.time_array[1], ()], [self.time_array[2], (1,)], [duration, ()], \
+        [self.time_array[4], (1,)], [self.time_array[5], ()], [self.time_array[6], (0, 4)], [self.time_array[3]-duration, (0,)], \
+                        [self.time_array[0], (0,)], [self.time_array[1], ()], [self.time_array[2], ()], [duration, ()], \
+        [self.time_array[4], ()], [self.time_array[5], ()], [self.time_array[6], (0, 5)], [self.time_array[3]-duration, (0,)]] 
+
+        # repat second time for ref, and last terms are compensation for total length
 
         self.pulse.set_timing_simple(data_matrix)
         self.pulse.set_delay(delay_array)
@@ -842,7 +849,7 @@ class SpinechoAcquire(threading.Thread):
         self.power = power
         self.frequency = frequency
         self.time_array = time_array
-        # time array is [init duration, gap1, pi/2, RF total duration, pi, pi/2, gap2, Readout duration] in ns
+        # time array is [init duration, gap1, pi/2, RF total duration, pi, pi/2, gap2, Readout duration, gap3 with laser on] in ns
         self.info = {'data_generator':'PLEAcquire', 'exposure':self.exposure, 'repeat':self.repeat}
         # important information to be saved with figures 
 
@@ -857,7 +864,7 @@ class SpinechoAcquire(threading.Thread):
         delay_array = [-3e3, -2e3, 0, 0, 0, 0, 0, 0]
         data_matrix = [[self.time_array[0], (0, 5)], [self.time_array[1], ()], [self.time_array[2], (1,)], [duration, ()], \
         [self.time_array[4], (1,)], [duration, ()], [self.time_array[5], (1,)], \
-        [self.time_array[6]+self.time_array[3]-2*duration, ()], [self.time_array[7], (0, 4)]]
+        [self.time_array[6], ()], [self.time_array[7], (0, 4)], [self.time_array[8]+self.time_array[3]-2*duration, (0,)]]
 
         self.pulse.set_timing_simple(data_matrix)
         self.pulse.set_delay(delay_array)
@@ -929,6 +936,7 @@ class ROdurationAcquire(threading.Thread):
         self.power = power
         self.frequency = frequency
         self.time_array = time_array
+        ## time array is [init duration (time bin ~us), gap1, RF, gap2, Readout duration, gap3 without laser] in ns
         # time array is [init duration, gap1, RF, gap2, Readout duration] in ns
         self.info = {'data_generator':'PLEAcquire', 'exposure':self.exposure, 'repeat':self.repeat}
         # important information to be saved with figures 
@@ -942,8 +950,11 @@ class ROdurationAcquire(threading.Thread):
 
         # ch0 is green, ch1 is RF, ch4 is counter
         delay_array = [-3e3, -2e3, 0, 0, 0, 0, 0, 0]
+        #data_matrix = [[self.time_array[0], (0, 5)], [self.time_array[1], ()], [self.time_array[2], (1,)], \
+        #[self.time_array[3], ()], [duration, (0, )], [self.time_array[0], (0, 4)], [self.time_array[5]+self.time_array[4] - duration - self.time_array[0], (0,)]]
+
         data_matrix = [[duration, (0, 5)], [self.time_array[0]-duration, (0,)], [self.time_array[1], ()], [self.time_array[2], (1,)], \
-        [self.time_array[3], ()], [duration, (0, 4)], [self.time_array[4]-duration, (0,)]]
+        [self.time_array[3], ()], [duration, (0, 4)], [self.time_array[4]-duration, (0, )]]
 
         self.pulse.set_timing_simple(data_matrix)
         self.pulse.set_delay(delay_array)
