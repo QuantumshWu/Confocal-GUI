@@ -759,7 +759,7 @@ class RamseyAcquire(threading.Thread):
         self.power = power
         self.frequency = frequency
         self.time_array = time_array
-        # time array is [init duration, gap1, pi/2, RF total duration, pi/2, gap2, Readout duration] in ns
+        # time array is [init duration, gap1, pi/2, RF total duration, pi/2, gap2, Readout duration, gap3 with laser on] in ns
         self.info = {'data_generator':'PLEAcquire', 'exposure':self.exposure, 'repeat':self.repeat}
         # important information to be saved with figures 
 
@@ -773,9 +773,9 @@ class RamseyAcquire(threading.Thread):
         # ch0 is green, ch1 is RF, ch4 is counter
         delay_array = [-3e3, -2e3, 0, 0, 0, 0, 0, 0]
         data_matrix = [[self.time_array[0], (0,)], [self.time_array[1], ()], [self.time_array[2], (1,)], [duration, ()], \
-        [self.time_array[4], (1,)], [self.time_array[5], ()], [self.time_array[6], (0, 4)], [self.time_array[3]-duration, (0,)], \
+        [self.time_array[4], (1,)], [self.time_array[5]+self.time_array[3]-duration, ()], [self.time_array[6], (0, 4)], [self.time_array[7], (0, )], \
                         [self.time_array[0], (0,)], [self.time_array[1], ()], [self.time_array[2], ()], [duration, ()], \
-        [self.time_array[4], ()], [self.time_array[5], ()], [self.time_array[6], (0, 5)], [self.time_array[3]-duration, (0,)]] 
+        [self.time_array[4], ()], [self.time_array[5]+self.time_array[3]-duration, ()], [self.time_array[6], (0, 5)], [self.time_array[7], (0,)]] 
 
         # repat second time for ref, and last terms are compensation for total length
 
@@ -862,9 +862,12 @@ class SpinechoAcquire(threading.Thread):
 
         # ch0 is green, ch1 is RF, ch4 is counter
         delay_array = [-3e3, -2e3, 0, 0, 0, 0, 0, 0]
-        data_matrix = [[self.time_array[0], (0, 5)], [self.time_array[1], ()], [self.time_array[2], (1,)], [duration, ()], \
+        data_matrix = [[self.time_array[0], (0,)], [self.time_array[1], ()], [self.time_array[2], (1,)], [duration, ()], \
         [self.time_array[4], (1,)], [duration, ()], [self.time_array[5], (1,)], \
-        [self.time_array[6], ()], [self.time_array[7], (0, 4)], [self.time_array[8]+self.time_array[3]-2*duration, (0,)]]
+        [self.time_array[6]+self.time_array[3]-2*duration, ()], [self.time_array[7], (0, 4)], [self.time_array[8], (0,)], \
+                        [self.time_array[0], (0,)], [self.time_array[1], ()], [self.time_array[2], ()], [duration, ()], \
+        [self.time_array[4], ()], [duration, ()], [self.time_array[5], ()], \
+        [self.time_array[6]+self.time_array[3]-2*duration, ()], [self.time_array[7], (0, 5)], [self.time_array[8], (0,)]]
 
         self.pulse.set_timing_simple(data_matrix)
         self.pulse.set_delay(delay_array)
@@ -955,6 +958,96 @@ class ROdurationAcquire(threading.Thread):
 
         data_matrix = [[duration, (0, 5)], [self.time_array[0]-duration, (0,)], [self.time_array[1], ()], [self.time_array[2], (1,)], \
         [self.time_array[3], ()], [duration, (0, 4)], [self.time_array[4]-duration, (0, )]]
+
+        self.pulse.set_timing_simple(data_matrix)
+        self.pulse.set_delay(delay_array)
+        self.pulse.on_pulse()
+
+    
+    def run(self):
+        
+        
+        for self.repeat_done in range(self.repeat):
+
+            for i, duration in enumerate(self.data_x):
+
+                if not self.is_running:
+                    self.rf.on = False
+                    return 
+
+
+                self.set_duration(duration)
+
+
+                counts = self.counter(self.exposure, self, is_analog=self.is_analog, is_dual=self.is_dual)
+                self.points_done += 1
+
+                self.data_y[i] += counts
+            
+        self.is_done = True
+        self.rf.on = False
+        #finish all data
+        # stop and join child thread
+        
+    def stop(self):
+        if self.is_alive():
+            self.is_running = False
+            self.join()
+        
+        
+    def __enter__(self):
+        return self
+    
+    def __exit__(self, exc_type, exc_value, exc_traceback):
+        self.stop()
+
+
+
+class NVT1Acquire(threading.Thread):
+    """
+    class for NV center T1,spin measurement
+
+    green+RF - wait - RO
+
+    """
+    def __init__(self, exposure, data_x, data_y, power, frequency, time_array, config_instances, repeat=1, is_analog=False, is_dual=False):
+        super().__init__()
+        from .device import Pulse
+        self.exposure = exposure
+        self.data_x = data_x
+        self.data_y = data_y
+        self.daemon = True
+        self.is_running = True
+        self.is_done = False
+        self.counter = config_instances.get('counter')
+        self.rf = config_instances.get('rf')
+        self.config_instances = config_instances
+        self.points_done = 0
+        self.repeat = repeat
+        self.is_dual = is_dual
+        self.is_analog = is_analog
+        self.repeat_done = 1
+        self.power = power
+        self.frequency = frequency
+        self.time_array = time_array
+        # time array is [init+RF duration , gap1, wait_total, gap2, Readout duration, gap3 with laser] in ns
+        self.info = {'data_generator':'PLEAcquire', 'exposure':self.exposure, 'repeat':self.repeat}
+        # important information to be saved with figures 
+
+        self.rf.power = self.power
+        self.rf.frequency = frequency
+        self.rf.on = True
+        self.pulse = Pulse()
+
+    def set_duration(self, duration):
+
+        # ch0 is green, ch1 is RF, ch4 is counter
+        delay_array = [-3e3, -2e3, 0, 0, 0, 0, 0, 0]
+
+        data_matrix = [[self.time_array[0], (0, 1)], [self.time_array[1] + duration + self.time_array[3], ()], [self.time_array[4], (0, 4)], \
+                        [self.time_array[5]+self.time_array[2]-duration, (0,)], \
+                        [self.time_array[0], (0, )], [self.time_array[1] + duration + self.time_array[3], ()], [self.time_array[4], (0, 5)], \
+                        [self.time_array[5]+self.time_array[2]-duration, (0,)]]
 
         self.pulse.set_timing_simple(data_matrix)
         self.pulse.set_delay(delay_array)

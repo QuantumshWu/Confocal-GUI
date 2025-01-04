@@ -1401,6 +1401,105 @@ class DataFigure():
         return [popt_str, pcov], _popt
 
 
+    def decay(self, p0=None, is_print=True, is_save=False, fit=True):
+        if self.mode == 'PL':
+            return 
+        spl = 299792458
+        
+        def _exp_decay(x, amplitude, offset, decay):
+            return amplitude*np.exp(-x/decay) + offset
+        
+        if p0 is None:# no input
+
+            if (self.data_x[np.argmin(self.data_y)] - self.data_x[np.argmax(self.data_y)]) > 0:
+                guess_amplitude = np.abs(np.max(self.data_y) - np.min(self.data_y))
+            else:
+                guess_amplitude = -np.abs(np.max(self.data_y) - np.min(self.data_y))
+
+            guess_offset = np.mean(self.data_y)
+            guess_decay = np.abs(self.data_x[np.argmin(self.data_y)] - self.data_x[np.argmax(self.data_y)])/2
+
+
+
+            
+
+            data_y_range = np.max(self.data_y) - np.min(self.data_y)
+
+            self.p0 = [guess_amplitude, guess_offset, guess_decay]
+
+            if guess_amplitude >= 0:
+                self.bounds = ([guess_amplitude/4, guess_offset - data_y_range, guess_decay/10], \
+                    [guess_amplitude*4, guess_offset + data_y_range, guess_decay*10])
+            else:
+                self.bounds = ([guess_amplitude*4, guess_offset - data_y_range, guess_decay/10], \
+                    [guess_amplitude/4, guess_offset + data_y_range, guess_decay*10])
+
+        else:
+            self.p0 = p0
+
+            guess_amplitude = self.p0[0]
+            guess_offset = self.p0[1]
+            guess_decay = self.p0[2]
+
+            data_y_range = np.max(self.data_y) - np.min(self.data_y)
+
+            if guess_amplitude >= 0:
+                self.bounds = ([guess_amplitude/4, guess_offset - data_y_range, guess_decay/10], \
+                    [guess_amplitude*4, guess_offset + data_y_range, guess_decay*10])
+            else:
+                self.bounds = ([guess_amplitude*4, guess_offset - data_y_range, guess_decay/10], \
+                    [guess_amplitude/4, guess_offset + data_y_range, guess_decay*10])
+        
+        if fit:
+            popt, pcov = curve_fit(_exp_decay, self.data_x, self.data_y, p0=self.p0, bounds = self.bounds)
+        else:
+            popt, pcov = self.p0, None
+        
+        if is_print:
+            pass
+            #print(f'popt = {popt}, pcov = {pcov}')
+        
+        if self.fit is None:
+            self.fit = self.fig.axes[0].plot(self.data_x, _exp_decay(self.data_x, *popt), color='orange', linestyle='--')
+        else:
+            self.fit[0].set_ydata(_exp_decay(self.data_x, *popt))
+        self.fig.canvas.draw()
+        
+        if is_print:
+            
+            _popt = popt
+            popt_str = ['amplitude', 'offset','decay']
+            formatted_popt = [f'{x:.5f}'.rstrip('0') for x in _popt]
+            result_list = [f'{name} = {value}' for name, value in zip(popt_str, formatted_popt)]
+            formatted_popt_str = '\n'.join(result_list)
+            result = f'{formatted_popt_str}'
+            self.log_info = result
+            # format popt to display as text
+                
+            
+            if self.text is None:
+
+                if guess_amplitude > 0:
+                    self.text = self.fig.axes[0].text(1-0.025, 1-0.025, 
+                                                      result, transform=self.fig.axes[0].transAxes, 
+                                                      color='red', ha='right', va='top')
+                else:
+                    self.text = self.fig.axes[0].text(1-0.025, 0.025, 
+                                                  result, transform=self.fig.axes[0].transAxes, 
+                                                  color='red', ha='right', va='bottom')
+
+
+            else:
+                self.text.set_text(result)
+                
+            self.fig.canvas.draw()
+            
+        if is_save:
+            self.save(addr='')
+
+        return [popt_str, pcov], _popt
+
+
     def cpt(self, p0=None, is_print=True, is_save=False, fit=True):
         if self.mode == 'PL':
             return 
@@ -1882,6 +1981,20 @@ def spinecho(duration_array, exposure, power, frequency, time_array, config_inst
     fig, selector = liveplot.plot()
     data_figure = DataFigure(liveplot)
     return fig, data_figure
+
+
+def t1(duration_array, exposure, power, frequency, time_array, config_instances, repeat=1, is_analog=False, is_dual=False):
+                
+    data_x = duration_array
+    data_y = np.zeros(len(data_x))
+    data_generator = NVT1Acquire(exposure = exposure, data_x=data_x, data_y=data_y, power = power, frequency = frequency, time_array = time_array, \
+        config_instances = config_instances, repeat=repeat, is_analog=is_analog, is_dual=is_dual)
+    liveplot = PLELive(labels=['Duration (ns)', f'Counts/{exposure}s'], \
+                        update_time=0.1, data_generator=data_generator, data=[data_x, data_y], config_instances = config_instances, relim_mode='tight')
+    fig, selector = liveplot.plot()
+    data_figure = DataFigure(liveplot)
+    return fig, data_figure
+
 
 def ROduration(duration_array, exposure, power, frequency, time_array, config_instances, repeat=1, is_analog=False, is_dual=False):
                 
