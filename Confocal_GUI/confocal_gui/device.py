@@ -520,12 +520,40 @@ class USB6346(metaclass=SingletonMeta):
         self.task_counter_ai.ai_channels.add_ai_voltage_chan("Dev1/ai0")
         self.task_counter_ai.ai_channels.add_ai_voltage_chan("Dev1/ai1")
         self.task_counter_ai.ai_channels.add_ai_voltage_chan("Dev1/ai2")
+        # for analog counter
+
+        self.task_counter_ctr = nidaqmx.Task()
+        self.task_counter_ctr.ci_channels.add_ci_count_edges_chan("Dev1/ctr1")
+        # ctr1 source PFI3, gate PFI4
+        self.task_counter_ctr.triggers.pause_trigger.dig_lvl_src = '/Dev1/PFI4'
+        self.task_counter_ctr.ci_channels.all.ci_count_edges_term = '/Dev1/PFI3'
+        self.task_counter_ctr.triggers.pause_trigger.trig_type = nidaqmx.constants.TriggerType.DIGITAL_LEVEL
+        self.task_counter_ctr.triggers.pause_trigger.dig_lvl_when = nidaqmx.constants.Level.LOW
+
+
+        self.task_counter_ctr2 = nidaqmx.Task()
+        self.task_counter_ctr2.ci_channels.add_ci_count_edges_chan("Dev1/ctr2")
+        # ctr1 source PFI3, gate PFI4
+        self.task_counter_ctr2.triggers.pause_trigger.dig_lvl_src = '/Dev1/PFI5'
+        self.task_counter_ctr2.ci_channels.all.ci_count_edges_term = '/Dev1/PFI3'
+        self.task_counter_ctr2.triggers.pause_trigger.trig_type = nidaqmx.constants.TriggerType.DIGITAL_LEVEL
+        self.task_counter_ctr2.triggers.pause_trigger.dig_lvl_when = nidaqmx.constants.Level.LOW
+
+
+
+        self.task_counter_clock = nidaqmx.Task()
+        self.task_counter_clock.co_channels.add_co_pulse_chan_freq(counter="Dev1/ctr3", freq=100e3, duty_cycle=0.5)
+        # ctr2 clock for buffered edge counting ctr1
+        self.task_counter_clock.timing.cfg_implicit_timing(sample_mode=self.nidaqmx.constants.AcquisitionType.CONTINUOUS)
+        self.task_counter_clock.start()
 
         self.exposure = None
         self.set_timing(exposure)
         
         self.task.start()
         self.task_counter_ai.start()
+        self.task_counter_ctr.start()
+        self.task_counter_ctr2.start()
         self.reader = self.nidaqmx.stream_readers.AnalogMultiChannelReader(self.task_counter_ai.in_stream)
         self.data_buffer = None
         # data_buffer for faster read
@@ -559,14 +587,49 @@ class USB6346(metaclass=SingletonMeta):
         self.clock = clock
         self.sample_num = int(round(self.clock*exposure))
         self.task_counter_ai.stop()
+        self.task_counter_ctr.stop()
+        self.task_counter_ctr2.stop()
         self.exposure = exposure
         self.task_counter_ai.timing.cfg_samp_clk_timing(clock, sample_mode=self.nidaqmx.constants.AcquisitionType.FINITE, samps_per_chan=self.sample_num)
+        self.task_counter_ctr.timing.cfg_samp_clk_timing(100e3, source = '/Dev1/Ctr3InternalOutput', \
+            sample_mode=self.nidaqmx.constants.AcquisitionType.FINITE, samps_per_chan=int(round(100e3*exposure)))
+        self.task_counter_ctr2.timing.cfg_samp_clk_timing(100e3, source = '/Dev1/Ctr3InternalOutput', \
+            sample_mode=self.nidaqmx.constants.AcquisitionType.FINITE, samps_per_chan=int(round(100e3*exposure)))
+
+        #self.task_counter_ctr.timing.cfg_samp_clk_timing(100e3, source = '/Dev1/Ctr2InternalOutput', \
+        #    sample_mode=self.nidaqmx.constants.AcquisitionType.CONTINUOUS, samps_per_chan=int(round(100e3*exposure)))
 
 
 
     def read_counts(self, duration, parent, is_analog=False, is_dual=False, is_raw=False):
+
+
         if not is_analog:
-            return 0
+
+            if is_dual:
+                self.task_counter_ctr.stop()
+                self.task_counter_ctr2.stop()
+                self.task_counter_ctr.start()
+                self.task_counter_ctr2.start()
+                time.sleep(duration)
+                counts1 = self.task_counter_ctr.read(number_of_samples_per_channel = int(round(100e3*duration)))[-1]
+                counts2 = self.task_counter_ctr2.read(number_of_samples_per_channel = int(round(100e3*duration)))[-1]
+
+                if (counts1 == 0) or (counts2 == 0):
+                    counts = 0
+                else:
+                    counts = counts1/counts2
+                return counts
+                
+            else:
+
+                self.task_counter_ctr.stop()
+                self.task_counter_ctr.start()
+                time.sleep(duration)
+                counts = self.task_counter_ctr.read(number_of_samples_per_channel = int(round(100e3*duration)))[-1]
+                return counts
+
+
 
         self.task_counter_ai.stop()
 
