@@ -508,7 +508,244 @@ class USB6346(metaclass=SingletonMeta):
         from nidaqmx.stream_readers import AnalogMultiChannelReader
         import warnings 
 
-        warnings.filterwarnings('ignore', category=nidaqmx.errors.DaqWarning)
+        #warnings.filterwarnings('ignore', category=nidaqmx.errors.DaqWarning)
+        self.nidaqmx = nidaqmx
+
+        self.task = nidaqmx.Task()
+        self.nidaqmx = nidaqmx
+        self.task.ao_channels.add_ao_voltage_chan('Dev1/ao0', min_val=-5, max_val=5)
+        self.task.ao_channels.add_ao_voltage_chan('Dev1/ao1', min_val=-5, max_val=5)
+        self.task.start()
+
+        self.counter_mode = None
+        # analog, apd
+        self.valid_counter_mode = ['analog', 'apd']
+        self.data_mode = None
+        self.valid_data_mode = ['single', 'ref_div', 'ref_sub', 'dual']
+        # single, ref_div, ref_sub, dual
+
+        self.exposure = None
+        self.clock = None
+        self.tasks_to_close = [] # tasks need to be closed after swicthing counter mode  
+        self.data_buffer = None
+        self.reader = None
+        # data_buffer for faster read
+
+        atexit.register(self.exit_handler)
+        self._x = 0
+        self._y = 0
+
+        
+    @property
+    def x(self):
+        return self._x
+    
+    @x.setter
+    def x(self, x_in):
+        self._x = int(x_in) # in mV 
+        self.task.write([self._x/1000, self._y/1000], auto_start=True) # in V
+        self.task.stop()
+        
+    @property
+    def y(self):
+        return self._y
+    
+    @y.setter
+    def y(self, y_in):
+        self._y = int(y_in) # in mV 
+        self.task.write([self._x/1000, self._y/1000], auto_start=True) # in V
+        self.task.stop()
+
+
+    def set_timing(self, exposure):
+
+        match self.counter_mode:
+            case 'apd':
+                self.clock = 1e3 # sampling rate for edge counting, defines when transfer counts from DAQ to PC, should be not too large to accomdate long exposure
+                self.sample_num = int(round(self.clock*exposure))
+                self.task_counter_ctr.stop()
+                self.task_counter_ctr_ref.stop()
+                self.task_counter_ctr.timing.cfg_samp_clk_timing(self.clock, source = '/Dev1/Ctr3InternalOutput', \
+                    sample_mode=self.nidaqmx.constants.AcquisitionType.FINITE, samps_per_chan=self.sample_num)
+                self.task_counter_ctr_ref.timing.cfg_samp_clk_timing(self.clock, source = '/Dev1/Ctr3InternalOutput', \
+                    sample_mode=self.nidaqmx.constants.AcquisitionType.FINITE, samps_per_chan=self.sample_num)
+
+                self.exposure = exposure
+
+            case 'analog':
+                self.clock = 500e3 # sampling rate for analog input, should be fast enough to capture gate signal for postprocessing
+                self.sample_num = int(np.ceil(self.clock*exposure))
+                self.task_counter_ai.stop()
+                self.task_counter_ai.timing.cfg_samp_clk_timing(self.clock, sample_mode=self.nidaqmx.constants.AcquisitionType.FINITE, samps_per_chan=self.sample_num)
+                self.exposure = exposure
+                self.data_buffer = np.zeros((3, self.sample_num), dtype=np.float64)
+
+            case _:
+                print(f'can only be one of the {self.valid_counter_mode}')
+
+    def close_old_tasks(self):
+        for task in self.tasks_to_close:
+            task.stop()
+            task.close()
+
+        self.tasks_to_close = []
+
+    def set_counter(self, counter_mode = 'apd'):
+        match counter_mode:
+            case 'apd':
+
+                self.close_old_tasks()
+
+                self.task_counter_ctr = self.nidaqmx.Task()
+                self.task_counter_ctr.ci_channels.add_ci_count_edges_chan("Dev1/ctr1")
+                # ctr1 source PFI3, gate PFI4
+                self.task_counter_ctr.triggers.pause_trigger.dig_lvl_src = '/Dev1/PFI4'
+                self.task_counter_ctr.ci_channels.all.ci_count_edges_term = '/Dev1/PFI3'
+                self.task_counter_ctr.triggers.pause_trigger.trig_type = self.nidaqmx.constants.TriggerType.DIGITAL_LEVEL
+                self.task_counter_ctr.triggers.pause_trigger.dig_lvl_when = self.nidaqmx.constants.Level.LOW
+
+                self.task_counter_ctr_ref = self.nidaqmx.Task()
+                self.task_counter_ctr_ref.ci_channels.add_ci_count_edges_chan("Dev1/ctr2")
+                # ctr1 source PFI3, gate PFI5
+                self.task_counter_ctr_ref.triggers.pause_trigger.dig_lvl_src = '/Dev1/PFI5'
+                self.task_counter_ctr_ref.ci_channels.all.ci_count_edges_term = '/Dev1/PFI3'
+                self.task_counter_ctr_ref.triggers.pause_trigger.trig_type = self.nidaqmx.constants.TriggerType.DIGITAL_LEVEL
+                self.task_counter_ctr_ref.triggers.pause_trigger.dig_lvl_when = self.nidaqmx.constants.Level.LOW
+
+                self.task_counter_clock = self.nidaqmx.Task()
+                self.task_counter_clock.co_channels.add_co_pulse_chan_freq(counter="Dev1/ctr3", freq=1e3, duty_cycle=0.5)
+                # ctr3 clock for buffered edge counting ctr1 and ctr2
+                self.task_counter_clock.timing.cfg_implicit_timing(sample_mode=self.nidaqmx.constants.AcquisitionType.CONTINUOUS)
+                self.task_counter_clock.start()
+                self.task_counter_ctr.start()
+                self.task_counter_ctr_ref.start()
+
+                self.counter_mode = counter_mode
+                self.tasks_to_close = [self.task_counter_ctr, self.task_counter_ctr_ref, self.task_counter_clock]
+
+            case 'analog':
+
+                self.close_old_tasks()
+
+                self.task_counter_ai = self.nidaqmx.Task()
+                self.task_counter_ai.ai_channels.add_ai_voltage_chan("Dev1/ai0")
+                self.task_counter_ai.ai_channels.add_ai_voltage_chan("Dev1/ai1")
+                self.task_counter_ai.ai_channels.add_ai_voltage_chan("Dev1/ai2")
+                # for analog counter
+                self.task_counter_ai.start()
+                self.counter_mode = counter_mode
+                self.tasks_to_close = [self.task_counter_ai]
+                self.reader = self.nidaqmx.stream_readers.AnalogMultiChannelReader(self.task_counter_ai.in_stream)
+
+            case _:
+                print(f'can only be one of the {self.valid_counter_mode}')
+
+
+    def read_counts(self, exposure, parent=None, counter_mode = 'apd', data_mode = 'single'):
+
+        self.data_mode = data_mode
+        if (counter_mode != self.counter_mode):
+            self.set_counter(counter_mode)
+            self.set_timing(exposure)
+        elif (exposure != self.exposure):
+            self.set_timing(exposure)
+
+
+        match self.counter_mode:
+
+            case 'analog':
+                self.task_counter_ai.stop()
+                self.task_counter_ai.start()
+                time.sleep(exposure)
+                self.reader.read_many_sample(self.data_buffer, number_of_samples_per_channel = self.sample_num)
+
+                data = self.data_buffer[0, :]
+                gate1 = self.data_buffer[1, :]
+                gate2 = self.data_buffer[2, :]
+
+                threshold = 2.7
+                data_main = float(np.mean(data[gate1 > threshold]))
+                data_ref = float(np.mean(data[gate2 > threshold]))
+
+                # seems better than np.sum()/np.sum(), don't know why?
+                # may due to finite sampling rate than they have different array length
+
+
+            case 'apd':
+
+                self.task_counter_clock.stop()
+                self.task_counter_ctr.stop()
+                self.task_counter_ctr_ref.stop()
+                self.task_counter_ctr.start()
+                self.task_counter_ctr_ref.start()
+                self.task_counter_clock.start()
+
+                time.sleep(exposure)
+
+                counts_main_array = self.task_counter_ctr.read(number_of_samples_per_channel = self.sample_num)
+                counts_ref_array = self.task_counter_ctr_ref.read(number_of_samples_per_channel = self.sample_num)
+                data_main = float(counts_main_array[-1] - counts_main_array[0])
+                data_ref = float(counts_ref_array[-1] - counts_ref_array[0])
+
+
+            case _:
+                print(f'can only be one of the {self.valid_counter_mode}')
+
+
+        match self.data_mode:
+
+
+            case 'single':
+                return data_main
+
+            case 'ref_div':
+
+                if data_main==0 or data_ref==0:
+                    return 0
+                else:
+                    return data_main/data_ref
+
+            case 'ref_sub':
+                return data_main - data_ref
+
+            case 'dual':
+                return data_main, data_ref
+
+            case _:
+                print(f'can only be one of the {self.valid_data_mode}')
+    
+    @classmethod
+    def exit_handler(cls):
+
+        if cls._instance is not None:
+
+            cls._instance.close_old_tasks()
+
+
+            cls._instance = None
+
+
+class USB6346_old(metaclass=SingletonMeta):
+    """
+    class for NI DAQ USB-6346
+    
+    will be used for scanner: ao0, ao1 for X and Y of Galvo
+    
+    and for counter, CTR1 PFI3, PFI4 for src and gate.
+    
+    exit_handler method defines how to close task when exit
+    """
+    
+    def __init__(self, exposure=1):
+
+        import atexit
+        import nidaqmx
+        from nidaqmx.constants import AcquisitionType
+        from nidaqmx.constants import TerminalConfiguration
+        from nidaqmx.stream_readers import AnalogMultiChannelReader
+        import warnings 
+
+        #warnings.filterwarnings('ignore', category=nidaqmx.errors.DaqWarning)
 
 
         self.task = nidaqmx.Task()
@@ -526,6 +763,7 @@ class USB6346(metaclass=SingletonMeta):
         self.task_counter_ctr.ci_channels.add_ci_count_edges_chan("Dev1/ctr1")
         # ctr1 source PFI3, gate PFI4
         self.task_counter_ctr.triggers.pause_trigger.dig_lvl_src = '/Dev1/PFI4'
+        #self.task_counter_ctr.triggers.start_trigger.dig_lvl_src = '/Dev1/PFI4'
         self.task_counter_ctr.ci_channels.all.ci_count_edges_term = '/Dev1/PFI3'
         self.task_counter_ctr.triggers.pause_trigger.trig_type = nidaqmx.constants.TriggerType.DIGITAL_LEVEL
         self.task_counter_ctr.triggers.pause_trigger.dig_lvl_when = nidaqmx.constants.Level.LOW
@@ -535,6 +773,7 @@ class USB6346(metaclass=SingletonMeta):
         self.task_counter_ctr2.ci_channels.add_ci_count_edges_chan("Dev1/ctr2")
         # ctr1 source PFI3, gate PFI4
         self.task_counter_ctr2.triggers.pause_trigger.dig_lvl_src = '/Dev1/PFI5'
+        #self.task_counter_ctr2.triggers.start_trigger.dig_lvl_src = '/Dev1/PFI4'
         self.task_counter_ctr2.ci_channels.all.ci_count_edges_term = '/Dev1/PFI3'
         self.task_counter_ctr2.triggers.pause_trigger.trig_type = nidaqmx.constants.TriggerType.DIGITAL_LEVEL
         self.task_counter_ctr2.triggers.pause_trigger.dig_lvl_when = nidaqmx.constants.Level.LOW
@@ -542,7 +781,7 @@ class USB6346(metaclass=SingletonMeta):
 
 
         self.task_counter_clock = nidaqmx.Task()
-        self.task_counter_clock.co_channels.add_co_pulse_chan_freq(counter="Dev1/ctr3", freq=100e3, duty_cycle=0.5)
+        self.task_counter_clock.co_channels.add_co_pulse_chan_freq(counter="Dev1/ctr3", freq=1e3, duty_cycle=0.5)
         # ctr2 clock for buffered edge counting ctr1
         self.task_counter_clock.timing.cfg_implicit_timing(sample_mode=self.nidaqmx.constants.AcquisitionType.CONTINUOUS)
         self.task_counter_clock.start()
@@ -591,10 +830,10 @@ class USB6346(metaclass=SingletonMeta):
         self.task_counter_ctr2.stop()
         self.exposure = exposure
         self.task_counter_ai.timing.cfg_samp_clk_timing(clock, sample_mode=self.nidaqmx.constants.AcquisitionType.FINITE, samps_per_chan=self.sample_num)
-        self.task_counter_ctr.timing.cfg_samp_clk_timing(100e3, source = '/Dev1/Ctr3InternalOutput', \
-            sample_mode=self.nidaqmx.constants.AcquisitionType.FINITE, samps_per_chan=int(round(100e3*exposure)))
-        self.task_counter_ctr2.timing.cfg_samp_clk_timing(100e3, source = '/Dev1/Ctr3InternalOutput', \
-            sample_mode=self.nidaqmx.constants.AcquisitionType.FINITE, samps_per_chan=int(round(100e3*exposure)))
+        self.task_counter_ctr.timing.cfg_samp_clk_timing(1e3, source = '/Dev1/Ctr3InternalOutput', \
+            sample_mode=self.nidaqmx.constants.AcquisitionType.FINITE, samps_per_chan=int(np.ceil(1e3*exposure))+1)
+        self.task_counter_ctr2.timing.cfg_samp_clk_timing(1e3, source = '/Dev1/Ctr3InternalOutput', \
+            sample_mode=self.nidaqmx.constants.AcquisitionType.FINITE, samps_per_chan=int(np.ceil(1e3*exposure))+1)
 
         #self.task_counter_ctr.timing.cfg_samp_clk_timing(100e3, source = '/Dev1/Ctr2InternalOutput', \
         #    sample_mode=self.nidaqmx.constants.AcquisitionType.CONTINUOUS, samps_per_chan=int(round(100e3*exposure)))
@@ -603,6 +842,10 @@ class USB6346(metaclass=SingletonMeta):
 
     def read_counts(self, duration, parent, is_analog=False, is_dual=False, is_raw=False):
 
+        self.task_counter_clock.stop()
+
+        if duration != self.exposure:
+            self.set_timing(duration)
 
         if not is_analog:
 
@@ -611,9 +854,12 @@ class USB6346(metaclass=SingletonMeta):
                 self.task_counter_ctr2.stop()
                 self.task_counter_ctr.start()
                 self.task_counter_ctr2.start()
+                self.task_counter_clock.start()
                 time.sleep(duration)
-                counts1 = self.task_counter_ctr.read(number_of_samples_per_channel = int(round(100e3*duration)))[-1]
-                counts2 = self.task_counter_ctr2.read(number_of_samples_per_channel = int(round(100e3*duration)))[-1]
+                counts1_array = self.task_counter_ctr.read(number_of_samples_per_channel = int(np.ceil(1e3*duration))+1)
+                counts2_array = self.task_counter_ctr2.read(number_of_samples_per_channel = int(np.ceil(1e3*duration))+1)
+                counts1 = counts1_array[-1] - counts1_array[0]
+                counts2 = counts2_array[-1] - counts2_array[0]
 
                 if (counts1 == 0) or (counts2 == 0):
                     counts = 0
@@ -625,8 +871,11 @@ class USB6346(metaclass=SingletonMeta):
 
                 self.task_counter_ctr.stop()
                 self.task_counter_ctr.start()
+                self.task_counter_clock.start()
                 time.sleep(duration)
-                counts = self.task_counter_ctr.read(number_of_samples_per_channel = int(round(100e3*duration)))[-1]
+                counts1_array = self.task_counter_ctr.read(number_of_samples_per_channel = int(np.ceil(1e3*duration))+1)
+                counts1 = counts1_array[-1] - counts1_array[0]
+                counts = counts1
                 return counts
 
 
@@ -1053,6 +1302,7 @@ class DSG836():
         self._frequency = eval(self.handle.query('SOURce:FREQuency?')[:-1])
         self._iq = False # if IQ modulation is on
         self._on = False # if output is on
+        self.power_ul = 10
         
     @property
     def power(self):
@@ -1061,6 +1311,9 @@ class DSG836():
     
     @power.setter
     def power(self, power_in):
+        if power_in > self.power_ul:
+            power_in = self.power_ul
+            print(f'can not exceed RF power {self.power_ul}dbm')
         self._power = power_in
         self.handle.write(f'SOURce:Power {self._power}')
     
@@ -1272,6 +1525,8 @@ class AMI():
         return np.hstack([mat[:-1], -mat])
 
 
+
+
 class Pulse():
     """
     class for calling pulse streamer in jupyter notebook, refer to pulse_stremer.py gui 
@@ -1282,6 +1537,8 @@ class Pulse():
     channels is 1 for on, 0 for off
 
     self.set_delay(delay_array)
+
+    fixed 8ns limits of pulse streamer
 
 
 
@@ -1294,6 +1551,7 @@ class Pulse():
         self.Sequence = Sequence
         if ip is None:
             self.ip = '169.254.8.2'
+            # default ip address of pulse streamer
         else:
             self.ip = ip
         self.ps = PulseStreamer(self.ip)
@@ -1301,6 +1559,8 @@ class Pulse():
         self.delay_array = np.array([0,]*8)
 
         self.data_matrix = np.array([[1e3, 1,1,1,1,1,1,1,1], [1e3, 1,1,1,1,1,1,1,1]])
+        # example of data_matrix [[duration in ns, on or off for channel i, ...], ...]
+        self.total_duration = 0
 
 
     def off_pulse(self):
@@ -1308,69 +1568,60 @@ class Pulse():
 
         # Create a sequence object
         sequence = self.ps.createSequence()
-
-        # Create sequence and assign pattern to digital channel 0
         pattern_off = [(1e3, 0), (1e3, 0)]
-        pattern_on = [(1e3, 1), (1e3, 1)]
         for channel in range(0, 8):
-            sequence.setDigital(channel, pattern_off)# couter gate
-        for channel in range(0, 2):
-            sequence.setAnalog(channel, pattern_on)
+            sequence.setDigital(channel, pattern_off)
         # Stream the sequence and repeat it indefinitely
         n_runs = self.PulseStreamer.REPEAT_INFINITELY
-        self.ps.stream(sequence, n_runs)
+        self.ps.stream(self.Sequence.repeat(sequence, 8), n_runs)
+        # need to repeat 8 times because pulse streamer will pad sequence to multiple of 8ns, otherwise unexpected changes of pulse
         
     def on_pulse(self):
         
         self.off_pulse()
-        time.sleep(0.1)
         
-        def check_chs(array): # return a bool(0, 1) list for channels
+        def check_chs(array): 
+            # return a bool(0, 1) list for channels
+            # defines the truth table of channels at a given period of pulse
             return array[1:]
         
-        data_matrix = self.read_data()
-        count = len(data_matrix)
+        time_slices = self.read_data()
         sequence = self.ps.createSequence()
-        pattern_on = [(2, 1), (2, 1)]
-        
-        
-        #if(count == 1):
-        #    start = pb_inst_pbonly64(check_chs(data_matrix[0])+disable, Inst.CONTINUE, 0, data_matrix[0][0])
-        #    pb_inst_pbonly64(check_chs(data_matrix[-1])+disable, Inst.BRANCH, start, data_matrix[-1][0])
-
-        #else:
-        #    start = pb_inst_pbonly64(check_chs(data_matrix[0])+disable, Inst.CONTINUE, 0, data_matrix[0][0])
-        #    for i in range(count-2):
-        #        pb_inst_pbonly64(check_chs(data_matrix[i+1])+disable, Inst.CONTINUE, 0, data_matrix[i+1][0])
-         #   pb_inst_pbonly64(check_chs(data_matrix[-1])+disable, Inst.BRANCH, start, data_matrix[-1][0])
 
         for channel in range(0, 8):
+            time_slice = time_slices[channel]
+            count = len(time_slice)
             pattern = []
-            pattern.append((data_matrix[0][0], check_chs(data_matrix[0])[channel]))
+            # pattern is [(duration in ns, 1 for on or 0 for off), ...]
+            pattern.append((time_slice[0][0], time_slice[0][1]))
             for i in range(count-2):
-                pattern.append((data_matrix[i+1][0], check_chs(data_matrix[i+1])[channel]))
-            pattern.append((data_matrix[-1][0], check_chs(data_matrix[-1])[channel]))
-            #print(channel, pattern)
+                pattern.append((time_slice[i+1][0], time_slice[i+1][1]))
+            pattern.append((time_slice[-1][0], time_slice[-1][1]))
+
             sequence.setDigital(channel, pattern)
 
-        for channel in range(0, 2):
-            sequence.setAnalog(channel, pattern_on)
+
         # Stream the sequence and repeat it indefinitely
         n_runs = self.PulseStreamer.REPEAT_INFINITELY
-        #print(sequence.getData())
-        #print('du', sequence.getDuration())
-        self.ps.stream(sequence, n_runs)
+        self.ps.stream(self.Sequence.repeat(sequence, 8), n_runs)
+
+        time.sleep(0.1 + self.total_duration/1e9)
+        # make sure pulse is stable and ready for measurement
+        return time_slices
 
     def set_timing_simple(self, timing_matrix):
         # set_timing_simple([[duration0, [channels0, ]], [], [], []])
         # eg. 
-        # set_timing_simple([[100, (3)], [100, (3,5)]])
+        # set_timing_simple([[100, (3,)], [100, (3,5)]])
         # channel0 - channel7
         n_sequence = len(timing_matrix)
-        data_matrix = np.zeros((n_sequence, 9))
+        if n_sequence <= 2:
+            print('pulse length must larger than 2')
+            return 
+        data_matrix = [[0]*9 for _ in range(n_sequence)]
 
         for i in range(n_sequence):
-            data_matrix[i][0] = timing_matrix[i][0]
+            data_matrix[i][0] = int(timing_matrix[i][0]) # avoid possible float number ns duration input
 
             for channel in timing_matrix[i][1]:
                 data_matrix[i][channel+1] = 1
@@ -1378,328 +1629,77 @@ class Pulse():
 
         self.data_matrix = data_matrix
 
-    def set_timing(self, timing_matrix):
-        # timming matrix is n_sequence*(1+8) matrix, one for during, eight for channels
+    def set_timing(self, data_matrix):
+        # data_matrix is n_sequence*(1+8) matrix, one for during, eight for channels
         # duraing is in ns
         # channels is 1 for on, 0 for off
-        self.data_matrix = timing_matrix
-
-    def set_delay(self, delay_array):
-        self.delay_array = delay_array
-
-
-
-                    
-    def read_data(self):
-        
-        data_delay_matrix = self.delay(self.data_matrix)
-        
-        return data_delay_matrix
-    
-    def delay(self, data_matrix):
-        # add delay, separate by all channels' time slices
-        
-        def extract_time_slice(data_matrix):
-            # extract data_matrix[:,i+1]'s time slice in format [(time_i, enable_i), ...] such that enable_i for time_i-1 to time_i
-            time_slice_array = [[(0, 0)] for i in range(len(data_matrix[0]) - 1)]
-            cur_time = 0
-            for ii, pulse in enumerate(data_matrix):
-                #print(pulse)
-                cur_time += pulse[0]
-                for channel in range(len(data_matrix[0]) - 1):
-                    time_slice_array[channel].append((cur_time, pulse[channel+1]))
-
-            return time_slice_array
-    
-        def combine_time_slice(time_slice_array):
-            time_all = []
-            for i, time_slice in enumerate(time_slice_array):
-                for i, time_label in enumerate(time_slice):
-                    if(time_label[0] not in time_all):
-                        time_all.append(time_label[0])
-
-            data_matrix = np.zeros((len(time_all), len(time_slice_array)+1))
-            data_matrix[:, 0] = np.sort(time_all)
-
-            time_all = np.sort(time_all)
-
-            for i, time_slice in enumerate(time_slice_array):
-                cur_ref_index = 0 #time_slice
-                cur_status = 0
-                for j in range(len(time_all)):
-                    cur_status = time_slice[cur_ref_index + 1][1]
-                    data_matrix[j, i+1] += cur_status
-                    #print(time_slice, time_all, cur_status, i, j)
-                    if(time_all[j]>=time_slice[cur_ref_index + 1][0]):
-                        cur_ref_index += 1
-
-            cur = 0
-            last = 0
-            for pulse in data_matrix[1:]:
-                cur = pulse[0]
-                pulse[0] = pulse[0] - last
-                last = cur
-            return np.array(data_matrix[1:], dtype=int)
-
-        def delay_channel(time_slice_array, channel_i, delay_time):
-            # channel_i from 0 to n
-            total_time = time_slice_array[0][-1][0] # first channel, last time stamp, time
-            delay_time = delay_time%total_time
-            if delay_time==0:
-                return time_slice_array
-            time_slice = time_slice_array[channel_i]
-            time_slice_delayed = []
-            is_boundary = 0
-            is_delay_at_boundary = 0
-            for i, time_stamp in enumerate(time_slice[1:]):# skip (0,0) since the (total_time, i) works
-                if not is_boundary and (time_stamp[0]+delay_time) >= total_time:
-                    is_boundary = 1
-                    boundary_i = i
-                time_stamp_delayed = ((time_stamp[0]+delay_time)%total_time, time_stamp[1])
-                if time_stamp_delayed[0]==0:
-                    is_delay_at_boundary = 1
-                time_slice_delayed.append(time_stamp_delayed)
-
-            #print(boundary_i, time_slice_delayed)
-            if is_delay_at_boundary:
-                time_slice_delayed = [(0,0)] + time_slice_delayed[boundary_i:][1:] + time_slice_delayed[:boundary_i] \
-                                    + [(total_time, time_slice_delayed[boundary_i][1])]
-            else:
-                time_slice_delayed = [(0,0)] + time_slice_delayed[boundary_i:] + time_slice_delayed[:boundary_i] \
-                                    + [(total_time, time_slice_delayed[boundary_i][1])]
-            time_slice_array[channel_i] = time_slice_delayed
-
-            return time_slice_array
-
-        def delay_sequence(data_matrix, channel_i, delay_time):
-            time_slice_array = extract_time_slice(data_matrix)
-            time_slice_array = delay_channel(time_slice_array, channel_i, delay_time)
-            data_matrix = combine_time_slice(time_slice_array)
-            return data_matrix
-        
-        for j in range(8):
-            data_matrix =  delay_sequence(data_matrix, j, self.delay_array[j])
-            
-        return data_matrix
-
-
-class Pulsev2():
-    """
-    class for calling pulse streamer in jupyter notebook, refer to pulse_stremer.py gui 
-
-    self.set_timing(timing_matrix)
-    timming matrix is n_sequence*(1+8) matrix, one for during, eight for channels
-    duraing is in ns
-    channels is 1 for on, 0 for off
-
-    self.set_delay(delay_array)
-
-
-
-    """
-
-    def __init__(self, ip=None, analog_V=None):
-
-        if ip is None:
-            self.ip = '169.254.8.2'
-        else:
-            self.ip = ip
-        self.ps = PulseStreamer(self.ip)
-
-        self.delay_array = np.array([0,]*10)
-
-        self.data_matrix = np.array([[1e3, 1,1,1,1,1,1,1,1,1,1], [1e3, 1,1,1,1,1,1,1,1,1,1]])
-
-        if analog_V is None:
-            self.analog_V = [1, 1]
-        else:
-            self.analog_V = analog_V
-
-
-    def off_pulse(self):
-
-
-        # Create a sequence object
-        sequence = self.ps.createSequence()
-
-        # Create sequence and assign pattern to digital channel 0
-        pattern_off = [(1e3, 0), (1e3, 0)]
-        pattern_on = [(1e3, 1), (1e3, 1)]
-        for channel in range(0, 8):
-            sequence.setDigital(channel, pattern_off)# couter gate
-        for channel in range(8, 10):
-            sequence.setAnalog(channel-8, pattern_off)
-        # Stream the sequence and repeat it indefinitely
-        n_runs = PulseStreamer.REPEAT_INFINITELY
-        self.ps.stream(sequence, n_runs)
-        
-    def on_pulse(self):
-        
-        self.off_pulse()
-        time.sleep(0.5)
-        
-        def check_chs(array): # return a bool(0, 1) list for channels
-            return array[1:]
-        
-        data_matrix = self.read_data()
-        count = len(data_matrix)
-        sequence = self.ps.createSequence()
-        pattern_on = [(2, 1), (2, 1)]
-        
-        
-        #if(count == 1):
-        #    start = pb_inst_pbonly64(check_chs(data_matrix[0])+disable, Inst.CONTINUE, 0, data_matrix[0][0])
-        #    pb_inst_pbonly64(check_chs(data_matrix[-1])+disable, Inst.BRANCH, start, data_matrix[-1][0])
-
-        #else:
-        #    start = pb_inst_pbonly64(check_chs(data_matrix[0])+disable, Inst.CONTINUE, 0, data_matrix[0][0])
-        #    for i in range(count-2):
-        #        pb_inst_pbonly64(check_chs(data_matrix[i+1])+disable, Inst.CONTINUE, 0, data_matrix[i+1][0])
-         #   pb_inst_pbonly64(check_chs(data_matrix[-1])+disable, Inst.BRANCH, start, data_matrix[-1][0])
-
-        for channel in range(0, 8):
-            pattern = []
-            pattern.append((data_matrix[0][0], check_chs(data_matrix[0])[channel]))
-            for i in range(count-2):
-                pattern.append((data_matrix[i+1][0], check_chs(data_matrix[i+1])[channel]))
-            pattern.append((data_matrix[-1][0], check_chs(data_matrix[-1])[channel]))
-            #print(channel, pattern)
-            sequence.setDigital(channel, pattern)
-
-        for channel in range(8, 10):
-            cur_V = self.analog_V[channel-8]
-            pattern = []
-            pattern.append((data_matrix[0][0], cur_V*check_chs(data_matrix[0])[channel]))
-            for i in range(count-2):
-                pattern.append((data_matrix[i+1][0], cur_V*check_chs(data_matrix[i+1])[channel]))
-            pattern.append((data_matrix[-1][0], cur_V*check_chs(data_matrix[-1])[channel]))
-            sequence.setAnalog(channel-8, pattern)
-        # Stream the sequence and repeat it indefinitely
-        n_runs = PulseStreamer.REPEAT_INFINITELY
-        #print(sequence.getData())
-        #print('du', sequence.getDuration())
-        self.ps.stream(sequence, n_runs)
-
-    def set_timing_simple(self, timing_matrix):
-        # set_timing_simple([[duration0, [channels0, ]], [], [], []])
-        # eg. 
-        # set_timing_simple([[100, (3)], [100, (3,5)]])
-        # channel0 - channel7
-        n_sequence = len(timing_matrix)
-        data_matrix = np.zeros((n_sequence, 11))
-
-        for i in range(n_sequence):
-            data_matrix[i][0] = timing_matrix[i][0]
-
-            for channel in timing_matrix[i][1]:
-                data_matrix[i][channel+1] = 1
-
-
+        # example of data_matrix [[duration in ns, on or off for channel i, ...], ...]
+        # [[1e3, 1, 1, 1, 1, 1, 1, 1, 1], ...]
+        n_sequence = len(data_matrix)
+        if n_sequence <= 2:
+            print('pulse length must larger than 2')
+            return 
         self.data_matrix = data_matrix
 
-    def set_timing(self, timing_matrix):
-        # timming matrix is n_sequence*(1+8) matrix, one for during, eight for channels
-        # duraing is in ns
-        # channels is 1 for on, 0 for off
-        self.data_matrix = timing_matrix
-
     def set_delay(self, delay_array):
-        self.delay_array = delay_array
+        self.delay_array = [int(delay) for delay in delay_array]
 
 
 
                     
     def read_data(self):
+
+        # return delayed time_slices [[[t0, 1], [t1, 0], ...], [], [],...] for all channels
         
-        data_delay_matrix = self.delay(self.data_matrix)
+        data_matrix = self.data_matrix
+        # data_matrix is [[1e3, 1, 1, 1, 1, 1, 1, 1, 1], ...]
+
+        time_slices = []
+        for channel in range(8):
+            time_slice = [[period[0], period[channel+1]] for period in data_matrix]
+            time_slice_delayed = self.delay(self.delay_array[channel], time_slice)
+            time_slices.append(time_slice_delayed)
         
-        return data_delay_matrix
+        return time_slices
     
-    def delay(self, data_matrix):
-        # add delay, separate by all channels' time slices
-        
-        def extract_time_slice(data_matrix):
-            # extract data_matrix[:,i+1]'s time slice in format [(time_i, enable_i), ...] such that enable_i for time_i-1 to time_i
-            time_slice_array = [[(0, 0)] for i in range(len(data_matrix[0]) - 1)]
-            cur_time = 0
-            for ii, pulse in enumerate(data_matrix):
-                #print(pulse)
-                cur_time += pulse[0]
-                for channel in range(len(data_matrix[0]) - 1):
-                    time_slice_array[channel].append((cur_time, pulse[channel+1]))
+    def delay(self, delay, time_slice):
+        # accept time slice
+        # example of time slice [[duration in ns, on or off], ...]
+        # [[1e3, 1], [1e3, 0], ...] 
+        # add delay to time slice (mod by total duration)
 
-            return time_slice_array
-    
-        def combine_time_slice(time_slice_array):
-            time_all = []
-            for i, time_slice in enumerate(time_slice_array):
-                for i, time_label in enumerate(time_slice):
-                    if(time_label[0] not in time_all):
-                        time_all.append(time_label[0])
+        total_duration = 0
+        for period in time_slice:
+            total_duration += period[0]
 
-            data_matrix = np.zeros((len(time_all), len(time_slice_array)+1))
-            data_matrix[:, 0] = np.sort(time_all)
+        self.total_duration = total_duration
 
-            time_all = np.sort(time_all)
+        delay = delay%total_duration
 
-            for i, time_slice in enumerate(time_slice_array):
-                cur_ref_index = 0 #time_slice
-                cur_status = 0
-                for j in range(len(time_all)):
-                    cur_status = time_slice[cur_ref_index + 1][1]
-                    data_matrix[j, i+1] += cur_status
-                    #print(time_slice, time_all, cur_status, i, j)
-                    if(time_all[j]>=time_slice[cur_ref_index + 1][0]):
-                        cur_ref_index += 1
+        if delay == 0:
+            return time_slice
 
-            cur = 0
-            last = 0
-            for pulse in data_matrix[1:]:
-                cur = pulse[0]
-                pulse[0] = pulse[0] - last
-                last = cur
-            return np.array(data_matrix[1:], dtype=int)
 
-        def delay_channel(time_slice_array, channel_i, delay_time):
-            # channel_i from 0 to n
-            total_time = time_slice_array[0][-1][0] # first channel, last time stamp, time
-            delay_time = delay_time%total_time
-            if delay_time==0:
-                return time_slice_array
-            time_slice = time_slice_array[channel_i]
-            time_slice_delayed = []
-            is_boundary = 0
-            is_delay_at_boundary = 0
-            for i, time_stamp in enumerate(time_slice[1:]):# skip (0,0) since the (total_time, i) works
-                if not is_boundary and (time_stamp[0]+delay_time) >= total_time:
-                    is_boundary = 1
-                    boundary_i = i
-                time_stamp_delayed = ((time_stamp[0]+delay_time)%total_time, time_stamp[1])
-                if time_stamp_delayed[0]==0:
-                    is_delay_at_boundary = 1
-                time_slice_delayed.append(time_stamp_delayed)
+        # below assumes delay > 0
+        cur_time = 0
+        for ii, period in enumerate(time_slice[::-1]):
+            # count from end of pulse for delay > 0
+            cur_time += period[0]
+            if delay == cur_time:
+                return time_slice[-(ii+1):] + time_slice[:-(ii+1)]
+                # cycle roll the time slice to right (ii+1) elements
+            if delay < cur_time:
+                duration_lhs = cur_time - delay
+                # duration left on the left hand side of pulse
+                duration_rhs = period[0] - duration_lhs
 
-            #print(boundary_i, time_slice_delayed)
-            if is_delay_at_boundary:
-                time_slice_delayed = [(0,0)] + time_slice_delayed[boundary_i:][1:] + time_slice_delayed[:boundary_i] \
-                                    + [(total_time, time_slice_delayed[boundary_i][1])]
-            else:
-                time_slice_delayed = [(0,0)] + time_slice_delayed[boundary_i:] + time_slice_delayed[:boundary_i] \
-                                    + [(total_time, time_slice_delayed[boundary_i][1])]
-            time_slice_array[channel_i] = time_slice_delayed
+                time_slice_lhs = time_slice[:-(ii+1)] + [[duration_lhs, period[1]], ]
+                time_slice_rhs = [[duration_rhs, period[1]], ] + time_slice[-(ii+1):][1:] # skip the old [t_ii, enable_ii] period
+                return time_slice_rhs + time_slice_lhs
 
-            return time_slice_array
+            # else will be delay > cur_time and should continue 
 
-        def delay_sequence(data_matrix, channel_i, delay_time):
-            time_slice_array = extract_time_slice(data_matrix)
-            time_slice_array = delay_channel(time_slice_array, channel_i, delay_time)
-            data_matrix = combine_time_slice(time_slice_array)
-            return data_matrix
-        
-        for j in range(10):
-            data_matrix =  delay_sequence(data_matrix, j, self.delay_array[j])
-            
-        return data_matrix
+
 
 
     

@@ -1933,11 +1933,11 @@ def ple(wavelength_array, exposure, config_instances, repeat=1):
     return fig, data_figure
 
 
-def odmr(frequency_array, exposure, power, config_instances, repeat=1, is_analog=False, is_dual=False):
+def odmr(frequency_array, exposure, power, config_instances, repeat=1, counter_mode = 'apd', data_mode = 'ref_div'):
                 
     data_x = frequency_array
     data_y = np.zeros(len(data_x))
-    data_generator = ODMRAcquire(exposure = exposure, data_x=data_x, data_y=data_y, power = power, config_instances = config_instances, repeat=repeat, is_analog=is_analog, is_dual=is_dual)
+    data_generator = ODMRAcquire(exposure = exposure, data_x=data_x, data_y=data_y, power = power, config_instances = config_instances, repeat=repeat, counter_mode=counter_mode, data_mode=data_mode)
     liveplot = PLELive(labels=['Frequency (Hz)', f'Counts/{exposure}s'], \
                         update_time=0.1, data_generator=data_generator, data=[data_x, data_y], config_instances = config_instances, relim_mode='tight')
     fig, selector = liveplot.plot()
@@ -1945,24 +1945,24 @@ def odmr(frequency_array, exposure, power, config_instances, repeat=1, is_analog
     return fig, data_figure
 
 
-def rabi(duration_array, exposure, power, frequency, time_array, config_instances, repeat=1, is_analog=False, is_dual=False):
+def rabi(duration_array, exposure, power, frequency, time_array, config_instances, repeat=1, counter_mode = 'apd', data_mode = 'ref_div'):
                 
     data_x = duration_array
     data_y = np.zeros(len(data_x))
     data_generator = RabiAcquire(exposure = exposure, data_x=data_x, data_y=data_y, power = power, frequency = frequency, time_array = time_array, \
-        config_instances = config_instances, repeat=repeat, is_analog=is_analog, is_dual=is_dual)
+        config_instances = config_instances, repeat=repeat, counter_mode=counter_mode, data_mode=data_mode)
     liveplot = PLELive(labels=['Duration (ns)', f'Counts/{exposure}s'], \
                         update_time=0.1, data_generator=data_generator, data=[data_x, data_y], config_instances = config_instances, relim_mode='tight')
     fig, selector = liveplot.plot()
     data_figure = DataFigure(liveplot)
     return fig, data_figure
 
-def ramsey(duration_array, exposure, power, frequency, time_array, config_instances, repeat=1, is_analog=False, is_dual=False):
+def ramsey(duration_array, exposure, power, frequency, time_array, config_instances, repeat=1, counter_mode = 'apd', data_mode = 'ref_div'):
                 
     data_x = duration_array
     data_y = np.zeros(len(data_x))
     data_generator = RamseyAcquire(exposure = exposure, data_x=data_x, data_y=data_y, power = power, frequency = frequency, time_array = time_array, \
-        config_instances = config_instances, repeat=repeat, is_analog=is_analog, is_dual=is_dual)
+        config_instances = config_instances, repeat=repeat, counter_mode=counter_mode, data_mode=data_mode)
     liveplot = PLELive(labels=['Duration (ns)', f'Counts/{exposure}s'], \
                         update_time=0.1, data_generator=data_generator, data=[data_x, data_y], config_instances = config_instances, relim_mode='tight')
     fig, selector = liveplot.plot()
@@ -1970,12 +1970,12 @@ def ramsey(duration_array, exposure, power, frequency, time_array, config_instan
     return fig, data_figure
 
 
-def spinecho(duration_array, exposure, power, frequency, time_array, config_instances, repeat=1, is_analog=False, is_dual=False):
+def spinecho(duration_array, exposure, power, frequency, time_array, config_instances, repeat=1, counter_mode = 'apd', data_mode = 'ref_div'):
                 
     data_x = duration_array
     data_y = np.zeros(len(data_x))
     data_generator = SpinechoAcquire(exposure = exposure, data_x=data_x, data_y=data_y, power = power, frequency = frequency, time_array = time_array, \
-        config_instances = config_instances, repeat=repeat, is_analog=is_analog, is_dual=is_dual)
+        config_instances = config_instances, repeat=repeat, counter_mode=counter_mode, data_mode=data_mode)
     liveplot = PLELive(labels=['Duration (ns)', f'Counts/{exposure}s'], \
                         update_time=0.1, data_generator=data_generator, data=[data_x, data_y], config_instances = config_instances, relim_mode='tight')
     fig, selector = liveplot.plot()
@@ -1983,12 +1983,12 @@ def spinecho(duration_array, exposure, power, frequency, time_array, config_inst
     return fig, data_figure
 
 
-def t1(duration_array, exposure, power, frequency, time_array, config_instances, repeat=1, is_analog=False, is_dual=False):
+def t1(duration_array, exposure, power, frequency, time_array, config_instances, repeat=1, counter_mode = 'apd', data_mode = 'ref_div'):
                 
     data_x = duration_array
     data_y = np.zeros(len(data_x))
     data_generator = NVT1Acquire(exposure = exposure, data_x=data_x, data_y=data_y, power = power, frequency = frequency, time_array = time_array, \
-        config_instances = config_instances, repeat=repeat, is_analog=is_analog, is_dual=is_dual)
+        config_instances = config_instances, repeat=repeat, counter_mode=counter_mode, data_mode=data_mode)
     liveplot = PLELive(labels=['Duration (ns)', f'Counts/{exposure}s'], \
                         update_time=0.1, data_generator=data_generator, data=[data_x, data_y], config_instances = config_instances, relim_mode='tight')
     fig, selector = liveplot.plot()
@@ -1996,12 +1996,12 @@ def t1(duration_array, exposure, power, frequency, time_array, config_instances,
     return fig, data_figure
 
 
-def ROduration(duration_array, exposure, power, frequency, time_array, config_instances, repeat=1, is_analog=False, is_dual=False):
+def ROduration(duration_array, exposure, power, frequency, time_array, config_instances, repeat=1, counter_mode = 'apd', data_mode = 'ref_div'):
                 
     data_x = duration_array
     data_y = np.zeros(len(data_x))
     data_generator = ROdurationAcquire(exposure = exposure, data_x=data_x, data_y=data_y, power = power, frequency = frequency, time_array = time_array, \
-        config_instances = config_instances, repeat=repeat, is_analog=is_analog, is_dual=is_dual)
+        config_instances = config_instances, repeat=repeat, counter_mode=counter_mode, data_mode=data_mode)
     liveplot = PLELive(labels=['Duration (ns)', f'Counts/{exposure}s'], \
                         update_time=0.1, data_generator=data_generator, data=[data_x, data_y], config_instances = config_instances, relim_mode='tight')
     fig, selector = liveplot.plot()
@@ -2033,12 +2033,12 @@ def pl(center, coordinates_x, coordinates_y, exposure, config_instances, is_dis 
     return fig, data_figure
 
 
-def live(data_array, exposure, config_instances, wavelength=None, is_finite=False, relim_mode='normal'):
+def live(data_array, exposure, config_instances, wavelength=None, is_finite=False, relim_mode='normal', counter_mode = 'apd', data_mode = 'single'):
                 
     data_x = data_array
     data_y = np.zeros(len(data_x))
     data_generator = LiveAcquire(exposure = exposure, data_x=data_x, data_y=data_y, \
-                                 config_instances = config_instances, wavelength=wavelength, is_finite=is_finite)
+                                 config_instances = config_instances, wavelength=wavelength, is_finite=is_finite, counter_mode=counter_mode, data_mode=data_mode)
     liveplot = PLELive(labels=['Data', f'Counts/{exposure}s'], \
                         update_time=0.01, data_generator=data_generator, data=[data_x, data_y], config_instances = config_instances, relim_mode=relim_mode)
     fig, selector = liveplot.plot()

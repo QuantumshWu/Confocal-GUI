@@ -53,6 +53,9 @@ class MainWindow(QMainWindow):
 
         ip = '169.254.8.2'
         self.ps = PulseStreamer(ip)
+        self.PulseStreamer = PulseStreamer
+        self.Sequence = Sequence
+        self.delay_array = None
 
 
     def off_pulse(self):
@@ -60,58 +63,47 @@ class MainWindow(QMainWindow):
 
         # Create a sequence object
         sequence = self.ps.createSequence()
-
-        # Create sequence and assign pattern to digital channel 0
         pattern_off = [(1e3, 0), (1e3, 0)]
-        pattern_on = [(1e3, 1), (1e3, 1)]
         for channel in range(0, 8):
-            sequence.setDigital(channel, pattern_off)# couter gate
-        for channel in range(0, 2):
-            sequence.setAnalog(channel, pattern_on)
+            sequence.setDigital(channel, pattern_off)
         # Stream the sequence and repeat it indefinitely
-        n_runs = PulseStreamer.REPEAT_INFINITELY
-        self.ps.stream(sequence, n_runs)
-        
+        n_runs = self.PulseStreamer.REPEAT_INFINITELY
+        self.ps.stream(self.Sequence.repeat(sequence, 8), n_runs)
+        # need to repeat 8 times because pulse streamer will pad sequence to multiple of 8ns, otherwise unexpected changes of pulse
+
+
     def on_pulse(self):
         
         self.off_pulse()
-        time.sleep(0.5)
         
-        def check_chs(array): # return a bool(0, 1) list for channels
+        def check_chs(array): 
+            # return a bool(0, 1) list for channels
+            # defines the truth table of channels at a given period of pulse
             return array[1:]
         
-        data_matrix = self.read_data()
-        count = len(data_matrix)
+        time_slices = self.read_data()
         sequence = self.ps.createSequence()
-        pattern_on = [(2, 1), (2, 1)]
-        
-        
-        #if(count == 1):
-        #    start = pb_inst_pbonly64(check_chs(data_matrix[0])+disable, Inst.CONTINUE, 0, data_matrix[0][0])
-        #    pb_inst_pbonly64(check_chs(data_matrix[-1])+disable, Inst.BRANCH, start, data_matrix[-1][0])
-
-        #else:
-        #    start = pb_inst_pbonly64(check_chs(data_matrix[0])+disable, Inst.CONTINUE, 0, data_matrix[0][0])
-        #    for i in range(count-2):
-        #        pb_inst_pbonly64(check_chs(data_matrix[i+1])+disable, Inst.CONTINUE, 0, data_matrix[i+1][0])
-         #   pb_inst_pbonly64(check_chs(data_matrix[-1])+disable, Inst.BRANCH, start, data_matrix[-1][0])
 
         for channel in range(0, 8):
+            time_slice = time_slices[channel]
+            count = len(time_slice)
             pattern = []
-            pattern.append((data_matrix[0][0], check_chs(data_matrix[0])[channel]))
+            # pattern is [(duration in ns, 1 for on or 0 for off), ...]
+            pattern.append((time_slice[0][0], time_slice[0][1]))
             for i in range(count-2):
-                pattern.append((data_matrix[i+1][0], check_chs(data_matrix[i+1])[channel]))
-            pattern.append((data_matrix[-1][0], check_chs(data_matrix[-1])[channel]))
-            #print(channel, pattern)
+                pattern.append((time_slice[i+1][0], time_slice[i+1][1]))
+            pattern.append((time_slice[-1][0], time_slice[-1][1]))
+
             sequence.setDigital(channel, pattern)
 
-        for channel in range(0, 2):
-            sequence.setAnalog(channel, pattern_on)
+
         # Stream the sequence and repeat it indefinitely
-        n_runs = PulseStreamer.REPEAT_INFINITELY
-        #print(sequence.getData())
-        #print('du', sequence.getDuration())
-        self.ps.stream(sequence, n_runs)
+        n_runs = self.PulseStreamer.REPEAT_INFINITELY
+        self.ps.stream(self.Sequence.repeat(sequence, 8), n_runs)
+
+        time.sleep(0.1 + self.total_duration/1e9)
+        # make sure pulse is stable and ready for measurement
+        return time_slices
 
 
         
@@ -135,7 +127,8 @@ class MainWindow(QMainWindow):
                     
     def read_data(self):
         count = self.layout_dataset.count()-1  #number of pulses 
-        data_matrix = np.zeros((count, 9))  #skip first delay layout
+        data_matrix = [[0]*9 for _ in range(count)] #skip first delay layout
+
         for i in range(count):
             item = self.layout_dataset.itemAt(i+1)#first is delay
             widget = item.widget()
@@ -153,7 +146,7 @@ class MainWindow(QMainWindow):
                 elif(duration_unit == 'ms'):
                     duration_num *= 1000000
                     
-                data_matrix[i][j] = duration_num
+                data_matrix[i][j] = int(duration_num)
                 
             for j in range(1,9):
                 item = layout.itemAt(j)
@@ -161,114 +154,74 @@ class MainWindow(QMainWindow):
                 if(widget.isChecked()):
                     data_matrix[i][j] = 1
         
-        data_delay_matrix = self.delay(data_matrix)
+        self.read_delay()
+        time_slices = []
+        for channel in range(8):
+            time_slice = [[period[0], period[channel+1]] for period in data_matrix]
+            time_slice_delayed = self.delay(self.delay_array[channel], time_slice)
+            time_slices.append(time_slice_delayed)
         
-        return data_delay_matrix
-    
-    def delay(self, data_matrix):
-        # add delay, separate by all channels' time slices
-        
-        def extract_time_slice(data_matrix):
-            # extract data_matrix[:,i+1]'s time slice in format [(time_i, enable_i), ...] such that enable_i for time_i-1 to time_i
-            time_slice_array = [[(0, 0)] for i in range(len(data_matrix[0]) - 1)]
-            cur_time = 0
-            for ii, pulse in enumerate(data_matrix):
-                #print(pulse)
-                cur_time += pulse[0]
-                for channel in range(len(data_matrix[0]) - 1):
-                    time_slice_array[channel].append((cur_time, pulse[channel+1]))
+        return time_slices
 
-            return time_slice_array
-    
-        def combine_time_slice(time_slice_array):
-            time_all = []
-            for i, time_slice in enumerate(time_slice_array):
-                for i, time_label in enumerate(time_slice):
-                    if(time_label[0] not in time_all):
-                        time_all.append(time_label[0])
+    def read_delay(self):
 
-            data_matrix = np.zeros((len(time_all), len(time_slice_array)+1))
-            data_matrix[:, 0] = np.sort(time_all)
-
-            time_all = np.sort(time_all)
-
-            for i, time_slice in enumerate(time_slice_array):
-                cur_ref_index = 0 #time_slice
-                cur_status = 0
-                for j in range(len(time_all)):
-                    cur_status = time_slice[cur_ref_index + 1][1]
-                    data_matrix[j, i+1] += cur_status
-                    #print(time_slice, time_all, cur_status, i, j)
-                    if(time_all[j]>=time_slice[cur_ref_index + 1][0]):
-                        cur_ref_index += 1
-
-            cur = 0
-            last = 0
-            for pulse in data_matrix[1:]:
-                cur = pulse[0]
-                pulse[0] = pulse[0] - last
-                last = cur
-            return np.array(data_matrix[1:], dtype=int)
-
-        def delay_channel(time_slice_array, channel_i, delay_time):
-            # channel_i from 0 to n
-            total_time = time_slice_array[0][-1][0] # first channel, last time stamp, time
-            delay_time = delay_time%total_time
-            if delay_time==0:
-                return time_slice_array
-            time_slice = time_slice_array[channel_i]
-            time_slice_delayed = []
-            is_boundary = 0
-            is_delay_at_boundary = 0
-            for i, time_stamp in enumerate(time_slice[1:]):# skip (0,0) since the (total_time, i) works
-                if not is_boundary and (time_stamp[0]+delay_time) >= total_time:
-                    is_boundary = 1
-                    boundary_i = i
-                time_stamp_delayed = ((time_stamp[0]+delay_time)%total_time, time_stamp[1])
-                if time_stamp_delayed[0]==0:
-                    is_delay_at_boundary = 1
-                time_slice_delayed.append(time_stamp_delayed)
-
-            #print(boundary_i, time_slice_delayed)
-            if is_delay_at_boundary:
-                time_slice_delayed = [(0,0)] + time_slice_delayed[boundary_i:][1:] + time_slice_delayed[:boundary_i] \
-                                    + [(total_time, time_slice_delayed[boundary_i][1])]
-            else:
-                time_slice_delayed = [(0,0)] + time_slice_delayed[boundary_i:] + time_slice_delayed[:boundary_i] \
-                                    + [(total_time, time_slice_delayed[boundary_i][1])]
-            time_slice_array[channel_i] = time_slice_delayed
-
-            return time_slice_array
-
-        def delay_sequence(data_matrix, channel_i, delay_time):
-            time_slice_array = extract_time_slice(data_matrix)
-            time_slice_array = delay_channel(time_slice_array, channel_i, delay_time)
-            data_matrix = combine_time_slice(time_slice_array)
-            return data_matrix
-        
         item = self.layout_dataset.itemAt(0)#first is delay
         widget = item.widget()
         layout = widget.layout()
-        delay_matrix = np.zeros(8)
+        delay_array = [0, 0, 0, 0, 0, 0, 0, 0]
         for j in range(8):
             item_sub = layout.itemAt(j)
             layout_sub = item_sub.layout()
             duration_num = int(layout_sub.itemAt(1).widget().text())
             duration_unit = layout_sub.itemAt(2).widget().currentText()
-
+            
             if(duration_unit == 'ns'):
                 duration_num *= 1
             elif(duration_unit == 'us'):
                 duration_num *= 1000
             elif(duration_unit == 'ms'):
                 duration_num *= 1000000
+                
+            delay_array[j] = int(duration_num)
 
-            delay_matrix[j] = duration_num
-        
-        for j in range(8):
-            data_matrix =  delay_sequence(data_matrix, j, delay_matrix[j])
-            
-        return data_matrix
+        self.delay_array = delay_array
+    
+    def delay(self, delay, time_slice):
+        # accept time slice
+        # example of time slice [[duration in ns, on or off], ...]
+        # [[1e3, 1], [1e3, 0], ...] 
+        # add delay to time slice (mod by total duration)
+
+        total_duration = 0
+        for period in time_slice:
+            total_duration += period[0]
+
+        self.total_duration = total_duration
+
+        delay = delay%total_duration
+
+        if delay == 0:
+            return time_slice
+
+
+        # below assumes delay > 0
+        cur_time = 0
+        for ii, period in enumerate(time_slice[::-1]):
+            # count from end of pulse for delay > 0
+            cur_time += period[0]
+            if delay == cur_time:
+                return time_slice[-(ii+1):] + time_slice[:-(ii+1)]
+                # cycle roll the time slice to right (ii+1) elements
+            if delay < cur_time:
+                duration_lhs = cur_time - delay
+                # duration left on the left hand side of pulse
+                duration_rhs = period[0] - duration_lhs
+
+                time_slice_lhs = time_slice[:-(ii+1)] + [[duration_lhs, period[1]], ]
+                time_slice_rhs = [[duration_rhs, period[1]], ] + time_slice[-(ii+1):][1:] # skip the old [t_ii, enable_ii] period
+                return time_slice_rhs + time_slice_lhs
+
+            # else will be delay > cur_time and should continue 
     
 
         

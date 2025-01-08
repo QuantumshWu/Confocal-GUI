@@ -398,7 +398,7 @@ class LiveAcquire(threading.Thread):
     wavelength=None as default
     
     """
-    def __init__(self, exposure, data_x, data_y, config_instances, wavelength=None, is_finite=False):
+    def __init__(self, exposure, data_x, data_y, config_instances, wavelength=None, is_finite=False, counter_mode='apd', data_mode='single'):
         super().__init__()
         self.exposure = exposure
         self.data_x = data_x
@@ -421,6 +421,9 @@ class LiveAcquire(threading.Thread):
         self.info = {'data_generator':'LiveAcquire', 'exposure':self.exposure, 
                     'wavelength':self.wavelength, 'scanner':[self.scanner.x, self.scanner.y]}
         # important information to be saved with figures 
+
+        self.counter_mode = counter_mode
+        self.data_mode = data_mode
         
     
     def run(self):
@@ -447,7 +450,7 @@ class LiveAcquire(threading.Thread):
             if self.is_finite:
                 finite_counter += 1
             # roll data as live counts, from left most to right most, [:] makes sure not create new arr
-            counts = self.counter(self.exposure, self)
+            counts = self.counter(self.exposure, counter_mode = self.counter_mode, data_mode = self.data_mode)
             self.points_done += 1
 
             self.data_y[:] = np.roll(self.data_y, 1)
@@ -584,7 +587,7 @@ class ODMRAcquire(threading.Thread):
     """
     class for odmr measurement
     """
-    def __init__(self, exposure, data_x, data_y, power, config_instances, repeat=1, is_analog=False, is_dual=False):
+    def __init__(self, exposure, data_x, data_y, power, config_instances, repeat=1, counter_mode = 'apd', data_mode = 'ref_div'):
         super().__init__()
         self.exposure = exposure
         self.data_x = data_x
@@ -597,8 +600,8 @@ class ODMRAcquire(threading.Thread):
         self.config_instances = config_instances
         self.points_done = 0
         self.repeat = repeat
-        self.is_dual = is_dual
-        self.is_analog = is_analog
+        self.counter_mode = counter_mode
+        self.data_mode = data_mode
         self.repeat_done = 1
         self.power = power
         self.info = {'data_generator':'PLEAcquire', 'exposure':self.exposure, 'repeat':self.repeat}
@@ -624,7 +627,7 @@ class ODMRAcquire(threading.Thread):
                 self.rf.frequency = frequency
 
 
-                counts = self.counter(self.exposure, self, is_analog=self.is_analog, is_dual=self.is_dual)
+                counts = self.counter(self.exposure, counter_mode = self.counter_mode, data_mode = self.data_mode)
                 self.points_done += 1
 
                 self.data_y[i] += counts
@@ -651,7 +654,7 @@ class RabiAcquire(threading.Thread):
     """
     class for rabi measurement
     """
-    def __init__(self, exposure, data_x, data_y, power, frequency, time_array, config_instances, repeat=1, is_analog=False, is_dual=False):
+    def __init__(self, exposure, data_x, data_y, power, frequency, time_array, config_instances, repeat=1, counter_mode = 'apd', data_mode = 'ref_div'):
         super().__init__()
         from .device import Pulse
         self.exposure = exposure
@@ -665,8 +668,8 @@ class RabiAcquire(threading.Thread):
         self.config_instances = config_instances
         self.points_done = 0
         self.repeat = repeat
-        self.is_dual = is_dual
-        self.is_analog = is_analog
+        self.counter_mode = counter_mode
+        self.data_mode = data_mode
         self.repeat_done = 1
         self.power = power
         self.frequency = frequency
@@ -683,7 +686,7 @@ class RabiAcquire(threading.Thread):
     def set_duration(self, duration):
 
         # ch0 is green, ch1 is RF, ch4 is counter
-        delay_array = [-3e3, -2e3, 0, 0, 0, 0, 0, 0]
+        delay_array = [-1e3, 0, 0, 0, 0, 0, 0, 0]
         data_matrix = [[self.time_array[0], (0, )], [self.time_array[1], ()], [duration, (1,)], [self.time_array[3]+self.time_array[2]-duration, ()], \
         [self.time_array[4], (0, 4)], [self.time_array[5], (0,)],\
                         [self.time_array[0], (0, )], [self.time_array[1], ()], [duration, ()], [self.time_array[3]+self.time_array[2]-duration, ()], \
@@ -709,7 +712,7 @@ class RabiAcquire(threading.Thread):
                 self.set_duration(duration)
 
 
-                counts = self.counter(self.exposure, self, is_analog=self.is_analog, is_dual=self.is_dual)
+                counts = self.counter(self.exposure, counter_mode = self.counter_mode, data_mode = self.data_mode)
                 self.points_done += 1
 
                 self.data_y[i] += counts
@@ -739,7 +742,7 @@ class RamseyAcquire(threading.Thread):
     pulses pi/2-tau-pi/2
 
     """
-    def __init__(self, exposure, data_x, data_y, power, frequency, time_array, config_instances, repeat=1, is_analog=False, is_dual=False):
+    def __init__(self, exposure, data_x, data_y, power, frequency, time_array, config_instances, repeat=1, counter_mode = 'apd', data_mode = 'ref_div'):
         super().__init__()
         from .device import Pulse
         self.exposure = exposure
@@ -753,8 +756,8 @@ class RamseyAcquire(threading.Thread):
         self.config_instances = config_instances
         self.points_done = 0
         self.repeat = repeat
-        self.is_dual = is_dual
-        self.is_analog = is_analog
+        self.counter_mode = counter_mode
+        self.data_mode = data_mode
         self.repeat_done = 1
         self.power = power
         self.frequency = frequency
@@ -799,7 +802,7 @@ class RamseyAcquire(threading.Thread):
                 self.set_duration(duration)
 
 
-                counts = self.counter(self.exposure, self, is_analog=self.is_analog, is_dual=self.is_dual)
+                counts = self.counter(self.exposure, counter_mode = self.counter_mode, data_mode = self.data_mode)
                 self.points_done += 1
 
                 self.data_y[i] += counts
@@ -829,7 +832,7 @@ class SpinechoAcquire(threading.Thread):
     pulses pi/2-tau/2-pi-tau/2-pi/2
 
     """
-    def __init__(self, exposure, data_x, data_y, power, frequency, time_array, config_instances, repeat=1, is_analog=False, is_dual=False):
+    def __init__(self, exposure, data_x, data_y, power, frequency, time_array, config_instances, repeat=1, counter_mode = 'apd', data_mode = 'ref_div'):
         super().__init__()
         from .device import Pulse
         self.exposure = exposure
@@ -843,8 +846,8 @@ class SpinechoAcquire(threading.Thread):
         self.config_instances = config_instances
         self.points_done = 0
         self.repeat = repeat
-        self.is_dual = is_dual
-        self.is_analog = is_analog
+        self.counter_mode = counter_mode
+        self.data_mode = data_mode
         self.repeat_done = 1
         self.power = power
         self.frequency = frequency
@@ -889,7 +892,7 @@ class SpinechoAcquire(threading.Thread):
                 self.set_duration(int(duration/2))
 
 
-                counts = self.counter(self.exposure, self, is_analog=self.is_analog, is_dual=self.is_dual)
+                counts = self.counter(self.exposure, counter_mode = self.counter_mode, data_mode = self.data_mode)
                 self.points_done += 1
 
                 self.data_y[i] += counts
@@ -919,7 +922,7 @@ class ROdurationAcquire(threading.Thread):
     init - RF - RO
 
     """
-    def __init__(self, exposure, data_x, data_y, power, frequency, time_array, config_instances, repeat=1, is_analog=False, is_dual=False):
+    def __init__(self, exposure, data_x, data_y, power, frequency, time_array, config_instances, repeat=1, counter_mode = 'apd', data_mode = 'ref_div'):
         super().__init__()
         from .device import Pulse
         self.exposure = exposure
@@ -933,14 +936,13 @@ class ROdurationAcquire(threading.Thread):
         self.config_instances = config_instances
         self.points_done = 0
         self.repeat = repeat
-        self.is_dual = is_dual
-        self.is_analog = is_analog
+        self.counter_mode = counter_mode
+        self.data_mode = data_mode
         self.repeat_done = 1
         self.power = power
         self.frequency = frequency
         self.time_array = time_array
-        ## time array is [init duration (time bin ~us), gap1, RF, gap2, Readout duration, gap3 without laser] in ns
-        # time array is [init duration, gap1, RF, gap2, Readout duration] in ns
+        # time array is [init duration + RF, gap1, RO, Readout green duration, gap2 without laser] in ns
         self.info = {'data_generator':'PLEAcquire', 'exposure':self.exposure, 'repeat':self.repeat}
         # important information to be saved with figures 
 
@@ -949,17 +951,20 @@ class ROdurationAcquire(threading.Thread):
         self.rf.on = True
         self.pulse = Pulse()
 
-    def set_duration(self, duration):
+    def set_delay(self, delay):
 
         # ch0 is green, ch1 is RF, ch4 is counter
-        delay_array = [-3e3, -2e3, 0, 0, 0, 0, 0, 0]
+        delay_array = [-1e3, 0, 0, 0, delay, delay, 0, 0]
         #data_matrix = [[self.time_array[0], (0, 5)], [self.time_array[1], ()], [self.time_array[2], (1,)], \
         #[self.time_array[3], ()], [duration, (0, )], [self.time_array[0], (0, 4)], [self.time_array[5]+self.time_array[4] - duration - self.time_array[0], (0,)]]
 
-        data_matrix = [[duration, (0, 5)], [self.time_array[0]-duration, (0,)], [self.time_array[1], ()], [self.time_array[2], (1,)], \
-        [self.time_array[3], ()], [duration, (0, 4)], [self.time_array[4]-duration, (0, )]]
+        #data_matrix = [[self.time_array[0], (0, 1)], [self.time_array[1], ()], [self.time_array[2], (4, )], [self.time_array[3], (0,)], \
+        #    [self.time_array[4], ()],\
+        #                [self.time_array[0], (0,)], [self.time_array[1], ()], [self.time_array[2], (5, )], [self.time_array[3], (0,)], \
+        #    [self.time_array[4], ()]]
 
-        self.pulse.set_timing_simple(data_matrix)
+        #self.pulse.set_timing_simple(data_matrix)
+        self.pulse.set_timing_simple(self.time_array)
         self.pulse.set_delay(delay_array)
         self.pulse.on_pulse()
 
@@ -976,10 +981,10 @@ class ROdurationAcquire(threading.Thread):
                     return 
 
 
-                self.set_duration(duration)
+                self.set_delay(duration)
 
 
-                counts = self.counter(self.exposure, self, is_analog=self.is_analog, is_dual=self.is_dual)
+                counts = self.counter(self.exposure, counter_mode = self.counter_mode, data_mode = self.data_mode)
                 self.points_done += 1
 
                 self.data_y[i] += counts
@@ -1010,7 +1015,7 @@ class NVT1Acquire(threading.Thread):
     green+RF - wait - RO
 
     """
-    def __init__(self, exposure, data_x, data_y, power, frequency, time_array, config_instances, repeat=1, is_analog=False, is_dual=False):
+    def __init__(self, exposure, data_x, data_y, power, frequency, time_array, config_instances, repeat=1, counter_mode = 'apd', data_mode = 'ref_div'):
         super().__init__()
         from .device import Pulse
         self.exposure = exposure
@@ -1024,8 +1029,8 @@ class NVT1Acquire(threading.Thread):
         self.config_instances = config_instances
         self.points_done = 0
         self.repeat = repeat
-        self.is_dual = is_dual
-        self.is_analog = is_analog
+        self.counter_mode = counter_mode
+        self.data_mode = data_mode
         self.repeat_done = 1
         self.power = power
         self.frequency = frequency
@@ -1069,7 +1074,7 @@ class NVT1Acquire(threading.Thread):
                 self.set_duration(duration)
 
 
-                counts = self.counter(self.exposure, self, is_analog=self.is_analog, is_dual=self.is_dual)
+                counts = self.counter(self.exposure, counter_mode = self.counter_mode, data_mode = self.data_mode)
                 self.points_done += 1
 
                 self.data_y[i] += counts
