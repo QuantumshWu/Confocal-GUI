@@ -4,7 +4,6 @@ import sys, os
 # location of new focus laser driver file
 current_directory = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(current_directory)
-import pyvisa
 import numpy as np
 
 
@@ -1214,6 +1213,7 @@ class SGS100A():
     """
     
     def __init__(self):
+        import pyvisa
         rm = pyvisa.ResourceManager()
         self.handle = rm.open_resource('TCPIP::169.254.2.20::INSTR')
         self._power = int(self.handle.query('SOURce:Power?')[:-1])
@@ -1292,6 +1292,7 @@ class DSG836():
     """
     
     def __init__(self):
+        import pyvisa
         rm = pyvisa.ResourceManager()
         #self.handle = rm.open_resource('USB0::0x1AB1::0x099C::DSG8M267M00006::INSTR')
         self.handle = rm.open_resource('USB0::0x1AB1::0x099C::DSG8M223900103::INSTR')
@@ -1373,7 +1374,8 @@ class AFG3052C():
     >>> afg3052c.x = 20
     
     """
-    def __init__(self):       
+    def __init__(self):    
+        import pyvisa   
         rm = pyvisa.ResourceManager()
         self.handle = rm.open_resource('GPIB2::11::INSTR')
     

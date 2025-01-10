@@ -1,7 +1,7 @@
 import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
-from IPython.display import display, HTML
+from IPython.display import display, HTML, clear_output, Javascript
 import matplotlib.ticker as mticker
 from IPython import get_ipython
 import sys
@@ -30,6 +30,7 @@ from scipy.optimize import curve_fit
 import glob
 from scipy.signal import find_peaks
 import os
+import atexit
 
 from .logic import *
 
@@ -183,17 +184,17 @@ def enable_long_output():
     """
     display(HTML(css_code))
 
-def display_immediately(fig):
+def display_immediately(fig, display_id):
     # https://github.com/matplotlib/ipympl/issues/290
     # a fix for widget backend but is not needed for nbagg
     canvas = fig.canvas
-    display(canvas)
+    display_handle = display(canvas, display_id = display_id)
     canvas._handle_message(canvas, {'type': 'send_image_mode'}, [])
     canvas._handle_message(canvas, {'type':'refresh'}, [])
     canvas._handle_message(canvas,{'type': 'initialized'},[])
     canvas._handle_message(canvas,{'type': 'draw'},[])
-
-        
+    return display_handle
+    
         
 class LivePlotGUI():
     """
@@ -205,6 +206,12 @@ class LivePlotGUI():
     labels = [xlabel, ylabel, zlabel]
     data = [data_x, data_y, data_z] # data_z n*m array, data_z[x, y] has coordinates (x, y)
     """
+
+    display_handle = None
+    old_fig = None
+    display_handle_id = 0
+    # convert the old fig from widget to static otherwise reopen notebook will lose these figs
+    # display_id is important to keep tracking of all output areas
     
     def __init__(self, labels, update_time, data_generator, data, fig=None, config_instances=None, relim_mode='normal'):
 
@@ -246,14 +253,24 @@ class LivePlotGUI():
             self.config_instances = config_instances
         self.scale = self.config_instances['display_scale']
         self.relim_mode = relim_mode
+
+    def convert_widget_to_fig(self):
+        # convert the old fig from widget to static otherwise reopen notebook will lose these figs
+        if LivePlotGUI.display_handle is not None:
+            # convert the old fig from widget to static otherwise reopen notebook will lose these figs
+            LivePlotGUI.display_handle_id += 1
+            LivePlotGUI.display_handle.update(LivePlotGUI.old_fig)
         
     def init_figure_and_data(self):
         change_to_nbagg(params_type = 'nbagg', scale=self.scale)
         #hide_elements()
-        plt.ion()
         # make sure environment enables interactive then updating figure
-        
+        plt.ion()
+
         if self.fig is None:
+
+            self.convert_widget_to_fig()
+
             with plt.ioff():
                 # avoid double display from display_immediately
                 self.fig = plt.figure()
@@ -263,7 +280,7 @@ class LivePlotGUI():
             self.fig.canvas.footer_visible = False
             self.fig.canvas.resizable = False
             self.fig.canvas.capture_scroll = True
-            display_immediately(self.fig)
+            LivePlotGUI.display_handle = display_immediately(self.fig, f'{LivePlotGUI.display_handle_id}')
             self.axes = self.fig.add_subplot(111)
         else:
             self.axes = self.fig.axes[0]
@@ -339,7 +356,12 @@ class LivePlotGUI():
         self.axes.set_autoscale_on(False)
         self.choose_selector()
 
+        LivePlotGUI.old_fig = self.fig
+
+
+
         return self.fig, self.selector
+
 
     
     def stop(self):
@@ -414,9 +436,7 @@ class LivePlotGUI():
             return 1
 
 
-
-
-            
+           
             
 class PLELive(LivePlotGUI):
     
