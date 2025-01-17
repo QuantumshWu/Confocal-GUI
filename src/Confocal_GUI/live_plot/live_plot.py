@@ -1,40 +1,28 @@
-import numpy as np
-import matplotlib
-import matplotlib.pyplot as plt
-from IPython.display import display, HTML, clear_output, Javascript
-import matplotlib.ticker as mticker
-from IPython import get_ipython
+import io
+import os
 import sys
-from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QPushButton, QWidget
-from PyQt5.QtCore import QThread, pyqtSignal, QObject
-from matplotlib.figure import Figure
-import matplotlib.animation as animation
-from matplotlib.widgets import RectangleSelector
-from mpl_toolkits.axes_grid1 import make_axes_locatable
+import glob
 import time
 import threading
 from decimal import Decimal
-from PyQt5 import QtCore, QtWidgets
-from PyQt5.QtWidgets import QHBoxLayout, QWidget, QPushButton, QLabel, QLineEdit, QDoubleSpinBox
-from PyQt5.QtCore import QThread, pyqtSignal
-from matplotlib.figure import Figure
 from threading import Event
-import io
-from PIL import Image as PILImage
-from IPython.display import display, Image as IPImage
+
+import matplotlib
+import matplotlib.pyplot as plt
+import matplotlib.animation as animation
+import matplotlib.ticker as mticker
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg
-from PyQt5.QtCore import QThread, pyqtSignal, Qt
-from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QPushButton, QWidget
-from PyQt5 import uic
+from matplotlib.figure import Figure
+from matplotlib.widgets import RectangleSelector
+from mpl_toolkits.axes_grid1 import make_axes_locatable
+import numpy as np
+from PIL import Image as PILImage
 from scipy.optimize import curve_fit
-import glob
 from scipy.signal import find_peaks
-import os
+from IPython import get_ipython
+from IPython.display import display, HTML, clear_output, Javascript, Image as IPImage
+
 import atexit
-
-from .logic import *
-
-
 
 
 _new_black = '#373737'
@@ -194,6 +182,53 @@ def display_immediately(fig, display_id):
     canvas._handle_message(canvas,{'type': 'initialized'},[])
     canvas._handle_message(canvas,{'type': 'draw'},[])
     return display_handle
+
+class LoadAcquire(threading.Thread):
+    """
+    class for load existing .npz data
+    """
+    def __init__(self, address, config_instances=None):
+        super().__init__()
+
+
+        loaded = np.load(address, allow_pickle=True)
+        keys = loaded.files
+        print("Keys in npz file:", keys)
+        print(loaded['info'].item())
+
+
+        self.info = loaded['info'].item()
+        # important information to be saved with figures 
+
+        self.type = self.info.get('plot_type', 'PLE')
+
+
+        self.exposure = loaded['info'].item()['exposure']
+        if self.type == 'PL':
+
+            self.data_x = loaded['data_x']
+            self.data_y = loaded['data_y']
+
+        else:
+            self.data_x = loaded['data_x']
+            self.data_y = loaded['data_y']
+        self.daemon = True
+        self.is_running = True
+        self.is_done = False
+        self.points_done = len(self.data_x) #how many data points have done, will control display
+        self.repeat_done = 0
+        
+    
+    def run(self):
+        
+        self.is_done = True
+        #finish all data
+ 
+        
+    def stop(self):
+        if self.is_alive():
+            self.is_running = False
+            self.join()
     
         
 class LivePlotGUI():
@@ -217,21 +252,12 @@ class LivePlotGUI():
 
         self.labels = labels
         
-        if len(data) == 3: #PL
-            self.xlabel = labels[0]
-            self.ylabel = labels[1]
-            self.zlabel = labels[2]
-            self.data_x = data[0]
-            self.data_y = data[1]
-            self.data_z = data[2]
-            self.points_total = len(self.data_z.flatten())
-            
-        else:# 'PLE' or 'Live'
-            self.xlabel = labels[0]
-            self.ylabel = labels[1] + ' x1'
-            self.data_x = data[0]
-            self.data_y = data[1]
-            self.points_total = len(self.data_y.flatten())
+
+        self.xlabel = labels[0]
+        self.ylabel = labels[1]
+        self.data_x = data[0]
+        self.data_y = data[1]
+        self.points_total = len(self.data_y.flatten())
         
         self.update_time = update_time
         self.data_generator = data_generator
@@ -245,6 +271,7 @@ class LivePlotGUI():
 
         self.points_done = 0
         # track how many data points have done
+        self.repeat_done = 0
         self.selector = None
         # assign value by self.choose_selector()
         if config_instances is None:
@@ -253,6 +280,7 @@ class LivePlotGUI():
             self.config_instances = config_instances
         self.scale = self.config_instances['display_scale']
         self.relim_mode = relim_mode
+        self.valid_relim_mode = ['normal', 'tight']
 
     def convert_widget_to_fig(self):
         # convert the old fig from widget to static otherwise reopen notebook will lose these figs
@@ -291,24 +319,12 @@ class LivePlotGUI():
         # make sure no long ticks induce cut off of label
 
         self.init_core()         
-
-        
-        
-        #formatter = mticker.ScalarFormatter(useMathText=True)
-        #self.axes.xaxis.set_major_formatter(formatter)
-        #self.axes.xaxis.offsetText.set_visible(False)
-        #ticks_offset = self.axes.xaxis.get_major_formatter().get_offset()
-        # code to move offset of ticks to label
-
-        self.axes.set_ylabel(self.ylabel)
-        self.axes.set_xlabel(self.xlabel)
         
         if not self.have_init_fig:
             self.fig.tight_layout()
         self.fig.canvas.draw()
         self.bg_fig = self.fig.canvas.copy_from_bbox(self.fig.bbox)  # store bg
 
-        
         
         self.data_generator.start()
         
@@ -365,7 +381,7 @@ class LivePlotGUI():
 
     
     def stop(self):
-        if self.data_generator.is_alive():
+        if self.data_generator.thread.is_alive():
             self.data_generator.stop()
             
     def clear_all(self):
@@ -382,6 +398,9 @@ class LivePlotGUI():
                 patch.remove()
             for text in texts_to_remove:
                 text.remove()
+            ax.set_title('')
+            
+        self.fig.tight_layout()
 
         self.fig.canvas.draw()
 
@@ -404,6 +423,10 @@ class LivePlotGUI():
             return 0
         # no new data
 
+        if min_data_y < 0:
+            self.relim_mode = 'tight'
+            # change relim mode if not able to keep 'normal' relim
+
         if self.relim_mode == 'normal':
             data_range = max_data_y - 0
         elif self.relim_mode == 'tight':
@@ -414,9 +437,9 @@ class LivePlotGUI():
             if 0<=(self.ylim_max-max_data_y)<=0.5*data_range:
                 return 0
 
-
             self.ylim_min = 0
             self.ylim_max = max_data_y*1.2
+
 
             self.axes.set_ylim(self.ylim_min, self.ylim_max)
 
@@ -444,6 +467,9 @@ class PLELive(LivePlotGUI):
         self.line, = self.axes.plot(self.data_x, self.data_y, animated=True, color='grey', alpha=1)
         self.axes.set_xlim(np.min(self.data_x), np.max(self.data_x))
         self.axes.set_ylim(self.ylim_min, self.ylim_max)
+
+        self.axes.set_ylabel(self.ylabel + ' x1')
+        self.axes.set_xlabel(self.xlabel)
         
     def update_core(self):
         if len(self.data_y) == 0:
@@ -451,10 +477,9 @@ class PLELive(LivePlotGUI):
         else:
             max_data_y = np.max(self.data_y)
         
-
-        if (self.points_done%self.points_total)==0:
-
-            self.ylabel = self.labels[1] + f' x{self.points_done//self.points_total + 1}'
+        if (self.repeat_done!=self.data_generator.repeat_done):
+            self.ylabel = self.labels[1] + f' x{self.data_generator.repeat_done + 1}'
+            self.repeat_done = self.data_generator.repeat_done
             self.axes.set_ylabel(self.ylabel)
 
 
@@ -489,13 +514,15 @@ class PLLive(LivePlotGUI):
         cmap_ = matplotlib.cm.get_cmap('inferno')
         cmap = cmap_.copy()
         cmap.set_under(cmap_(0))
-        half_step_x = 0.5*(self.data_x[-1] - self.data_x[0])/len(self.data_x)
-        half_step_y = 0.5*(self.data_y[-1] - self.data_y[0])/len(self.data_y)
-        extents = [self.data_x[0]-half_step_x, self.data_x[-1]+half_step_x, \
-                   self.data_y[-1]+half_step_y, self.data_y[0]-half_step_y] #left, right, bottom, up
-        self.line = self.axes.imshow(self.data_z, animated=True, alpha=1, cmap=cmap, extent=extents)
-        cbar = self.fig.colorbar(self.line)
-        cbar.set_label(self.zlabel)
+        half_step_x = 0.5*(self.data_x[0][-1] - self.data_x[0][0])/len(self.data_x[0])
+        half_step_y = 0.5*(self.data_x[1][-1] - self.data_x[1][0])/len(self.data_x[1])
+        extents = [self.data_x[0][0]-half_step_x, self.data_x[0][-1]+half_step_x, \
+                   self.data_x[1][-1]+half_step_y, self.data_x[1][0]-half_step_y] #left, right, bottom, up
+        self.line = self.axes.imshow(self.data_y, animated=True, alpha=1, cmap=cmap, extent=extents)
+        self.cbar = self.fig.colorbar(self.line)
+        self.axes.set_ylabel(self.xlabel[1])
+        self.axes.set_xlabel(self.xlabel[0])
+        self.cbar.set_label(self.ylabel + ' x1')
 
         self.vmin = 0
         self.vmax = 0
@@ -503,12 +530,12 @@ class PLLive(LivePlotGUI):
         
     def update_core(self):
         
-        if np.max(self.data_z)==0:
+        if np.max(self.data_y)==0:
             vmin = 0
         else:
-            vmin = np.min(self.data_z[self.data_z!=0])
+            vmin = np.min(self.data_y[self.data_y!=0])
 
-        vmax = np.max(self.data_z)
+        vmax = np.max(self.data_y)
 
         if vmax == vmin:
                 vmax = vmin + 1
@@ -518,13 +545,13 @@ class PLLive(LivePlotGUI):
             self.vmax = vmax*1.2
         # filter out zero data
 
-            self.line.set_clim(vmin=vmin, vmax=np.max(self.data_z))
+            self.line.set_clim(vmin=vmin, vmax=np.max(self.data_y))
             self.fig.canvas.draw()
             self.bg_fig = self.fig.canvas.copy_from_bbox(self.fig.bbox)
 
 
         self.fig.canvas.restore_region(self.bg_fig)
-        self.line.set_array(self.data_z)
+        self.line.set_array(self.data_y)
         
     def choose_selector(self):
         self.area = AreaSelector(self.fig.axes[0])
@@ -542,11 +569,11 @@ class PLDisLive(LivePlotGUI):
         cmap_ = matplotlib.cm.get_cmap('inferno')
         cmap = cmap_.copy()
         cmap.set_under(cmap_(0))
-        half_step_x = 0.5*(self.data_x[-1] - self.data_x[0])/len(self.data_x)
-        half_step_y = 0.5*(self.data_y[-1] - self.data_y[0])/len(self.data_y)
-        extents = [self.data_x[0]-half_step_x, self.data_x[-1]+half_step_x, \
-                   self.data_y[-1]+half_step_y, self.data_y[0]-half_step_y] #left, right, bottom, up
-        self.line = self.axes.imshow(self.data_z, animated=True, alpha=1, cmap=cmap, extent=extents)
+        half_step_x = 0.5*(self.data_x[0][-1] - self.data_x[0][0])/len(self.data_x[0])
+        half_step_y = 0.5*(self.data_x[1][-1] - self.data_x[1][0])/len(self.data_x[1])
+        extents = [self.data_x[0][0]-half_step_x, self.data_x[0][-1]+half_step_x, \
+                   self.data_x[1][-1]+half_step_y, self.data_x[1][0]-half_step_y] #left, right, bottom, up
+        self.line = self.axes.imshow(self.data_y, animated=True, alpha=1, cmap=cmap, extent=extents)
 
         self.vmin = 0
         self.vmax = 0
@@ -556,29 +583,31 @@ class PLDisLive(LivePlotGUI):
         divider = make_axes_locatable(self.axes)
         self.axright = divider.append_axes("top", size="20%", pad=0.25)
         
-        if np.max(self.data_z.flatten()) == 0:
+        if np.max(self.data_y.flatten()) == 0:
             hist_data = [0, 0]
         else:
-            hist_data = [i for i in self.data_z.flatten() if i != 0]
+            hist_data = [i for i in self.data_y.flatten() if i != 0]
         self.n, self.bins, self.patches = self.axright.hist(hist_data, orientation='vertical', bins=30, color='grey')
         self.axright.set_ylim(0, self.counts_max)
         self.cax = divider.append_axes("right", size="5%", pad=0.15)
-        cbar = self.fig.colorbar(self.line, cax = self.cax)
-        cbar.set_label(self.zlabel)
+        self.cbar = self.fig.colorbar(self.line, cax = self.cax)
+        self.cbar.set_label(self.ylabel + ' x1')
+        self.axes.set_ylabel(self.xlabel[1])
+        self.axes.set_xlabel(self.xlabel[0])
 
         
     def update_core(self):
         
-        if np.max(self.data_z.flatten()) == 0:
+        if np.max(self.data_y.flatten()) == 0:
             self.hist_data = [0, 0]
             vmin = 0
-            vmax = np.max(self.data_z) + 1
+            vmax = np.max(self.data_y) + 1
         else:
-            vmin = np.min(self.data_z[self.data_z!=0])
-            vmax = np.max(self.data_z)
+            vmin = np.min(self.data_y[self.data_y!=0])
+            vmax = np.max(self.data_y)
             if vmax == vmin:
                 vmax = vmin + 1
-            self.hist_data = [i for i in self.data_z.flatten() if i != 0]
+            self.hist_data = [i for i in self.data_y.flatten() if i != 0]
 
         self.n, _ = np.histogram(self.hist_data, bins=self.bins)
 
@@ -606,7 +635,7 @@ class PLDisLive(LivePlotGUI):
 
 
         self.fig.canvas.restore_region(self.bg_fig)
-        self.line.set_array(self.data_z)
+        self.line.set_array(self.data_y)
         
         for count, patch in zip(self.n, self.patches):
             patch.set_height(count)
@@ -645,17 +674,19 @@ class PLGUILive(LivePlotGUI):
         cmap_ = matplotlib.cm.get_cmap('inferno')
         cmap = cmap_.copy()
         cmap.set_under(cmap_(0))
-        half_step_x = 0.5*(self.data_x[-1] - self.data_x[0])/len(self.data_x)
-        half_step_y = 0.5*(self.data_y[-1] - self.data_y[0])/len(self.data_y)
-        extents = [self.data_x[0]-half_step_x, self.data_x[-1]+half_step_x, \
-                   self.data_y[-1]+half_step_y, self.data_y[0]-half_step_y] #left, right, bottom, up
+        half_step_x = 0.5*(self.data_x[0][-1] - self.data_x[0][0])/len(self.data_x[0])
+        half_step_y = 0.5*(self.data_x[1][-1] - self.data_x[1][0])/len(self.data_x[1])
+        extents = [self.data_x[0][0]-half_step_x, self.data_x[0][-1]+half_step_x, \
+                   self.data_x[1][-1]+half_step_y, self.data_x[1][0]-half_step_y] #left, right, bottom, up
 
         self.line = self.fig.axes[0].images[0]
         self.line.set(cmap = cmap, extent=extents)
-        self.line.set_array(self.data_z)
+        self.line.set_array(self.data_y)
 
         self.cbar.update_normal(self.line)
-        self.cbar.set_label(self.zlabel)
+        self.cbar.set_label(self.ylabel + ' x1')
+        self.axes.set_ylabel(self.xlabel[1])
+        self.axes.set_xlabel(self.xlabel[0])
         
         self.counts_max = 5
         self.vmin = 0
@@ -663,26 +694,26 @@ class PLGUILive(LivePlotGUI):
         # filter out zero data
 
         
-        if np.max(self.data_z.flatten()) == 0:
+        if np.max(self.data_y.flatten()) == 0:
             hist_data = [0, 0]
         else:
-            hist_data = [i for i in self.data_z.flatten() if i != 0]
+            hist_data = [i for i in self.data_y.flatten() if i != 0]
         self.n, self.bins, self.patches = self.axright.hist(hist_data, orientation='vertical', bins=30, color='grey')
         self.axright.set_ylim(0, self.counts_max)
 
         
         
     def update_core(self):
-        if np.max(self.data_z.flatten()) == 0:
+        if np.max(self.data_y.flatten()) == 0:
             self.hist_data = [0, 0]
             vmin = 0
-            vmax = np.max(self.data_z) + 1
+            vmax = np.max(self.data_y) + 1
         else:
-            vmin = np.min(self.data_z[self.data_z!=0])
-            vmax = np.max(self.data_z)
+            vmin = np.min(self.data_y[self.data_y!=0])
+            vmax = np.max(self.data_y)
             if vmax == vmin:
                 vmax = vmin + 1
-            self.hist_data = [i for i in self.data_z.flatten() if i != 0]
+            self.hist_data = [i for i in self.data_y.flatten() if i != 0]
 
         self.n, _ = np.histogram(self.hist_data, bins=self.bins)
 
@@ -711,7 +742,7 @@ class PLGUILive(LivePlotGUI):
 
 
         self.fig.canvas.restore_region(self.bg_fig)
-        self.line.set_array(self.data_z)
+        self.line.set_array(self.data_y)
         
         for count, patch in zip(self.n, self.patches):
             patch.set_height(count)
@@ -1037,7 +1068,9 @@ class DragVLine():
             self.ax.figure.canvas.mpl_disconnect(self.cid_motion)
             self.ax.figure.canvas.mpl_disconnect(self.cid_draw)
             
-            
+
+
+valid_fit_func = ['lorent', 'decay', 'rabi']         
 class DataFigure():
     """
     The class contains all data of the figure, enables more operations
@@ -1063,7 +1096,7 @@ class DataFigure():
     >>> data_figure.clear()
     'remove lorent fit and text'
     """
-    def __init__(self, live_plot, address=None, relim_mode='tight'):
+    def __init__(self, live_plot, address=None, fig=None, relim_mode='tight'):
 
         if address is None:
             self.fig = live_plot.fig
@@ -1073,14 +1106,18 @@ class DataFigure():
             # load all necessary info defined in device.info for device in config_instances
         else:
             if '*' in address:
+                self.is_error = False
                 files_all = glob.glob(address)# includes .jpg, .npz etc.
                 files = []
                 for file in files_all:
                     if '.npz' in file:
                         files.append(file)
-
                 if len(files) > 1:
                     print(files)
+                if len(files) == 0:
+                    self.is_error = True
+                    return
+
                 data_generator = LoadAcquire(address=files[0])
             else:
                 data_generator = LoadAcquire(address=address)
@@ -1089,20 +1126,32 @@ class DataFigure():
             if data_generator.type == 'PLE':
                 data_x = data_generator.data_x
                 data_y = data_generator.data_y
-                _live_plot = PLELive(labels=['Wavelength (nm)', f'Counts/{exposure}s'], \
-                                    update_time=0.1, data_generator=data_generator, data=[data_x, data_y], config_instances = None, relim_mode = relim_mode)
-            elif data_generator.type == 'CPT':
-                data_x = data_generator.data_x
-                data_y = data_generator.data_y
-                _live_plot = PLELive(labels=['frequency', f'Counts/{exposure}s'], \
-                                    update_time=0.1, data_generator=data_generator, data=[data_x, data_y], config_instances = None, relim_mode = relim_mode)
+                x_label = data_generator.info.get('x_label', 'Wavelength (nm)')
+                y_label = data_generator.info.get('y_label', f'Counts/{exposure}s')
+
+                if fig is None:
+                    _live_plot = PLELive(labels=[x_label, y_label], \
+                                        update_time=0.1, data_generator=data_generator, data=[data_x, data_y], \
+                                        config_instances = None, relim_mode = relim_mode)
+                else:
+                    _live_plot = PLELive(labels=[x_label, y_label], \
+                                        update_time=0.1, data_generator=data_generator, data=[data_x, data_y], \
+                                        config_instances = None, relim_mode = relim_mode, fig=fig)
 
             else:
                 data_x = data_generator.data_x
                 data_y = data_generator.data_y
-                data_z = data_generator.data_z
-                _live_plot = PLDisLive(labels=['X', 'Y', f'Counts/{exposure}s'], \
-                        update_time=1, data_generator=data_generator, data=[data_x, data_y, data_z], config_instances = None, relim_mode = relim_mode)
+                x_label = data_generator.info.get('x_label', ['X', 'Y'])
+                y_label = data_generator.info.get('y_label', f'Counts/{exposure}s')
+
+                if fig is None:
+                    _live_plot = PLDisLive(labels=[x_label, y_label], \
+                            update_time=1, data_generator=data_generator, data=[data_x, data_y], \
+                            config_instances = None, relim_mode = relim_mode)
+                else:
+                    _live_plot = PLGUILive(labels=[x_label, y_label], \
+                            update_time=1, data_generator=data_generator, data=[data_x, data_y], \
+                            config_instances = None, relim_mode = relim_mode, fig=fig)
 
             fig, selector = _live_plot.plot()
             self.fig = _live_plot.fig
@@ -1134,13 +1183,12 @@ class DataFigure():
             if address is None:
                 self.data_x = self.live_plot.data_x
                 self.data_y = self.live_plot.data_y
-                self.data_z = self.live_plot.data_z
             else:
                 self.data_x = data_x
                 self.data_y = data_y
-                self.data_z = data_z
             #self._data = [self.data_array, self.extent]
-            self._data = [self.data_x, self.data_y, self.data_z]
+            self._data = [self.data_x, self.data_y]
+
 
     
     @property
@@ -1176,17 +1224,82 @@ class DataFigure():
 
         if extra_info is None:
             extra_info = {}
+
         
         if self.mode == 'PLE':
-            np.savez(addr + self.mode + time_str + '.npz', data_x = self.data_x, data_y = self.data_y, info = {**self.info, **extra_info})
+            x_label = self.fig.axes[0].get_xlabel()
+            y_label = self.fig.axes[0].get_ylabel()
+            np.savez(addr + self.mode + time_str + '.npz', data_x = self.data_x, data_y = self.data_y, \
+                info = {**self.info, **extra_info, **{'x_label':x_label, 'y_label':y_label}})
         else:
-            #np.savez(addr + self.mode + time_str + '.npz', extent = self.extent, array = self.data_array, info = {**self.info, **extra_info})
-            np.savez(addr + self.mode + time_str + '.npz', data_x = self.data_x, data_y = self.data_y, data_z = self.data_z, info = {**self.info, **extra_info})
+            x_label = self.fig.axes[0].get_xlabel()
+            y_label = self.fig.axes[0].get_ylabel()
+            z_label = self.fig.axes[0].images[0].colorbar.ax.yaxis.label.get_text()
+            print(x_label, y_label, z_label)
+            np.savez(addr + self.mode + time_str + '.npz', data_x = self.data_x, data_y = self.data_y, \
+                info = {**self.info, **extra_info, **{'x_label':[x_label, y_label], 'y_label':z_label}})
 
         print(f'saved fig as {addr}{self.mode}{time_str}.npz')
-        
-        
-    def lorent(self, p0=None, is_print=True, is_save=False, fit=True):
+
+
+    def _display_popt(self, popt, popt_str, popt_pos):
+        # popt_str = ['amplitude', 'offset', 'omega', 'decay', 'phi'], popt_pos = 'lower left' etc
+        valid_pos = ['upper left', 'upper right', 'lower left', 'lower right']
+        if popt_pos not in valid_pos:
+            print(f'wrong popt pos, can only be {valid_pos}')
+        _popt = popt
+        formatted_popt = [f'{x:.5f}'.rstrip('0') for x in _popt]
+        result_list = [f'{name} = {value}' for name, value in zip(popt_str, formatted_popt)]
+        formatted_popt_str = '\n'.join(result_list)
+        result = f'{formatted_popt_str}'
+        self.log_info = result
+        # format popt to display as text
+                    
+        if self.text is None:
+            if popt_pos=='upper left':
+                self.text = self.fig.axes[0].text(0.025, 1-0.025, 
+                                                  result, transform=self.fig.axes[0].transAxes, 
+                                                  color='red', ha='left', va='top')
+            elif popt_pos == 'upper right':
+                self.text = self.fig.axes[0].text(1-0.025, 1-0.025, 
+                                                  result, transform=self.fig.axes[0].transAxes, 
+                                                  color='red', ha='right', va='top')
+
+            elif popt_pos == 'lower left':
+                self.text = self.fig.axes[0].text(0.025, 0.025, 
+                                                  result, transform=self.fig.axes[0].transAxes, 
+                                                  color='red', ha='left', va='bottom')
+
+            elif popt_pos == 'lower right':
+                self.text = self.fig.axes[0].text(1-0.025, 0.025, 
+                                                  result, transform=self.fig.axes[0].transAxes, 
+                                                  color='red', ha='right', va='bottom')
+
+        else:
+            self.text.set_text(result)
+            
+        self.fig.canvas.draw()
+
+    def _select_fit(self):
+        if self.selector[0] is None:
+            return self.data_x, self.data_y
+        else:
+            xl, xh, yl, yh = self.selector[0].range
+            if (xl is None) or (xh is None):
+                return self.data_x, self.data_y
+            if (xl - xh)==0:
+                return self.data_x, self.data_y
+            index_l = np.argmin(np.abs(self.data_x - xl))
+            index_h = np.argmin(np.abs(self.data_x - xh))
+            if np.abs(index_l - index_h)<=2:
+                return self.data_x, self.data_y
+            return self.data_x[index_l:index_h], self.data_y[index_l:index_h]
+
+
+    def lorent(self, p0=None, is_display=True, fit=True):
+        self.data_x_p, self.data_y_p = self._select_fit()
+        # use the area selector results for fitting 
+
         if self.mode == 'PL':
             return 
         spl = 299792458
@@ -1195,19 +1308,36 @@ class DataFigure():
             return height*((full_width/2)**2)/((x - center)**2 + (full_width/2)**2) + bg
         
         if p0 is None:# no input
-            self.p0 = [self.data_x[np.argmax(self.data_y)], 
-                           (self.data_x[-1] - self.data_x[0])/4, np.max(self.data_y), 0]
+            if np.abs(np.min(self.data_y_p) - np.mean(self.data_y_p)) < np.abs(np.max(self.data_y_p) - np.mean(self.data_y_p)):
+                # likely be positive 
+                guess_center = self.data_x_p[np.argmax(self.data_y_p)]
+                guess_full_width = np.abs((self.data_x_p[-1] - self.data_x_p[0])/4)
+                guess_height = np.abs(np.max(self.data_y_p) - np.min(self.data_y_p))
+                guess_bg = np.min(self.data_y_p)
+                self.p0 = [guess_center, guess_full_width, guess_height, guess_bg]
+            else:
+                guess_center = self.data_x_p[np.argmin(self.data_y_p)]
+                guess_full_width = np.abs((self.data_x_p[-1] - self.data_x_p[0])/4)
+                guess_height = -np.abs(np.max(self.data_y_p) - np.min(self.data_y_p))
+                guess_bg = np.max(self.data_y_p)
+                self.p0 = [guess_center, guess_full_width, guess_height, guess_bg]
         else:
             self.p0 = p0
+            guess_center = self.p0[0]
+            guess_full_width = self.p0[1]
+            guess_height = self.p0[2]
+            guess_bg = self.p0[3]
+
+        data_x_range = np.abs(self.data_x_p[-1] - self.data_x_p[0])
+        data_y_range = np.abs(np.max(self.data_y_p) - np.min(self.data_y_p))
+        self.bounds = ([guess_center - data_x_range, guess_full_width/10, -10*data_y_range, -10*data_y_range], \
+        [guess_center + data_x_range, guess_full_width*10, 10*data_y_range, 10*data_y_range])
         
         if fit:
             popt, pcov = curve_fit(_lorent, self.data_x, self.data_y, p0=self.p0)
         else:
             popt, pcov = self.p0, None
         
-        if is_print:
-            pass
-            #print(f'popt = {popt}, pcov = {pcov}')
         
         if self.fit is None:
             self.fit = self.fig.axes[0].plot(self.data_x, _lorent(self.data_x, *popt), color='orange', linestyle='--')
@@ -1215,43 +1345,18 @@ class DataFigure():
             self.fit[0].set_ydata(_lorent(self.data_x, *popt))
         self.fig.canvas.draw()
         
-        if is_print:
-            
-
-            full_width_GHz = np.abs(spl/(popt[0]-0.5*popt[1]) - spl/(popt[0]+0.5*popt[1]))
-                
-            _popt = np.insert(popt, 2, full_width_GHz)
-            
-            if self.unit == 'nm':
-                pass
+        popt_str = ['center', 'FWHM', 'height', 'bg']
+        if is_display:
+            if popt[2] > 0:
+                self._display_popt(popt, popt_str, 'upper right')
             else:
-                _popt[1], _popt[2] = _popt[2], _popt[1]
-            
-            popt_str = ['center', 'FWHM', 'in GHz', 'height', 'bg']
-            formatted_popt = [f'{x:.5f}'.rstrip('0') for x in _popt]
-            result_list = [f'{name} = {value}' for name, value in zip(popt_str, formatted_popt)]
-            formatted_popt_str = '\n'.join(result_list)
-            result = f'{formatted_popt_str}'
-            self.log_info = result
-            # format popt to display as text
-                
-            
-            if self.text is None:
-                self.text = self.fig.axes[0].text(0.025, 0.5, 
-                                                  result, transform=self.fig.axes[0].transAxes, 
-                                                  color='red', ha='left', va='center')
-            else:
-                self.text.set_text(result)
-                
-            self.fig.canvas.draw()
-            
-        if is_save:
-            self.save(addr='')
-
-        return [popt_str, pcov], _popt
+                self._display_popt(popt, popt_str, 'lower right')
 
 
-    def lorent_zeeman(self, p0=None, is_print=True, is_save=False, func=None, bounds = None, fit=True):
+        return [popt_str, pcov], popt
+
+
+    def lorent_zeeman(self, p0=None, is_display=True, func=None, bounds = None, fit=True):
         #fit of PLE under B field
         if self.mode == 'PL':
             return 
@@ -1296,9 +1401,6 @@ class DataFigure():
         else:
             popt, pcov = self.p0, None
         
-        if is_print:
-            pass
-            #print(f'popt = {popt}, pcov = {pcov}')
         
         if self.fit is None:
             self.fit = self.fig.axes[0].plot(self.data_x, _func(self.data_x, *popt), color='orange', linestyle='--')
@@ -1306,7 +1408,7 @@ class DataFigure():
             self.fit[0].set_ydata(_func(self.data_x, *popt))
         self.fig.canvas.draw()
         
-        if is_print:
+        if is_display:
             
 
             full_width_GHz = np.abs(spl/(popt[0]-0.5*popt[1]) - spl/(popt[0]+0.5*popt[1]))
@@ -1338,33 +1440,29 @@ class DataFigure():
                 
             self.fig.canvas.draw()
             
-        if is_save:
-            self.save(addr='')
 
         return [popt_str, pcov], _popt
 
 
-    def rabi(self, p0=None, is_print=True, is_save=False, fit=True):
+    def rabi(self, p0=None, is_display=True, fit=True):
         if self.mode == 'PL':
             return 
-        spl = 299792458
+        self.data_x_p, self.data_y_p = self._select_fit()
         
         def _rabi(x, amplitude, offset, omega, decay, phi):
             return amplitude*np.sin(2*np.pi*omega*x + phi)*np.exp(-x/decay) + offset
         
         if p0 is None:# no input
-            guess_amplitude = np.abs(np.max(self.data_y) - np.min(self.data_y))/2
-            guess_offset = np.mean(self.data_y)
-            guess_omega = 0.5/np.abs(self.data_x[np.argmin(self.data_y)] - self.data_x[np.argmax(self.data_y)])
-            guess_decay = np.abs(1/((1 - (np.abs(np.min(self.data_y) - guess_offset)/np.abs(np.max(self.data_y) - guess_offset)))*2*guess_omega))
+            guess_amplitude = np.abs(np.max(self.data_y_p) - np.min(self.data_y_p))/2
+            guess_offset = np.mean(self.data_y_p)
+            guess_omega = 0.5/np.abs(self.data_x_p[np.argmin(self.data_y_p)] - self.data_x_p[np.argmax(self.data_y_p)])
+            guess_decay = np.abs(1/((1 - (np.abs(np.min(self.data_y_p) - guess_offset)/np.abs(np.max(self.data_y_p) - guess_offset)))*2*guess_omega))
             guess_phi = np.pi/2
 
-            data_y_range = np.max(self.data_y) - np.min(self.data_y)
+            data_y_range = np.max(self.data_y_p) - np.min(self.data_y_p)
 
             self.p0 = [guess_amplitude, guess_offset, guess_omega, guess_decay, guess_phi]
 
-            self.bounds = ([guess_amplitude/3, guess_offset - data_y_range, guess_omega*0.5, guess_decay/5, guess_phi - np.pi/10], \
-                [guess_amplitude*3, guess_offset + data_y_range, guess_omega*1.1, guess_decay*5, guess_phi + np.pi/10])
         else:
             self.p0 = p0
 
@@ -1374,19 +1472,15 @@ class DataFigure():
             guess_decay = self.p0[3]
             guess_phi = self.p0[4]
 
-            data_y_range = np.max(self.data_y) - np.min(self.data_y)
+            data_y_range = np.max(self.data_y_p) - np.min(self.data_y_p)
 
-            self.bounds = ([guess_amplitude/3, guess_offset - data_y_range, guess_omega*0.5, guess_decay/5, guess_phi - np.pi/10], \
-                [guess_amplitude*3, guess_offset + data_y_range, guess_omega*1.1, guess_decay*5, guess_phi + np.pi/10])
+        self.bounds = ([guess_amplitude/3, guess_offset - data_y_range, guess_omega*0.5, guess_decay/5, guess_phi - np.pi/10], \
+            [guess_amplitude*3, guess_offset + data_y_range, guess_omega*1.1, guess_decay*5, guess_phi + np.pi/10])
         
         if fit:
             popt, pcov = curve_fit(_rabi, self.data_x, self.data_y, p0=self.p0, bounds = self.bounds)
         else:
             popt, pcov = self.p0, None
-        
-        if is_print:
-            pass
-            #print(f'popt = {popt}, pcov = {pcov}')
         
         if self.fit is None:
             self.fit = self.fig.axes[0].plot(self.data_x, _rabi(self.data_x, *popt), color='orange', linestyle='--')
@@ -1394,65 +1488,36 @@ class DataFigure():
             self.fit[0].set_ydata(_rabi(self.data_x, *popt))
         self.fig.canvas.draw()
         
-        if is_print:
+        popt_str = ['amplitude', 'offset', 'omega', 'decay', 'phi']
+        if is_display:
+            self._display_popt(popt, popt_str, 'upper right')
             
-            _popt = popt
-            popt_str = ['amplitude', 'offset', 'omega', 'decay', 'phi']
-            formatted_popt = [f'{x:.5f}'.rstrip('0') for x in _popt]
-            result_list = [f'{name} = {value}' for name, value in zip(popt_str, formatted_popt)]
-            formatted_popt_str = '\n'.join(result_list)
-            result = f'{formatted_popt_str}'
-            self.log_info = result
-            # format popt to display as text
-                
-            
-            if self.text is None:
-                self.text = self.fig.axes[0].text(1-0.025, 1-0.025, 
-                                                  result, transform=self.fig.axes[0].transAxes, 
-                                                  color='red', ha='right', va='top')
-            else:
-                self.text.set_text(result)
-                
-            self.fig.canvas.draw()
-            
-        if is_save:
-            self.save(addr='')
 
-        return [popt_str, pcov], _popt
+        return [popt_str, pcov], popt
 
 
-    def decay(self, p0=None, is_print=True, is_save=False, fit=True):
+    def decay(self, p0=None, is_display=True, fit=True):
         if self.mode == 'PL':
             return 
-        spl = 299792458
+        self.data_x_p, self.data_y_p = self._select_fit()
         
         def _exp_decay(x, amplitude, offset, decay):
             return amplitude*np.exp(-x/decay) + offset
         
         if p0 is None:# no input
 
-            if (self.data_x[np.argmin(self.data_y)] - self.data_x[np.argmax(self.data_y)]) > 0:
-                guess_amplitude = np.abs(np.max(self.data_y) - np.min(self.data_y))
+            if (self.data_x_p[np.argmin(self.data_y_p)] - self.data_x_p[np.argmax(self.data_y_p)]) > 0:
+                guess_amplitude = np.abs(np.max(self.data_y_p) - np.min(self.data_y_p))
             else:
-                guess_amplitude = -np.abs(np.max(self.data_y) - np.min(self.data_y))
+                guess_amplitude = -np.abs(np.max(self.data_y_p) - np.min(self.data_y_p))
 
-            guess_offset = np.mean(self.data_y)
-            guess_decay = np.abs(self.data_x[np.argmin(self.data_y)] - self.data_x[np.argmax(self.data_y)])/2
+            guess_offset = np.mean(self.data_y_p)
+            guess_decay = np.abs(self.data_x_p[np.argmin(self.data_y_p)] - self.data_x_p[np.argmax(self.data_y_p)])/2
 
-
-
-            
-
-            data_y_range = np.max(self.data_y) - np.min(self.data_y)
+            data_y_range = np.abs(np.max(self.data_y_p) - np.min(self.data_y_p))
 
             self.p0 = [guess_amplitude, guess_offset, guess_decay]
 
-            if guess_amplitude >= 0:
-                self.bounds = ([guess_amplitude/4, guess_offset - data_y_range, guess_decay/10], \
-                    [guess_amplitude*4, guess_offset + data_y_range, guess_decay*10])
-            else:
-                self.bounds = ([guess_amplitude*4, guess_offset - data_y_range, guess_decay/10], \
-                    [guess_amplitude/4, guess_offset + data_y_range, guess_decay*10])
 
         else:
             self.p0 = p0
@@ -1461,23 +1526,17 @@ class DataFigure():
             guess_offset = self.p0[1]
             guess_decay = self.p0[2]
 
-            data_y_range = np.max(self.data_y) - np.min(self.data_y)
+            data_y_range = np.abs(np.max(self.data_y_p) - np.min(self.data_y_p))
 
-            if guess_amplitude >= 0:
-                self.bounds = ([guess_amplitude/4, guess_offset - data_y_range, guess_decay/10], \
-                    [guess_amplitude*4, guess_offset + data_y_range, guess_decay*10])
-            else:
-                self.bounds = ([guess_amplitude*4, guess_offset - data_y_range, guess_decay/10], \
-                    [guess_amplitude/4, guess_offset + data_y_range, guess_decay*10])
+            
+        self.bounds = ([-4*data_y_range, guess_offset - data_y_range, guess_decay/10], \
+            [4*data_y_range, guess_offset + data_y_range, guess_decay*10])
         
         if fit:
             popt, pcov = curve_fit(_exp_decay, self.data_x, self.data_y, p0=self.p0, bounds = self.bounds)
         else:
             popt, pcov = self.p0, None
         
-        if is_print:
-            pass
-            #print(f'popt = {popt}, pcov = {pcov}')
         
         if self.fit is None:
             self.fit = self.fig.axes[0].plot(self.data_x, _exp_decay(self.data_x, *popt), color='orange', linestyle='--')
@@ -1485,374 +1544,17 @@ class DataFigure():
             self.fit[0].set_ydata(_exp_decay(self.data_x, *popt))
         self.fig.canvas.draw()
         
-        if is_print:
-            
-            _popt = popt
-            popt_str = ['amplitude', 'offset','decay']
-            formatted_popt = [f'{x:.5f}'.rstrip('0') for x in _popt]
-            result_list = [f'{name} = {value}' for name, value in zip(popt_str, formatted_popt)]
-            formatted_popt_str = '\n'.join(result_list)
-            result = f'{formatted_popt_str}'
-            self.log_info = result
-            # format popt to display as text
-                
-            
-            if self.text is None:
-
-                if guess_amplitude > 0:
-                    self.text = self.fig.axes[0].text(1-0.025, 1-0.025, 
-                                                      result, transform=self.fig.axes[0].transAxes, 
-                                                      color='red', ha='right', va='top')
-                else:
-                    self.text = self.fig.axes[0].text(1-0.025, 0.025, 
-                                                  result, transform=self.fig.axes[0].transAxes, 
-                                                  color='red', ha='right', va='bottom')
-
-
+        popt_str = ['amplitude', 'offset','decay']
+        if is_display:
+            if popt[0] > 0:
+                self._display_popt(popt, popt_str, 'upper right')
             else:
-                self.text.set_text(result)
-                
-            self.fig.canvas.draw()
+                self._display_popt(popt, popt_str, 'lower right')
             
-        if is_save:
-            self.save(addr='')
-
-        return [popt_str, pcov], _popt
-
-
-    def cpt(self, p0=None, is_print=True, is_save=False, fit=True):
-        if self.mode == 'PL':
-            return 
-        spl = 299792458
-        
-        def _cpt(x, center, full_width, height, bg_c, bg_k):
-            return height*((full_width/2)**2)/((x - center)**2 + (full_width/2)**2) + bg_k*x + bg_c
-        
-        if p0 is None:# no input
-            guess_k = (self.data_y[-1] - self.data_y[0])/(self.data_x[-1] - self.data_x[0])#
-            guess_c = self.data_y[0] - guess_k*self.data_x[0]
-            self.p0 = [np.mean(self.data_x), 
-                           (self.data_x[-1] - self.data_x[0])/5, -(np.max(self.data_y) - np.min(self.data_y)), guess_c, guess_k]
-        else:
-            self.p0 = p0
-        
-        if fit:
-            popt, pcov = curve_fit(_cpt, self.data_x, self.data_y, p0=self.p0)
-        else:
-            popt, pcov = self.p0, None
-        
-        if is_print:
-            pass
-            #print(f'popt = {popt}, pcov = {pcov}')
-        
-        if self.fit is None:
-            self.fit = self.fig.axes[0].plot(self.data_x, _cpt(self.data_x, *popt), color='orange', linestyle='--')
-        else:
-            self.fit[0].set_ydata(_cpt(self.data_x, *popt))
-        self.fig.canvas.draw()
-        
-        if is_print:
-            
-
-            full_width_GHz = np.abs(spl/(popt[0]-0.5*popt[1]) - spl/(popt[0]+0.5*popt[1]))
-                
-            _popt = np.insert(popt, 2, full_width_GHz)
-            
-            if self.unit == 'nm':
-                pass
-            else:
-                _popt[1], _popt[2] = _popt[2], _popt[1]
-            
-            popt_str = ['center', 'FWHM', 'in GHz', 'height', 'bg']
-            formatted_popt = [f'{x:.5f}'.rstrip('0') for x in _popt[:-1]]
-            result_list = [f'{name} = {value}' for name, value in zip(popt_str, formatted_popt)]
-            formatted_popt_str = '\n'.join(result_list)
-            result = f'{formatted_popt_str}'
-            self.log_info = result
-            # format popt to display as text
-                
-            
-            if self.text is None:
-                self.text = self.fig.axes[0].text(0.025, 0.5, 
-                                                  result, transform=self.fig.axes[0].transAxes, 
-                                                  color='red', ha='left', va='center')
-            else:
-                self.text.set_text(result)
-                
-            self.fig.canvas.draw()
-            
-        if is_save:
-            self.save(addr='')
-
-        return [popt_str, pcov], _popt
-
-    def T1spin_inte(self, t_array=None, fine_tune_pos=True):
-        # integral the beginning x ns for overcoming AOM rise/fall time and better SNR
-        # t array [t of first peak, t of second peak, gap after peak to inte] in ns
-        if self.mode == 'PL':
-            return 
-        spl = 299792458
-
-        t_gap = int(np.abs(self.data_x[1] - self.data_x[0]))
-
-        if (t_array is None) or (len(t_array) != 3):
-            return 
-
-        mean_counts = np.mean(self.data_y)
-        bg_at_plateau = np.mean(self.data_y[self.data_y > mean_counts])
-        print(bg_at_plateau)
-
-        init_region = (self.data_x>t_array[0]) & (self.data_x<(t_array[0]+t_array[2]))
-        ro_region = (self.data_x>t_array[1]) & (self.data_x<(t_array[1]+t_array[2]))
-        if fine_tune_pos:
-            for ii in range(t_array[0]//t_gap, t_array[0]//t_gap+1000):
-                if self.data_y[ii] >= bg_at_plateau:
-                    init_first = ii
-                    print(ii)
-                    break
-            for ii in range(t_array[1]//t_gap, t_array[0]//t_gap+1000):
-                if self.data_y[ii] >= bg_at_plateau:
-                    ro_first = ii
-                    print('ro',ii)
-                    break
-
-        popt_str = ['counts_init', 'counts_ro']
-        if fine_tune_pos:
-            counts_init = np.sum(self.data_y[init_first:(init_first+t_array[2]//t_gap)])
-            counts_ro = np.sum(self.data_y[ro_first:(ro_first+t_array[2]//t_gap)])
-        else:
-            counts_init = np.sum(self.data_y[init_region])
-            counts_ro = np.sum(self.data_y[ro_region])
-        formatted_popt = [counts_init, counts_ro]
-        result_list = [f'{name} = {value}' for name, value in zip(popt_str, formatted_popt)]
-        formatted_popt_str = '\n'.join(result_list)
-        result = f'{formatted_popt_str}'
-
-        if self.text is None:
-            self.fill1 = self.fig.axes[0].fill_between(self.data_x, self.data_y, where=init_region , color='red', alpha=0.3)
-            self.fill2 = self.fig.axes[0].fill_between(self.data_x, self.data_y, where=ro_region, color='red', alpha=0.3)
-        else:
-            self.fill1.remove()
-            self.fill2.remove()
-            self.fill1 = self.fig.axes[0].fill_between(self.data_x, self.data_y, where=init_region , color='red', alpha=0.3)
-            self.fill2 = self.fig.axes[0].fill_between(self.data_x, self.data_y, where=ro_region, color='red', alpha=0.3)
-
-        if self.text is None:
-            self.text = self.fig.axes[0].text(0.025, 0.975, 
-                                                  result, transform=self.fig.axes[0].transAxes, 
-                                                  color='red', ha='left', va='top')
-        else:
-            self.text.set_text(result)
-
-
-
-    def T1spin(self, t_array=None, p0=None, is_print=True, is_save=False, fit=True):
-        # t array [t of first peak, t of second peak, gap after peak to fit]
-        if self.mode == 'PL':
-            return 
-        spl = 299792458
-
-        if (t_array is None) or (len(t_array) != 3):
-            return 
-        
-        def _T1spin(x, bg, height_init, height_ro, decay):
-
-            if isinstance(x, np.ndarray):  
-                return np.array([_T1spin(xi, bg, height_init, height_ro, decay) for xi in x])
-            else:
-                if t_array[0]<=x<=(t_array[0]+t_array[2]):
-                    return bg + height_init*np.exp(-(x-t_array[0])/decay)
-                elif t_array[1]<=x<=(t_array[1]+t_array[2]):
-                    return bg + height_ro*np.exp(-(x-t_array[1])/decay)
-                else:
-                    return self.data_y[np.where(self.data_x == x)[0][0]]
-                """
-                if x<=gap_array[0] or gap_array[1]<=x<=gap_array[2]:
-                    return bg
-                elif gap_array[0]<x<gap_array[1]:
-                    return bg + height_init*np.exp(-(x-gap_array[0])/decay) + height_thermal
-                else:
-                    return bg + height_ro*np.exp(-(x-gap_array[2])/decay) + height_thermal
-                """
-        if p0 is None:# no input
-            guess_bg = self.data_y[-1]
-            guess_height_init = np.max(self.data_y) - guess_bg
-            guess_height_ro = guess_height_init/2
-            guess_decay = 100
-            self.p0 = [guess_bg, guess_height_init, guess_height_ro, guess_decay]
-
-            self.bounds = ([guess_bg/3, guess_height_init/3, 0.1, guess_decay/3], \
-                              [guess_bg*3, guess_height_init*3, guess_height_init*3, guess_decay*3])
-            """
-            guess_bg = np.min(self.data_y)
-            guess_height_thermal = self.data_y[-1] - guess_bg
-            guess_height_init = np.max(self.data_y) - guess_height_thermal
-            guess_height_ro = guess_height_init/2
-            guess_decay = 100
-            self.p0 = [guess_bg, guess_height_thermal, guess_height_init, guess_height_ro, guess_decay]
-            """
-
-        else:
-            self.p0 = p0
-            guess_bg = p0[0]
-            guess_height_init = p0[1]
-            guess_height_ro = p0[2]
-            guess_decay = p0[3]
-
-            self.bounds = ([guess_bg/5, guess_height_init/5, 0.1, 1], \
-                              [guess_bg*5, guess_height_init*5, guess_height_init*5, guess_decay*5])
-        
-        if fit:
-            data_x = self.data_x
-            partial_data_index = np.where(((t_array[0]<=data_x) & (data_x<=(t_array[0]+t_array[2]))) \
-                                | ((t_array[1]<=data_x) & (data_x<=(t_array[1]+t_array[2])))) # index for part of data contains peaks 
-            popt, pcov = curve_fit(_T1spin, self.data_x[partial_data_index], self.data_y[partial_data_index], p0=self.p0, bounds = self.bounds)
-        else:
-            popt, pcov = self.p0, None
-        
-        if is_print:
-            pass
-            #print(f'popt = {popt}, pcov = {pcov}')
-        
-        if self.fit is None:
-            self.fit = self.fig.axes[0].plot(self.data_x, _T1spin(self.data_x, *popt), color='orange', linestyle='--')
-        else:
-            self.fit[0].set_ydata(_T1spin(self.data_x, *popt))
-        self.fig.canvas.draw()
-        
-        if is_print:
-            
-
-            
-            popt_str = ['bg', 'h_init', 'h_ro', 'decay']
-            formatted_popt = [f'{x:.5f}'.rstrip('0') for x in popt]
-            result_list = [f'{name} = {value}' for name, value in zip(popt_str, formatted_popt)]
-            formatted_popt_str = '\n'.join(result_list)
-            result = f'{formatted_popt_str}'
-            self.log_info = result
-            # format popt to display as text
-                
-            
-            if self.text is None:
-                self.text = self.fig.axes[0].text(0.025, 0.975, 
-                                                  result, transform=self.fig.axes[0].transAxes, 
-                                                  color='red', ha='left', va='top')
-            else:
-                self.text.set_text(result)
-                
-            self.fig.canvas.draw()
-            
-        if is_save:
-            self.save(addr='')
 
         return [popt_str, pcov], popt
 
 
-    def T1spin_v2(self, t_array=None, p0=None, is_print=True, fit=True):
-        # t array [t before first peak, t before second peak, gap after t to fit, gap]
-        # t_array assign using which part of data for fitting
-        if self.mode == 'PL':
-            return 
-        spl = 299792458
-
-        t_gap = int(np.abs(self.data_x[1] - self.data_x[0]))
-
-        if (t_array is None) or (len(t_array) != 4):
-            return 
-        
-        def _T1spin(x, bg0, bg1, height_init, height_ro, decay_ex, decay_op, peak_init):
-            # height is peak counts - background1
-            peak_ro = peak_init + t_array[3]
-            height_init_abs = height_init + bg1
-            height_ro_abs = height_ro + bg1
-
-            if isinstance(x, np.ndarray):  
-                return np.array([_T1spin(xi, bg0, bg1, height_init, height_ro, decay_ex, decay_op, peak_init) for xi in x])
-            else:
-                if t_array[0]<=x<=(t_array[0]+t_array[2]):
-                    if x<=peak_init:
-                        return bg0 + (height_init_abs - bg0)*(np.exp(-(peak_init-x)/decay_ex))
-                    else:
-                        return bg1 + (height_init_abs - bg1)*(np.exp(-(x-peak_init)/decay_op))
-
-                elif t_array[1]<=x<=(t_array[1]+t_array[2]):
-                    if x<=peak_ro:
-                        return bg0 + (height_ro_abs - bg0)*(np.exp(-(peak_ro-x)/decay_ex))
-                    else:
-                        return bg1 + (height_ro_abs - bg1)*(np.exp(-(x-peak_ro)/decay_op))
-                else:
-                    return self.data_y[np.where(self.data_x == x)[0][0]]
-  
-        if p0 is None:# no input
-
-
-            guess_bg0 = np.min(self.data_y)
-            guess_bg1 = self.data_y[int((t_array[1] + t_array[2])//t_gap)]
-            guess_height_init = np.max(self.data_y) - guess_bg1
-            guess_height_ro = guess_height_init/2
-            guess_decay_ex = 2
-            guess_decay_op = 20
-            guess_peak_init = int(self.data_x[np.argmax(self.data_y[t_array[0]//t_gap:(t_array[0]+t_array[2])//t_gap]) + (t_array[0]//t_gap)])
-
-            self.p0 = [guess_bg0, guess_bg1, guess_height_init, guess_height_ro, guess_decay_ex, guess_decay_op, guess_peak_init]
-
-            self.bounds = ([guess_bg0/5, guess_bg1/5, 0, 0, guess_decay_ex/5, guess_decay_op/5, guess_peak_init-t_array[2]/2], \
-                              [guess_bg0*5, guess_bg1*5, guess_height_init*5, guess_height_ro*5, guess_decay_ex*5, \
-                              guess_decay_op*5, guess_peak_init+t_array[2]/2])
-
-
-        else:
-            self.p0 = p0
-            guess_bg0 = p0[0]
-            guess_bg1 = p0[1]
-            guess_height_init = p0[2]
-            guess_height_ro = p0[3]
-            guess_decay_ex = p0[4]
-            guess_decay_op = p0[5]
-            guess_peak_init = p0[6]
-
-            self.bounds = ([guess_bg0/5, guess_bg1/5, 0, 0, guess_decay_ex/5, guess_decay_op/5, guess_peak_init-t_array[2]/2], \
-                              [guess_bg0*5, guess_bg1*5, guess_height_init*5, guess_height_ro*5, guess_decay_ex*5, \
-                              guess_decay_op*5, guess_peak_init+t_array[2]/2])
-        
-        
-        if fit:
-            data_x = self.data_x
-            partial_data_index = np.where(((t_array[0]<=data_x) & (data_x<=(t_array[0]+t_array[2]))) \
-                                | ((t_array[1]<=data_x) & (data_x<=(t_array[1]+t_array[2])))) # index for part of data contains peaks 
-            popt, pcov = curve_fit(_T1spin, self.data_x[partial_data_index], self.data_y[partial_data_index], p0=self.p0, bounds = self.bounds)
-        else:
-            popt, pcov = self.p0, None
-
-
-        if self.fit is None:
-            self.fit = self.fig.axes[0].plot(self.data_x, _T1spin(self.data_x, *popt), color='orange', linestyle='--')
-        else:
-            self.fit[0].set_ydata(_T1spin(self.data_x, *popt))
-        self.fig.canvas.draw()
-        
-        if is_print:
-
-            
-            popt_str = ['bg0', 'bg1', 'height_init', 'height_ro', 'decay_ex', 'decay_op', 'peak_ro']
-            formatted_popt = [f'{x:.5f}'.rstrip('0') for x in popt]
-            result_list = [f'{name} = {value}' for name, value in zip(popt_str, formatted_popt)]
-            formatted_popt_str = '\n'.join(result_list)
-            result = f'{formatted_popt_str}'
-            self.log_info = result
-            # format popt to display as text
-                
-            
-            if self.text is None:
-                self.text = self.fig.axes[0].text(0.025, 0.975, 
-                                                  result, transform=self.fig.axes[0].transAxes, 
-                                                  color='red', ha='left', va='top')
-            else:
-                self.text.set_text(result)
-                
-            self.fig.canvas.draw()
-
-        return [popt_str, pcov], popt
             
     def clear(self):
         if (self.text is None) and (self.fit is None):
@@ -1939,188 +1641,10 @@ class DataFigure():
         xlabel = self.fig.axes[0].get_xlabel()
         self.fig.axes[0].set_xlabel(xlabel[:-5] + '(nm)')
         self.fig.canvas.draw()
+
+
             
             
-def ple(wavelength_array, exposure, config_instances, repeat=1):
-                
-    data_x = wavelength_array
-    data_y = np.zeros(len(data_x))
-    data_generator = PLEAcquire(exposure = exposure, data_x=data_x, data_y=data_y, config_instances = config_instances, repeat=repeat)
-    liveplot = PLELive(labels=['Wavelength (nm)', f'Counts/{exposure}s'], \
-                        update_time=0.1, data_generator=data_generator, data=[data_x, data_y], config_instances = config_instances)
-    fig, selector = liveplot.plot()
-    data_figure = DataFigure(liveplot)
-    return fig, data_figure
-
-
-def odmr(frequency_array, exposure, power, config_instances, repeat=1, counter_mode = 'apd', data_mode = 'ref_div'):
-                
-    data_x = frequency_array
-    data_y = np.zeros(len(data_x))
-    data_generator = ODMRAcquire(exposure = exposure, data_x=data_x, data_y=data_y, power = power, config_instances = config_instances, repeat=repeat, counter_mode=counter_mode, data_mode=data_mode)
-    liveplot = PLELive(labels=['Frequency (Hz)', f'Counts/{exposure}s'], \
-                        update_time=0.1, data_generator=data_generator, data=[data_x, data_y], config_instances = config_instances, relim_mode='tight')
-    fig, selector = liveplot.plot()
-    data_figure = DataFigure(liveplot)
-    return fig, data_figure
-
-
-def rabi(duration_array, exposure, power, frequency, time_array, config_instances, repeat=1, counter_mode = 'apd', data_mode = 'ref_div'):
-                
-    data_x = duration_array
-    data_y = np.zeros(len(data_x))
-    data_generator = RabiAcquire(exposure = exposure, data_x=data_x, data_y=data_y, power = power, frequency = frequency, time_array = time_array, \
-        config_instances = config_instances, repeat=repeat, counter_mode=counter_mode, data_mode=data_mode)
-    liveplot = PLELive(labels=['Duration (ns)', f'Counts/{exposure}s'], \
-                        update_time=0.1, data_generator=data_generator, data=[data_x, data_y], config_instances = config_instances, relim_mode='tight')
-    fig, selector = liveplot.plot()
-    data_figure = DataFigure(liveplot)
-    return fig, data_figure
-
-def ramsey(duration_array, exposure, power, frequency, time_array, config_instances, repeat=1, counter_mode = 'apd', data_mode = 'ref_div'):
-                
-    data_x = duration_array
-    data_y = np.zeros(len(data_x))
-    data_generator = RamseyAcquire(exposure = exposure, data_x=data_x, data_y=data_y, power = power, frequency = frequency, time_array = time_array, \
-        config_instances = config_instances, repeat=repeat, counter_mode=counter_mode, data_mode=data_mode)
-    liveplot = PLELive(labels=['Duration (ns)', f'Counts/{exposure}s'], \
-                        update_time=0.1, data_generator=data_generator, data=[data_x, data_y], config_instances = config_instances, relim_mode='tight')
-    fig, selector = liveplot.plot()
-    data_figure = DataFigure(liveplot)
-    return fig, data_figure
-
-
-def spinecho(duration_array, exposure, power, frequency, time_array, config_instances, repeat=1, counter_mode = 'apd', data_mode = 'ref_div'):
-                
-    data_x = duration_array
-    data_y = np.zeros(len(data_x))
-    data_generator = SpinechoAcquire(exposure = exposure, data_x=data_x, data_y=data_y, power = power, frequency = frequency, time_array = time_array, \
-        config_instances = config_instances, repeat=repeat, counter_mode=counter_mode, data_mode=data_mode)
-    liveplot = PLELive(labels=['Duration (ns)', f'Counts/{exposure}s'], \
-                        update_time=0.1, data_generator=data_generator, data=[data_x, data_y], config_instances = config_instances, relim_mode='tight')
-    fig, selector = liveplot.plot()
-    data_figure = DataFigure(liveplot)
-    return fig, data_figure
-
-
-def t1(duration_array, exposure, power, frequency, time_array, config_instances, repeat=1, counter_mode = 'apd', data_mode = 'ref_div'):
-                
-    data_x = duration_array
-    data_y = np.zeros(len(data_x))
-    data_generator = NVT1Acquire(exposure = exposure, data_x=data_x, data_y=data_y, power = power, frequency = frequency, time_array = time_array, \
-        config_instances = config_instances, repeat=repeat, counter_mode=counter_mode, data_mode=data_mode)
-    liveplot = PLELive(labels=['Duration (ns)', f'Counts/{exposure}s'], \
-                        update_time=0.1, data_generator=data_generator, data=[data_x, data_y], config_instances = config_instances, relim_mode='tight')
-    fig, selector = liveplot.plot()
-    data_figure = DataFigure(liveplot)
-    return fig, data_figure
-
-
-def ROduration(duration_array, exposure, power, frequency, time_array, config_instances, repeat=1, counter_mode = 'apd', data_mode = 'ref_div'):
-                
-    data_x = duration_array
-    data_y = np.zeros(len(data_x))
-    data_generator = ROdurationAcquire(exposure = exposure, data_x=data_x, data_y=data_y, power = power, frequency = frequency, time_array = time_array, \
-        config_instances = config_instances, repeat=repeat, counter_mode=counter_mode, data_mode=data_mode)
-    liveplot = PLELive(labels=['Duration (ns)', f'Counts/{exposure}s'], \
-                        update_time=0.1, data_generator=data_generator, data=[data_x, data_y], config_instances = config_instances, relim_mode='tight')
-    fig, selector = liveplot.plot()
-    data_figure = DataFigure(liveplot)
-    return fig, data_figure
-
-def pl(center, coordinates_x, coordinates_y, exposure, config_instances, is_dis = False, wavelength=None):
-    """
-    example
-    
-    >>> pl(center=[0, 0], coordinates_x=np.linspace(-5,5,10), \
-        coordinates_y=np.linspace(-5,5,10), exposure=0.2)
-    """
-    
-    data_x = np.array(coordinates_x) + center[0]
-    data_y = np.array(coordinates_y) + center[1]
-    data_z = np.zeros((len(data_y), len(data_x)))
-    # reverse for compensate x,y order of imshow
-    data_generator = PLAcquire(exposure = exposure, data_x = data_x, data_y = data_y, \
-                               data_z = data_z, config_instances = config_instances, wavelength=wavelength)
-    if is_dis:
-        liveplot = PLDisLive(labels=['X', 'Y', f'Counts/{exposure}s'], \
-                        update_time=1, data_generator=data_generator, data=[data_x, data_y, data_z], config_instances = config_instances)
-    else:
-        liveplot = PLLive(labels=['X', 'Y', f'Counts/{exposure}s'], \
-                            update_time=1, data_generator=data_generator, data=[data_x, data_y, data_z], config_instances = config_instances)
-    fig, selector = liveplot.plot()
-    data_figure = DataFigure(liveplot)
-    return fig, data_figure
-
-
-def live(data_array, exposure, config_instances, wavelength=None, is_finite=False, relim_mode='normal', counter_mode = 'apd', data_mode = 'single'):
-                
-    data_x = data_array
-    data_y = np.zeros(len(data_x))
-    data_generator = LiveAcquire(exposure = exposure, data_x=data_x, data_y=data_y, \
-                                 config_instances = config_instances, wavelength=wavelength, is_finite=is_finite, counter_mode=counter_mode, data_mode=data_mode)
-    liveplot = PLELive(labels=['Data', f'Counts/{exposure}s'], \
-                        update_time=0.01, data_generator=data_generator, data=[data_x, data_y], config_instances = config_instances, relim_mode=relim_mode)
-    fig, selector = liveplot.plot()
-    data_figure = DataFigure(liveplot)
-    return fig, data_figure
-
-def pl_gui(center, coordinates_x, coordinates_y, exposure, config_instances, fig = None, wavelength=None):
-    """
-    example
-    
-    >>> pl(center=[0, 0], coordinates_x=np.linspace(-5,5,10), \
-        coordinates_y=np.linspace(-5,5,10), exposure=0.2)
-    """
-    
-    data_x = np.array(coordinates_x) + center[0]
-    data_y = np.array(coordinates_y) + center[1]
-    data_z = np.zeros((len(data_y), len(data_x)))
-    # reverse for compensate x,y order of imshow
-    data_generator = PLAcquire(exposure = exposure, data_x = data_x, data_y = data_y, \
-                               data_z = data_z, config_instances = config_instances, wavelength=wavelength)
-    liveplot = PLGUILive(labels=['X', 'Y', f'Counts/{exposure}s'], \
-                        update_time=1, data_generator=data_generator, data=[data_x, data_y, data_z], fig=fig, config_instances = config_instances)
-    fig, selector = liveplot.plot()
-    data_figure = DataFigure(liveplot)
-    return fig, data_figure
-
-def area(wavelength_array, exposure, coordinates_x, coordinates_y, config_instances, mode = 'PLE'):
-                
-    data_x = wavelength_array
-    if mode == 'PLE':
-        data_y = np.zeros(len(data_x))
-    elif mode == 'PLE':
-        data_y = np.zeros((len(coordinates_y), len(coordinates_x)))
-
-    data_generator = AreaAcquire(exposure = exposure, data_x=data_x, data_y=data_y, 
-                                    data_x_area = coordinates_x, data_y_area = coordinates_y,
-                                     config_instances = config_instances, mode = mode)
-    if mode == 'PLE':
-        liveplot = PLELive(labels=['Wavelength (nm)', f'Counts/{exposure}s'], \
-                            update_time=0.1, data_generator=data_generator, data=[data_x, data_y], config_instances = config_instances)
-    elif mode == 'PL':
-        liveplot = PLDisLive(labels=['X', 'Y', f'Counts/{exposure}s'], \
-                        update_time=1, data_generator=data_generator, data=[coordinates_x, coordinates_y, data_y], config_instances = config_instances)
-
-    fig, selector = liveplot.plot()
-    data_figure = DataFigure(liveplot)
-    return fig, data_figure
-
-
-def time_tagger(click_channel, start_channel, binwidth, n_bins, duration, config_instances):
-                
-    data_x = np.linspace(0, n_bins*binwidth/1e3, n_bins)
-    data_y = np.zeros(len(data_x))
-    data_generator = TaggerAcquire(click_channel=click_channel , \
-            start_channel=start_channel , binwidth=binwidth , n_bins=n_bins, data_x=data_x, data_y=data_y, \
-            config_instances = config_instances, duration = duration)
-    liveplot = PLELive(labels=['Time (ns)', f'Counts'], \
-                        update_time=0.5, data_generator=data_generator, data=[data_x, data_y], config_instances = config_instances\
-                        , relim_mode='tight')
-    fig, selector = liveplot.plot()
-    data_figure = DataFigure(liveplot)
-    return fig, data_figure
 
 
 
@@ -2131,130 +1655,13 @@ def time_tagger(click_channel, start_channel, binwidth, n_bins, duration, config
 
 
 
-from matplotlib.animation import FuncAnimation
 
 
 
-class LivePlotWithAnimation:
-    """
-    使用 matplotlib.animation.FuncAnimation 实现实时更新的基础类。
-    """
-    def __init__(self, labels, update_time, data_generator, data, fig=None, config_instances=None, relim_mode='normal'):
-        self.labels = labels
-        self.data_x = data[0]
-        self.data_y = data[1]
-        self.update_time = update_time
-        self.data_generator = data_generator
-        self.fig = plt.figure()
-        self.relim_mode = relim_mode
-        self.ylim_max = 100
-        self.ylim_min = 0
-        self.line = None
-        self.axes = None
-        self.bg_fig = None
-        self.anim = None
-
-    def init_figure_and_data(self):
-        #change_to_nbagg(params_type = 'nbagg', scale=1)
-        plt.ion()
-        self.axes = self.fig.add_subplot(111)
-        #self.clear_all()
-        self.axes.set_ylabel(self.labels[1])
-        self.axes.set_xlabel(self.labels[0])
-        self.init_core()
-
-
-        self.fig.canvas.toolbar_visible = False
-        self.fig.canvas.header_visible = False
-        self.fig.canvas.footer_visible = False
-        self.fig.canvas.resizable = False
-        self.fig.canvas.capture_scroll = True
-        #display_immediately(self.fig)
-
-            
-        #self.axes.set_autoscale_on(True)
-        self.fig.tight_layout()
 
 
 
-        self.data_generator.start()
-
-    def init_core(self):
-        raise NotImplementedError("Subclasses should implement this method.")
-
-    def update_core(self):
-        raise NotImplementedError("Subclasses should implement this method.")
-
-    def plot(self):
-        self.init_figure_and_data()
-
-        def update(frame):
-            print('hello')
-            if not self.data_generator.is_done:
-                self.update_figure()
-            else:
-                self.anim.event_source.stop()
-
-        self.anim = FuncAnimation(
-            self.fig, update, interval=self.update_time * 1000, blit=True, repeat=False
-        )
-        plt.show()
-        #print('hi', self.anim)
-
-        return self.fig, self.anim
-
-    def update_figure(self):
-        self.update_core()
-
-    def clear_all(self):
-        if self.axes:
-            self.axes.clear()
-
-
-class PLELiveWithAnimation(LivePlotWithAnimation):
-    """
-    实现具体绘图逻辑的子类。
-    """
-    def init_core(self):
-        self.line, = self.axes.plot(self.data_x, self.data_y, color='grey', alpha=1)
-        self.axes.set_xlim(np.min(self.data_x), np.max(self.data_x))
-
-    def update_core(self):
-        max_data_y = np.max(self.data_y)
-        if self.relim_mode == 'normal':
-            if self.data_generator.points_done % len(self.data_x) == 0:
-                self.ylim_max = max_data_y + 500
-                self.axes.set_ylim(0, self.ylim_max)
-
-            elif not 100 < (self.ylim_max - max_data_y) < 1000:
-                self.ylim_max = max_data_y + 500
-                self.axes.set_ylim(0, self.ylim_max)
-
-        self.line.set_data(self.data_x[:self.data_generator.points_done],
-                           self.data_y[:self.data_generator.points_done])
-        #self.fig.canvas.draw_idle()
 
 
 
-def ple_with_animation(wavelength_array, exposure, config_instances, repeat=1):
-                
-    data_x = wavelength_array
-    data_y = np.zeros(len(data_x))
-    data_generator = PLEAcquire(exposure = exposure, data_x=data_x, data_y=data_y, config_instances = config_instances, repeat=repeat)
-    liveplot = PLELiveWithAnimation(labels=['Wavelength (nm)', f'Counts/{exposure}s'], \
-                        update_time=0.1, data_generator=data_generator, data=[data_x, data_y], config_instances = config_instances)
-    fig, anim = liveplot.plot()
-    #data_figure = DataFigure(liveplot)
-    return fig, anim
 
-def live_with_animation(data_array, exposure, config_instances, wavelength=None, is_finite=False):
-                
-    data_x = data_array
-    data_y = np.zeros(len(data_x))
-    data_generator = LiveAcquire(exposure = exposure, data_x=data_x, data_y=data_y, \
-                                 config_instances = config_instances, wavelength=wavelength, is_finite=is_finite)
-    liveplot = PLELiveWithAnimation(labels=['Data', f'Counts/{exposure}s'], \
-                        update_time=0.01, data_generator=data_generator, data=[data_x, data_y], config_instances = config_instances)
-    fig, anim = liveplot.plot()
-    #data_figure = DataFigure(liveplot)
-    return fig, anim
