@@ -2,3 +2,6 @@
 *.npz
 *.jpg
 *.pyc
+/jupyter notebook examples/.ipynb_checkpoints
+/jupyter notebook examples/.ipynb_checkpoints
+/jupyter notebook examples/.ipynb_checkpoints

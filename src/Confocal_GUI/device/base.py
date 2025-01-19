@@ -276,6 +276,8 @@ class BasePulse(ABC):
         # example of data_matrix [[duration in ns, on or off for channel i, ...], ...]
         # self._data_matrix can also be np.array([['x', 1,1,1,1,1,1,1,1], ['1000-x', 1,1,1,1,1,1,1,1]])
         self.data_matrix_tmp = np.array([[1000, 1,0,0,0,0,0,0,0], [1000, 1,0,0,0,0,0,0,0]])
+        self._repeat_info = [0, -1, 1] # start_index, end_index(include), repeat_times
+        self.repeat_info_tmp = [0, -1, 1]
         # _data_matrix for on_pulse(), data_matrix_tmp for reopen gui display
         self.channel_names = ['', '', '', '', '', '', '', '']
         self.channel_names_tmp = ['', '', '', '', '', '', '', '']
@@ -326,6 +328,23 @@ class BasePulse(ABC):
                     return
 
         self._data_matrix = value
+
+    @property
+    def repeat_info(self):
+        return self._repeat_info
+    
+    @repeat_info.setter
+    def repeat_info(self, value):
+        if len(value)!= 3:
+            print('invalid repeat_info length')
+            return
+        if not all(isinstance(item, (Number, str)) for item in value):
+            print('Invalid repeat_info content.')
+            return
+        if not ((0<=value[0]<=(len(self.data_matrix)-2)) and ((value[1]-value[0])>=1 or (value[1]==-1))):
+            print('Invalid repeat_info content.')
+        self._repeat_info = [int(item) for item in value]
+        # must all be integers
 
     @property
     def x(self):
@@ -387,11 +406,26 @@ class BasePulse(ABC):
     def set_delay(self, delay_array):
         self.delay_array = [delay if isinstance(delay, str) else int(delay) for delay in delay_array]
 
-    def load_x_to_str(self, timing):
-        if isinstance(timing, Number):
-            return int(timing)
-        if isinstance(timing, str):
-            return eval(f'{timing}'.replace('x', str(self.x)))
+    def load_x_to_str(self, timing, time_type):
+        if time_type == 'delay':
+            if isinstance(timing, Number):
+                return int(timing)
+            if isinstance(timing, str):
+                return eval(f'{timing}'.replace('x', str(self.x)))
+        elif time_type == 'duration':
+            # must larger than 0
+            if isinstance(timing, Number):
+                if int(timing) > 0:
+                    return int(timing)
+                else:
+                    print('Duration must larger than 0ns')
+                    return 1
+            if isinstance(timing, str):
+                if eval(f'{timing}'.replace('x', str(self.x)))>0:
+                    return eval(f'{timing}'.replace('x', str(self.x)))
+                else:
+                    print('Duration must larger than 0ns')
+                    return 1
                     
     def read_data(self):
 
@@ -399,11 +433,23 @@ class BasePulse(ABC):
         
         data_matrix = self.data_matrix
         # data_matrix is [[1e3, 1, 1, 1, 1, 1, 1, 1, 1], ...]
-
+        start_index = self.repeat_info[0]
+        end_index = len(self.data_matrix) if (self.repeat_info[1]==-1) else (self.repeat_info[1]+1)
         time_slices = []
         for channel in range(8):
-            time_slice = [[self.load_x_to_str(period[0]), period[channel+1]] for period in data_matrix]
-            time_slice_delayed = self.delay(self.load_x_to_str(self.delay_array[channel]), time_slice)
+            time_slice = []
+            for period in data_matrix[:start_index]:
+                time_slice.append([self.load_x_to_str(period[0], 'duration'), period[channel+1]])
+            # brefore repeat sequence
+            for repeat in range(int(self.repeat_info[2])):
+                for period in data_matrix[start_index:end_index]:
+                    time_slice.append([self.load_x_to_str(period[0], 'duration'), period[channel+1]])
+            # repeat sequence
+            for period in data_matrix[end_index:]:
+                time_slice.append([self.load_x_to_str(period[0], 'duration'), period[channel+1]])
+            # after reepat sequence
+
+            time_slice_delayed = self.delay(self.load_x_to_str(self.delay_array[channel], 'delay'), time_slice)
             time_slices.append(time_slice_delayed)
         
         return time_slices
@@ -424,7 +470,9 @@ class BasePulse(ABC):
 
         
         np.savez(addr + '_pulse' + '.npz', data_matrix = np.array(self.data_matrix, dtype=object), \
-            delay_array = np.array(self.delay_array, dtype=object), channel_names = np.array(self.channel_names, dtype=object))
+            delay_array = np.array(self.delay_array, dtype=object), \
+            channel_names = np.array(self.channel_names, dtype=object), \
+            repeat_info = np.array(self.repeat_info, dtype=object))
 
     def load_from_file(self, addr):
         import glob
@@ -447,6 +495,7 @@ class BasePulse(ABC):
         self.data_matrix = loaded['data_matrix']
         self.delay_array = loaded['delay_array']
         self.channel_names = loaded['channel_names']
+        self.repeat_info = loaded['repeat_info']
     
     def delay(self, delay, time_slice):
         # accept time slice

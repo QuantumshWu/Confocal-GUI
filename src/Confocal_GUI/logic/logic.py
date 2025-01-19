@@ -55,7 +55,7 @@ class BaseMeasurement(ABC):
         else:
             for j, y in enumerate(self.data_x[1]):
                 for i, x in enumerate(self.data_x[0]):
-                    yield (j, i), (x, y)
+                    yield (i, j), (x, y)
 
 
 
@@ -80,6 +80,12 @@ class BaseMeasurement(ABC):
             print('missing params, use measurement.load_params()')
             return
 
+        self.is_running = True
+        self.is_done = False
+        self.points_done = 0
+        self.repeat_done = 1
+        # reset data_generator
+
         # how data_generator is called by live_plot
         self.thread = threading.Thread(target=self._data_generator, daemon=True)
         self.thread.start()
@@ -87,10 +93,10 @@ class BaseMeasurement(ABC):
 
 
     def stop(self):
-        self.to_final_state()
         if self.thread.is_alive():
             self.is_running = False
             self.thread.join()
+        self.to_final_state()
         self.loaded_params = False
 
 
@@ -225,7 +231,7 @@ class PLEMeasurement(BaseMeasurement):
         self.measurement_name = 'PLE'
         self.x_device_name = 'wavemeter'
         # defines the label name used in GUI
-        self.plot_type = 'PLE'
+        self.plot_type = '1D'
         self.fit_func = 'lorent'
         self.loaded_params = False
 
@@ -235,6 +241,7 @@ class PLEMeasurement(BaseMeasurement):
         # init assignment
         if (self.counter is None) or (self.wavemeter is None):
             print('missing config_instances')
+        self.scanner = self.config_instances.get('scanner', None)
 
 
     def load_params(self, data_x=None, exposure=0.1, config_instances=None, repeat=1, is_GUI=False, \
@@ -254,12 +261,8 @@ class PLEMeasurement(BaseMeasurement):
         self.data_mode = data_mode
         self.relim_mode = relim_mode
         self.is_plot = is_plot
-        self.info = {'plot_type':self.plot_type, 'exposure':self.exposure, 'repeat':self.repeat}
-        
-        self.is_running = True
-        self.is_done = False
-        self.points_done = 0
-        self.repeat_done = 1
+        self.info = {'measurement_name':self.measurement_name, 'plot_type':self.plot_type, 'exposure':self.exposure\
+                , 'repeat':self.repeat, 'scanner':(None if self.scanner is None else (self.scanner.x, self.scanner.y))}
 
     def plot(self, **kwargs):
         self.load_params(**kwargs)
@@ -315,7 +318,7 @@ class ODMRMeasurement(BaseMeasurement):
         self.x_unit = 'GHz'
         self.measurement_name = 'ODMR'
         self.x_device_name = 'RF'
-        self.plot_type = 'PLE'
+        self.plot_type = '1D'
         self.fit_func = 'lorent'
         self.loaded_params = False
 
@@ -324,6 +327,7 @@ class ODMRMeasurement(BaseMeasurement):
         # init assignment
         if (self.counter is None) or (self.rf is None):
             print('missing config_instances')
+        self.scanner = self.config_instances.get('scanner', None)
 
 
     def load_params(self, data_x=None, exposure=0.1, power=-10, config_instances=None, repeat=1, is_GUI=False, \
@@ -344,12 +348,8 @@ class ODMRMeasurement(BaseMeasurement):
         self.relim_mode = relim_mode
         self.power = power
         self.is_plot = is_plot
-        self.info = {'plot_type':self.plot_type, 'exposure':self.exposure, 'repeat':self.repeat, 'power':self.power}
-        
-        self.is_running = True
-        self.is_done = False
-        self.points_done = 0
-        self.repeat_done = 1
+        self.info = {'measurement_name':self.measurement_name, 'plot_type':self.plot_type, 'exposure':self.exposure\
+                    , 'repeat':self.repeat, 'power':self.power, 'scanner':(None if self.scanner is None else (self.scanner.x, self.scanner.y))}
 
     def plot(self, **kwargs):
         self.load_params(**kwargs)
@@ -399,16 +399,16 @@ class LiveMeasurement(BaseMeasurement):
 
     def assign_names(self):
 
-        self.plot_type = 'PLE'
-
         self.x_name = 'Data'
         self.x_unit = '1'
         self.measurement_name = 'Live'
         self.x_device_name = ''
+        self.plot_type = '1D'
         self.is_change_unit = False
         self.loaded_params = False
         self.counter = self.config_instances.get('counter')
         self.rf = self.config_instances.get('rf')
+        self.scanner = self.config_instances.get('scanner', None)
         # init assignment
 
 
@@ -433,12 +433,8 @@ class LiveMeasurement(BaseMeasurement):
         self.data_mode = data_mode
         self.relim_mode = relim_mode
         self.is_plot = is_plot
-        self.info = {'plot_type':self.plot_type, 'exposure':self.exposure, 'repeat':self.repeat}
-        
-        self.is_running = True
-        self.is_done = False
-        self.points_done = 0
-        self.repeat_done = 1
+        self.info = {'measurement_name':self.measurement_name, 'plot_type':self.plot_type, 'exposure':self.exposure\
+                    , 'repeat':self.repeat, 'scanner':(None if self.scanner is None else (self.scanner.x, self.scanner.y))}
 
     def plot(self, **kwargs):
         self.load_params(**kwargs)
@@ -495,12 +491,12 @@ class PLMeasurement(BaseMeasurement):
 
     def update_data_y(self, index):
         counts = self.counter.read_counts(self.exposure, parent = self, counter_mode=self.counter_mode, data_mode=self.data_mode)
-        j, i = index
+        i, j = index
         self.data_y[j][i] += counts
 
     def assign_names(self):
 
-        self.plot_type = 'PL'
+        self.plot_type = '2D'
         self.measurement_name = 'PL'
         self.x_device_name = 'None'
         self.x_unit = ''
@@ -538,12 +534,8 @@ class PLMeasurement(BaseMeasurement):
         self.data_mode = data_mode
         self.relim_mode = relim_mode
         self.is_plot = is_plot
-        self.info = {'plot_type':self.plot_type, 'exposure':self.exposure, 'repeat':self.repeat, 'wavelength':self.wavelength}
-        
-        self.is_running = True
-        self.is_done = False
-        self.points_done = 0
-        self.repeat_done = 1
+        self.info = {'measurement_name':self.measurement_name, 'plot_type':self.plot_type, 'exposure':self.exposure\
+                    , 'repeat':self.repeat, 'wavelength':self.wavelength}
 
     def plot(self, **kwargs):
         self.load_params(**kwargs)

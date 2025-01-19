@@ -2,6 +2,7 @@ import os, sys, time, threading, io
 import numpy as np
 from decimal import Decimal
 from threading import Event
+import numbers
 
 import matplotlib
 import matplotlib.pyplot as plt
@@ -17,10 +18,10 @@ from IPython import get_ipython
 from IPython.display import display, HTML
 from IPython.display import Image as IPImage
 
-from PyQt5.QtCore import QThread, pyqtSignal, QObject, Qt, QSize
+from PyQt5.QtCore import QThread, pyqtSignal, QObject, Qt, QSize, QMutex, QMutexLocker, QMimeData
 from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget, QGridLayout, QRadioButton, QHBoxLayout, QVBoxLayout\
-, QPushButton, QGroupBox, QCheckBox, QLineEdit, QComboBox, QLabel, QFileDialog, QDoubleSpinBox, QSizePolicy, QDialog, QMessageBox
-from PyQt5.QtGui import QPalette, QColor, QFont
+, QPushButton, QGroupBox, QCheckBox, QLineEdit, QComboBox, QLabel, QFileDialog, QDoubleSpinBox, QSizePolicy, QDialog, QMessageBox, QFrame
+from PyQt5.QtGui import QPalette, QColor, QFont, QDrag, QPixmap
 from PyQt5 import QtCore, QtWidgets, uic
 
 from Confocal_GUI.live_plot import *
@@ -72,8 +73,8 @@ class DetachedWindow(QMainWindow):
 
         self.scale = self.parent_window.config_instances['display_scale']
         self.init_size = self.size()
-        self.setMaximumSize(self.init_size.width()*self.scale, self.init_size.height()*self.scale)
-        self.setMinimumSize(self.init_size.width()*self.scale, self.init_size.height()*self.scale)
+        self.setMaximumSize(int(self.init_size.width()*self.scale), int(self.init_size.height()*self.scale))
+        self.setMinimumSize(int(self.init_size.width()*self.scale), int(self.init_size.height()*self.scale))
 
         self.widget.show()
 
@@ -102,17 +103,21 @@ class MainWindow(QMainWindow):
         self.measurement_PLE = measurement_PLE
         self.measurement_Live = measurement_Live
         self.ui = ui
+        self.is_stop_plot_done = True
+        self.mutex = QMutex() # thread lock for update_plot
 
         ui_path = os.path.join(os.path.dirname(__file__), self.ui)
         uic.loadUi(ui_path, self)
 
         self.scale = self.config_instances['display_scale']
         self.init_size = self.size()
-        self.setMaximumSize(self.init_size.width()*self.scale, self.init_size.height()*self.scale)
-        self.setMinimumSize(self.init_size.width()*self.scale, self.init_size.height()*self.scale)
+        self.setMaximumSize(int(self.init_size.width()*self.scale), int(self.init_size.height()*self.scale))
+        self.setMinimumSize(int(self.init_size.width()*self.scale), int(self.init_size.height()*self.scale))
         self.scale_widgets(self.centralwidget, self.scale, is_recursive=True)
         self.setWindowTitle(f'ConfocalGUI@Wanglab, UOregon' )
         # set size
+
+
         
         self.load_figures()
         self.load_default()
@@ -148,7 +153,7 @@ class MainWindow(QMainWindow):
                 {'name': 'pushButton_load', 'func': self.load_file},
                 # for load file
                 {'name': 'pushButton_start_PLE', 'func': self.start_plot_PLE},
-                {'name': 'pushButton_stop_PLE', 'func': self.stop_and_show},
+                {'name': 'pushButton_stop_PLE', 'func': self.stop_plot},
                 {'name': 'pushButton_wavelength', 'func': self.read_wavelength},
                 {'name': 'pushButton_range_PLE', 'func': self.read_range_PLE},
                 {'name': 'pushButton_lorent', 'func': self.fit_func},
@@ -158,12 +163,12 @@ class MainWindow(QMainWindow):
                 {'name': 'pushButton_device_gui', 'func': self.open_device_gui},
                 # for load device gui
                 {'name': 'pushButton_start_Live', 'func': self.start_plot_Live},
-                {'name': 'pushButton_stop_Live', 'func': self.stop_and_show},
+                {'name': 'pushButton_stop_Live', 'func': self.stop_plot},
                 {'name': 'pushButton_detach', 'func': self.detach_page},
                 {'name': 'pushButton_reattach', 'func': self.reattach_page},
                 # for Live
                 {'name': 'pushButton_start_PL', 'func': self.start_plot_PL},
-                {'name': 'pushButton_stop_PL', 'func': self.stop_and_show},
+                {'name': 'pushButton_stop_PL', 'func': self.stop_plot},
                 {'name': 'pushButton_XY', 'func': self.read_xy},
                 {'name': 'pushButton_range_PL', 'func': self.read_range_PL},
                 {'name': 'pushButton_scanner', 'func': self.move_scanner},
@@ -374,11 +379,11 @@ class MainWindow(QMainWindow):
             self.is_error = True
             return
         data_generator = LoadAcquire(address=files[0])
-        plot_type = data_generator.info.get('plot_type', 'None')
+        plot_type = data_generator.plot_type
 
 
 
-        if plot_type == 'PLE':
+        if plot_type == '1D':
             if self.measurement_PLE is not None:
                 data_figure = DataFigure(None, address = files[0][:-4] + '*', fig=self.canvas_PLE.fig)
                 figure_title = (files[0][:-4]).split('\\')[-1]
@@ -389,7 +394,7 @@ class MainWindow(QMainWindow):
             else:
                 self.print_log(f'Cannot load PLE plot_type')
                 return
-        elif plot_type == 'PL':
+        elif plot_type == '2D':
             if self.measurement_PL is not None:
                 data_figure = DataFigure(None, address = files[0][:-4] + '*', fig=self.canvas_PL.fig)
                 figure_title = (files[0][:-4]).split('\\')[-1]
@@ -445,12 +450,11 @@ class MainWindow(QMainWindow):
 
 
     def open_device_gui(self):
-        self.stop_and_show()
+        self.stop_plot()
         device_handle = self.comboBox_device_gui.currentText()
         device_instance = self.config_instances[device_handle]
         if hasattr(device_instance, 'gui'):
             if device_handle == 'pulse':
-                self.stop_and_show()
                 device_instance.gui(is_in_GUI=True)
                 # need different way to open a QWindow instance, and reclose plot to wait a little longer
             else:
@@ -461,14 +465,14 @@ class MainWindow(QMainWindow):
         #print('name',widget.objectName(), 'init width', widget.font().pointSizeF(), 'fa', fa.objectName())
 
 
-        widget.setGeometry(widget.x()* scale_factor, widget.y()* scale_factor, 
-                            widget.width() * scale_factor, widget.height() * scale_factor)
+        widget.setGeometry(int(widget.x()* scale_factor), int(widget.y()* scale_factor), 
+                            int(widget.width() * scale_factor), int(widget.height() * scale_factor))
 
         font = widget.font()
         if isinstance(widget, QDoubleSpinBox):
-            font.setPointSizeF(16 * scale_factor)
+            font.setPointSizeF(int(16 * scale_factor))
         else:
-            font.setPointSizeF(12 * scale_factor)
+            font.setPointSizeF(int(12 * scale_factor))
         widget.setFont(font)
 
 
@@ -553,9 +557,9 @@ class MainWindow(QMainWindow):
 
 
     def start_plot_Live(self):
+        self.stop_plot(is_close_selector=True, cur_plot = 'Live')
         self.print_log(f'Live started')
         self.cur_plot = 'Live'
-        self.stop_plot()
         self.is_running = True
         self.read_data_Live()
         
@@ -580,66 +584,49 @@ class MainWindow(QMainWindow):
             
         
     def update_plot(self):
-        
-        attr = self.cur_plot
-        live_plot_handle = getattr(self, f'live_plot_{attr}')
 
-        if live_plot_handle.data_generator.thread.is_alive() and self.is_running:
+        with QMutexLocker(self.mutex):
+            # lock this method
+            self.is_stop_plot_done = False
+            attr = self.cur_plot
+            live_plot_handle = getattr(self, f'live_plot_{attr}')
 
-            live_plot_handle.update_figure()
+            if live_plot_handle.data_generator.thread.is_alive() and self.is_running:
 
-            self.estimate_PL_time()
-            self.estimate_PLE_time()
-            # update estimate finish time
-        else:
-            self.timer.stop()
+                live_plot_handle.update_figure()
 
-            live_plot_handle.update_figure()  
-            live_plot_handle.line.set_animated(False)                
-            live_plot_handle.axes.set_autoscale_on(False)     
-            live_plot_handle.choose_selector()
-            live_plot_handle.stop()
-            setattr(self, f'data_figure_{attr}', DataFigure(live_plot_handle))
-            self.is_running = False
+                self.estimate_PL_time()
+                self.estimate_PLE_time()
+                # update estimate finish time
+            else:
+                self.timer.stop()
+                live_plot_handle.stop()
+                # stop data_generator
 
+                live_plot_handle.update_figure()  
+                live_plot_handle.line.set_animated(False)                
+                live_plot_handle.axes.set_autoscale_on(False)     
+                live_plot_handle.choose_selector()
+                setattr(self, f'data_figure_{attr}', DataFigure(live_plot_handle))
+                self.is_running = False
 
-            self.estimate_PL_time()
-            self.estimate_PLE_time()
-            if self.findChild(QCheckBox, 'checkBox_is_stabilizer') is not None:
-                self.checkBox_is_stabilizer.setDisabled(False)
-                self.doubleSpinBox_wavelength.setDisabled(False)
+                self.estimate_PL_time()
+                self.estimate_PLE_time()
+
+                self.is_stop_plot_done = True
             
     
-    def stop_plot(self):
-        
+    def stop_plot(self, is_close_selector=False, cur_plot='PL'):
+        self.print_log(f'Plot stopped')
         self.is_running = False
         self.is_fit = False
         attr = self.cur_plot
         
-        setattr(self, f'data_figure_{attr}', None) #disable DataFigure
-        
         if hasattr(self, 'timer'):
             self.timer.stop()
-            
-            
-        if hasattr(self, 'live_plot_PL') and self.live_plot_PL is not None:
-            self.live_plot_PL.stop()
-
-        if hasattr(self, 'live_plot_Live') and self.live_plot_Live is not None:
-            self.live_plot_Live.stop()
-
-        if hasattr(self, 'live_plot_PLE') and self.live_plot_PLE is not None:
-            self.live_plot_PLE.stop()
-            
-            
-            
-            
-            
-    def stop_and_show(self):
-        # stop acquiring data but enable save, fit and selector
-        self.print_log(f'Plot stopped')
-        self.is_running = False
-
+        if not self.is_stop_plot_done:
+            self.update_plot()
+        # enforce another plot instantly to go through end plot procedure
         if hasattr(self, 'live_plot_PLE'):
             self.checkBox_is_stabilizer.setDisabled(False)
             self.doubleSpinBox_wavelength.setDisabled(False)
@@ -651,7 +638,24 @@ class MainWindow(QMainWindow):
             self.estimate_PL_time()
 
         if hasattr(self, 'live_plot_PLE') and self.live_plot_PLE is not None:
-            self.estimate_PLE_time()
+            self.estimate_PLE_time() 
+
+        if is_close_selector:
+            # make sure no residual selector which may cause thread problem
+            if cur_plot=='PL':
+                if hasattr(self, f'live_plot_PL') and self.live_plot_PL is not None:
+                    for selector in self.live_plot_PL.selector:
+                        selector.set_active(False)
+            elif cur_plot=='PLE':
+                if hasattr(self, 'live_plot_PLE') and self.live_plot_PLE is not None:
+                    for selector in self.live_plot_PLE.selector:
+                        selector.set_active(False)
+            elif cur_plot=='Live':
+                if hasattr(self, 'live_plot_Live') and self.live_plot_Live is not None:
+                    for selector in self.live_plot_Live.selector:
+                        selector.set_active(False)
+
+
 
 
     def bind_set(self):
@@ -753,12 +757,11 @@ class MainWindow(QMainWindow):
             
             
     def start_plot_PL(self):
+        self.stop_plot(is_close_selector=True, cur_plot='PL')
         self.print_log(f'PL started')
         self.cur_plot = 'PL'
-        self.stop_plot()
         self.is_running = True
-            
-            
+           
         self.read_data_PL()
 
         data_x = np.array([np.arange(self.xl, self.xu, self.step_PL), np.arange(self.yl, self.yu, self.step_PL)])
@@ -776,9 +779,9 @@ class MainWindow(QMainWindow):
 
 
         data_y = self.measurement_PL.data_y
-        self.live_plot_PL = PLGUILive(labels=[['X', 'Y'], f'Counts/{self.exposure_PL:.2f}s'], \
+        self.live_plot_PL = PLDisLive(labels=[['X', 'Y'], f'Counts/{self.exposure_PL:.2f}s'], \
                         update_time=1, data_generator=self.measurement_PL, data=[data_x, data_y],\
-                                       fig=self.canvas_PL.fig, config_instances=self.config_instances)
+                                       fig=self.canvas_PL.fig, config_instances=self.config_instances, relim_mode = self.relim_PL)
         
         
         self.live_plot_PL.init_figure_and_data()
@@ -913,9 +916,9 @@ class MainWindow(QMainWindow):
 
 
     def start_plot_PLE(self):
+        self.stop_plot(is_close_selector=True, cur_plot='PLE')
         self.print_log(f'{self.measurement_PLE.measurement_name} started')
         self.cur_plot = 'PLE'
-        self.stop_plot()
         self.is_running = True
         self.pushButton_load.setText(f'Load file:')
                     
@@ -950,6 +953,8 @@ class MainWindow(QMainWindow):
 
             
     def closeEvent(self, event):
+        if self.detached_window is not None:
+            self.reattach_page()
         self.stop_plot()
         plt.close('all') # make sure close all plots which avoids error message
 
@@ -1195,6 +1200,215 @@ def GUI_Device(device_handle):
     dialog.exec_()
 
 
+class DraggableItem:
+    """
+    Save properties
+    """
+    def __init__(self, widget, item_type):
+        self.widget = widget
+        self.item_type = item_type
+        if self.item_type != 'pulse':
+            self.widget.setStyleSheet("""QGroupBox {border: 2px solid grey;}""")
+
+
+class DragContainer(QWidget):
+    """
+    Drag container for dragable bracket in pulse control gui
+    """
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAcceptDrops(True)
+
+        self.layout_main = QHBoxLayout(self)
+        self.layout_main.setSpacing(20)
+        self.items = []
+
+        self.dragStartPos = None
+        self.draggingIndex = None
+
+        # maintain a indicator between containers but hide 
+        self.insert_indicator = QFrame()
+        self.insert_indicator.setFrameShape(QFrame.VLine)
+        self.insert_indicator.setFrameShadow(QFrame.Raised)
+        self.insert_indicator.setStyleSheet("QFrame { background-color: red; width: 2px; }")
+        self.insert_indicator.hide()
+
+    def add_item(self, widget, item_type):
+        it = DraggableItem(widget, item_type)
+        self.items.append(it)
+        self.layout_main.addWidget(widget)
+
+    def insert_item(self, index, widget, item_type):
+        it = DraggableItem(widget, item_type)
+        self.items.insert(index, it)
+        self.refresh_layout()
+
+    def refresh_layout(self):
+        # remove all widget
+        while self.layout_main.count() > 0:
+            c = self.layout_main.takeAt(0)
+            w = c.widget()
+            if w:
+                w.setParent(None)
+        # reinsert follows order
+        for it in self.items:
+            self.layout_main.addWidget(it.widget)
+        # add end indicator
+        self.layout_main.addWidget(self.insert_indicator)
+        self.insert_indicator.hide()
+
+    def index_of_widget(self, w):
+        for i, it in enumerate(self.items):
+            if it.widget == w:
+                return i
+        return -1
+
+    # ========== Drag & Drop ==========
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.dragStartPos = event.pos()
+            clicked_index = self.find_child_index_by_pos(event.pos())
+            if clicked_index != -1:
+                self.draggingIndex = clicked_index
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if (event.buttons() & Qt.LeftButton) and self.dragStartPos is not None:
+            distance = (event.pos() - self.dragStartPos).manhattanLength()
+            if distance > QApplication.startDragDistance():
+                if self.draggingIndex is not None:
+                    self.startDrag(self.draggingIndex)
+                    self.draggingIndex = None
+                    self.dragStartPos = None
+        super().mouseMoveEvent(event)
+
+    def startDrag(self, index):
+        drag = QDrag(self)
+        mime = QMimeData()
+        mime.setData("application/x-drag-bracket", str(index).encode("utf-8"))
+        drag.setMimeData(mime)
+
+        # highlight selected drag container
+        self.index = index
+        self.items[self.index].widget.setStyleSheet("QGroupBox { border: 2px solid red; }")
+
+        # screentshot selected container
+        pixmap = QPixmap(self.items[self.index].widget.size())
+        self.items[self.index].widget.render(pixmap)
+        drag.setPixmap(pixmap)
+
+        dropAction = drag.exec_(Qt.MoveAction)
+
+        # end of drag
+        if self.items[self.index].item_type == 'pulse':
+            self.items[self.index].widget.setStyleSheet("")
+            self.update_pulse_index()
+        else:
+            self.items[self.index].widget.setStyleSheet("QGroupBox { border: 2px solid grey; }")
+
+    def update_pulse_index(self):
+        pulse_list = [item for item in self.items if item.item_type=='pulse']
+        for ii, item in enumerate(pulse_list):
+            widget = item.widget
+            widget.setTitle(f'Pulse{ii}')
+
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasFormat("application/x-drag-bracket"):
+            event.acceptProposedAction()
+        else:
+            super().dragEnterEvent(event)
+
+    def dragMoveEvent(self, event):
+        if event.mimeData().hasFormat("application/x-drag-bracket"):
+            event.acceptProposedAction()
+            # pos of drag
+            insert_pos = self.get_item_at_pos(event.pos())
+            self.show_insert_indicator(insert_pos)
+        else:
+            super().dragMoveEvent(event)
+
+    def dropEvent(self, event):
+        if event.mimeData().hasFormat("application/x-drag-bracket"):
+            # 1) get item of drag container
+            raw_data = event.mimeData().data("application/x-drag-bracket")
+            old_bytes = bytes(raw_data)
+            old_index = int(old_bytes.decode("utf-8"))
+            dragged_item = self.items[old_index]
+
+            # 2) new pos
+            insert_pos = self.get_item_at_pos(event.pos())
+            # 3) new item array
+            new_items = self.items[:]             
+            new_items.remove(dragged_item)
+            if insert_pos > old_index:
+                insert_pos -= 1
+            new_items.insert(insert_pos, dragged_item)
+
+            # 4) check constarin
+            if not self.check_bracket_constraints(new_items):
+                event.ignore()
+                self.insert_indicator.hide()
+                return
+            else:
+                event.setDropAction(Qt.MoveAction)
+                event.accept()
+                self.index = insert_pos
+                self.items = new_items
+                self.refresh_layout()
+                self.insert_indicator.hide()
+
+        else:
+            super().dropEvent(event)
+
+
+    def dragLeaveEvent(self, event):
+        self.insert_indicator.hide()
+        super().dragLeaveEvent(event)
+
+    # ========== sub functions ==========
+    def find_child_index_by_pos(self, pos):
+        for i, it in enumerate(self.items):
+            if it.widget.geometry().contains(pos):
+                return i
+        return -1
+
+    def get_item_at_pos(self, pos):
+        x = pos.x()
+        for i, it in enumerate(self.items):
+            w = it.widget
+            geo = w.geometry()
+            mid = geo.x() + geo.width() // 2
+            if x < mid:
+                return i
+        return len(self.items)
+
+    def show_insert_indicator(self, index):
+        self.layout_main.removeWidget(self.insert_indicator)
+        self.layout_main.insertWidget(index, self.insert_indicator)
+        self.insert_indicator.show()
+
+    def check_bracket_constraints(self, item_list=None):
+        if item_list is None:
+            item_list = self.items  
+
+        start_idx = None
+        end_idx = None
+        for i, it in enumerate(item_list):
+            if it.item_type == "bracket_start":
+                start_idx = i
+            elif it.item_type == "bracket_end":
+                end_idx = i
+
+        if start_idx is not None and end_idx is not None:
+            # 1) end must larger than start
+            if end_idx <= start_idx:
+                return False
+            # 2) at least two pulses away
+            if end_idx < start_idx + 3:
+                return False
+        return True
+
+
 class PulseGUI(QMainWindow):
 
     def __init__(self, device_handle, parent=None):
@@ -1204,6 +1418,7 @@ class PulseGUI(QMainWindow):
         self.setWindowTitle('PulseGUI@Wanglab, UOregon')
         self.device_handle = device_handle
         self.channel_names_map = [f'Ch{channel}' for channel in range(8)]
+        self.drag_container = None
         
         self.widget = QWidget()
         self.layout = QVBoxLayout(self.widget)
@@ -1236,15 +1451,8 @@ class PulseGUI(QMainWindow):
         self.btn3.setFixedSize(150,100)
         self.btn3.clicked.connect(self.add_column)
         self.layout_button.addWidget(self.btn3)
-
-        self.btn4 = QPushButton('Save Pulse')
-        self.btn4.setFixedSize(150,100)
-        self.btn4.clicked.connect(self.save_data)
-        self.layout_button.addWidget(self.btn4)
         
         self.setCentralWidget(self.widget)
-
-        self.load_data()
 
         self.btn3 = QPushButton('Save to file')
         self.btn3.setFixedSize(150,100)
@@ -1255,6 +1463,18 @@ class PulseGUI(QMainWindow):
         self.btn4.setFixedSize(150,100)
         self.btn4.clicked.connect(self.load_from_file)
         self.layout_saveload.addWidget(self.btn4)
+
+        self.btn4 = QPushButton('Save Pulse')
+        self.btn4.setFixedSize(150,100)
+        self.btn4.clicked.connect(self.save_data)
+        self.layout_saveload.addWidget(self.btn4)
+
+        self.btn_add_bracket = QPushButton("Add Bracket")
+        self.btn_add_bracket.clicked.connect(self.on_add_bracket)
+        self.btn_add_bracket.setFixedSize(150,100)
+        self.layout_saveload.addWidget(self.btn_add_bracket)
+
+        self.load_data()
 
         self.show()
 
@@ -1269,9 +1489,7 @@ class PulseGUI(QMainWindow):
 
     def on_pulse(self):
 
-        self.device_handle.data_matrix = self.read_data()
-        self.device_handle.delay_array = self.read_delay()
-        self.device_handle.channel_names = self.read_channel_names()
+        self.save_data()
         self.device_handle.on_pulse()
 
     def handle_text_change(self, text, combo_box):
@@ -1283,6 +1501,81 @@ class PulseGUI(QMainWindow):
         else:
             combo_box.setCurrentText('str (ns)')
             combo_box.setEnabled(False)
+
+
+    def on_add_bracket(self, start_index=0, end_index=-1):
+        """
+        If brackets do not exist yet:
+          1) Find the first pulse index and the last pulse index.
+          2) Insert the start bracket right before the first pulse.
+          3) Insert the end bracket right after the last pulse.
+        If brackets already exist, remove them.
+        """
+        if not self.bracket_exists:
+            # 1) Identify the indices of the first and last pulse
+            first_pulse_index = 0
+            last_pulse_index = len(self.drag_container.items)
+            end_index = last_pulse_index if (end_index==-1) else (end_index+1)
+            # 2) Create the start bracket widget
+            start_box = QGroupBox("Start")
+            start_box.setFont(QFont('Arial', 10))
+            start_box.setFixedWidth(100)
+            vb1 = QVBoxLayout(start_box)
+            sublayout = QVBoxLayout()
+            vb1.addLayout(sublayout)
+            btn = QLabel("Start\nof\nrepeat")
+            btn.setFont(QFont('Arial', 10))
+            sublayout.addWidget(btn)
+
+
+            # 3) Create the end bracket widget
+            end_box = QGroupBox("End")
+            end_box.setFont(QFont('Arial', 10))
+            end_box.setFixedWidth(100)
+            vb2 = QVBoxLayout(end_box)
+            sublayout = QVBoxLayout()
+            vb2.addLayout(sublayout)
+            btn = QLabel("End\nof\nrepeat")
+            btn.setFont(QFont('Arial', 10))
+            sublayout.addWidget(btn)
+            sp = QDoubleSpinBox()
+            sp.setDecimals(0)
+            sp.setRange(1, 999)
+            sp.setValue(self.repeat_info[2])
+            sp.setFont(QFont('Arial', 10))
+            sublayout.addWidget(sp)
+
+            # -- Inserting the brackets --
+            # NOTE: Insert the end bracket first so the index of the first pulse won't shift.
+            #       We want the end bracket after the last pulse, so its index is last_pulse_index + 1.
+            #self.drag_container.insert_item(last_pulse_index + 1, end_box, "bracket_end")
+
+            # Now insert the start bracket right before the first pulse (no shift occurs yet).
+            self.drag_container.insert_item(start_index, start_box, "bracket_start")
+            self.drag_container.insert_item(end_index+1, end_box, "bracket_end")
+            #self.drag_container.refresh_layout()
+
+            # Toggle flag and button text
+            self.bracket_exists = True
+            self.btn_add_bracket.setText("Delete Bracket")
+
+        else:
+            # Remove the bracket items only, leaving pulses intact
+            self.delete_bracket_only()
+            self.bracket_exists = False
+            self.btn_add_bracket.setText("Add Bracket")
+
+
+    def delete_bracket_only(self):
+        """
+        Remove items of type 'bracket_start' and 'bracket_end', keeping only pulses.
+        """
+        new_list = []
+        for it in self.drag_container.items:
+            if it.item_type not in ("bracket_start", "bracket_end"):
+                new_list.append(it)
+        self.drag_container.items = new_list
+        self.drag_container.refresh_layout()
 
 
     def load_data(self, is_read_tmp=True):
@@ -1302,11 +1595,12 @@ class PulseGUI(QMainWindow):
             self.delay_array = self.device_handle.delay_array_tmp
             self.data_matrix = self.device_handle.data_matrix_tmp
             self.channel_names = self.device_handle.channel_names_tmp
+            self.repeat_info = self.device_handle.repeat_info_tmp
         else:
             self.delay_array = self.device_handle.delay_array
             self.data_matrix = self.device_handle.data_matrix
             self.channel_names = self.device_handle.channel_names
-
+            self.repeat_info = self.device_handle.repeat_info
 
         self.add_channel_names()
         name_widget = self.layout_dataset.itemAt(0).widget()
@@ -1330,13 +1624,28 @@ class PulseGUI(QMainWindow):
             
             if isinstance(delay_value, str):
                 combo_box.setCurrentText('str (ns)')
+                line_edit.setText(str(delay_value))
             else:
-                combo_box.setCurrentText('ns')  
-            line_edit.setText(str(delay_value))
+                duration = int(delay_value)
+                if duration==0:
+                    combo_box.setCurrentText('ns')
+                    line_edit.setText(str(duration))
+                elif duration%1000000==0:
+                    combo_box.setCurrentText('ms')
+                    line_edit.setText(str(duration//1000000))
+                elif duration%1000==0:
+                    combo_box.setCurrentText('us')
+                    line_edit.setText(str(duration//1000))
+                else:
+                    combo_box.setCurrentText('ns')
+                    line_edit.setText(str(duration))
 
+        self.bracket_exists = False
+        self.drag_container = DragContainer()
+        self.layout_dataset.addWidget(self.drag_container)
         for i, row_data in enumerate(self.data_matrix):
             self.add_column()
-            row_widget = self.layout_dataset.itemAt(i + 2).widget()
+            row_widget = self.drag_container.items[i].widget
             row_layout = row_widget.layout()
 
             sublayout = row_layout.itemAt(0)  
@@ -1345,14 +1654,28 @@ class PulseGUI(QMainWindow):
                 
             if isinstance(row_data[0], str):
                 combo_box.setCurrentText('str (ns)')
+                line_edit.setText(str(row_data[0]))
             else:
-                combo_box.setCurrentText('ns')
-            line_edit.setText(str(row_data[0]))
+                duration = int(row_data[0])
+                if duration%1000000==0:
+                    combo_box.setCurrentText('ms')
+                    line_edit.setText(str(duration//1000000))
+                elif duration%1000==0:
+                    combo_box.setCurrentText('us')
+                    line_edit.setText(str(duration//1000))
+                else:
+                    combo_box.setCurrentText('ns')
+                    line_edit.setText(str(duration))
 
 
             for j in range(1, 9):  
                 checkbox = row_layout.itemAt(j).widget()
                 checkbox.setChecked(bool(row_data[j]))
+
+        if self.repeat_info[1]!=-1:
+            # otherwise just default repeat_info setting and no bracket
+            self.on_add_bracket(self.repeat_info[0], self.repeat_info[1])
+
 
 
     def save_data(self):
@@ -1362,33 +1685,17 @@ class PulseGUI(QMainWindow):
         self.device_handle.data_matrix = self.read_data()
         self.device_handle.delay_array = self.read_delay()
         self.device_handle.channel_names = self.read_channel_names()
+        self.device_handle.repeat_info = self.read_repeat_info()
 
-        
-    def print_index(self):
-        count = self.layout_dataset.count()
-        for i in range(count):
-            item = self.layout_dataset.itemAt(i)
-            widget = item.widget()
-            layout = widget.layout()
-            for j in range(1):
-                item_sub = layout.itemAt(j)
-                layout_sub = item_sub.layout()
-                duration_num = layout_sub.itemAt(1).widget().text()
-                duration_unit = layout_sub.itemAt(2).widget().currentText()
-                print(duration_num, duration_unit)
-            for j in range(1,5):
-                item = layout.itemAt(j)
-                widget = item.widget()
-                if(widget.isChecked()):
-                    print((i,j))
                     
     def read_data(self):
-        count = self.layout_dataset.count()-2  #number of pulses 
-        data_matrix = [[0]*9 for _ in range(count)] #skip first delay layout
+        pulse_list = [item for item in self.drag_container.items if item.item_type=='pulse']
+        count = len(pulse_list) #number of pulses 
+        data_matrix = [[0]*9 for _ in range(count)] 
 
         for i in range(count):
-            item = self.layout_dataset.itemAt(i+2)#first is delay
-            widget = item.widget()
+            item = pulse_list[i]
+            widget = item.widget
             layout = widget.layout()
             for j in range(1):
                 item_sub = layout.itemAt(j)
@@ -1455,33 +1762,58 @@ class PulseGUI(QMainWindow):
             channel_names[j] = layout_sub.itemAt(1).widget().text()
 
         return channel_names
+
+    def read_repeat_info(self):
+        if not self.bracket_exists:
+            return [0, -1, 1]
+            # default repeat_info
+        else:
+            bracket_index_list = [ii for ii, item in enumerate(self.drag_container.items) if item.item_type!='pulse']
+            start_index = bracket_index_list[0]
+            end_index = bracket_index_list[1] - 2 # [start_index, end_index] pulses area inside bracket, include end_index
+
+            widget = self.drag_container.items[bracket_index_list[1]].widget
+            layout = widget.layout()
+            item_sub = layout.itemAt(0)
+            layout_sub = item_sub.layout()
+            repeat = layout_sub.itemAt(1).widget().value()
+
+            return [start_index, end_index, repeat]
     
         
     def remove_column(self):
-        count = self.layout_dataset.count()
+        pulse_list = [ii for ii, item in enumerate(self.drag_container.items) if item.item_type=='pulse']
+        count = len(pulse_list)
         #print(count)
-        if(count>=5):
-            item = self.layout_dataset.itemAt(count-1)
-            widget = item.widget()
+        if(count>=3):
+            widget = self.drag_container.items[pulse_list[-1]].widget
             widget.deleteLater()
+            self.drag_container.items = [item for ii, item in enumerate(self.drag_container.items) if ii!=pulse_list[-1]]
+            self.drag_container.refresh_layout()
             
     def add_column(self):
-        count = self.layout_dataset.count()
-        row = QGroupBox('Pulse%d'%(count-2))
-        self.layout_dataset.addWidget(row)
+        pulse_list = [item for item in self.drag_container.items if item.item_type=='pulse']
+        count = len(pulse_list)
+
+        row = QGroupBox('Pulse%d'%(count))
+        row.setFont(QFont('Arial', 10))
+        self.drag_container.add_item(row, "pulse")
         layout_data = QVBoxLayout(row)
         
         sublayout = QVBoxLayout()
         layout_data.addLayout(sublayout)
         btn = QLabel('Duration:')
         btn.setFixedSize(70,20)
+        btn.setFont(QFont('Arial', 10))
         sublayout.addWidget(btn)
         btn = QLineEdit('10')
         btn.setFixedSize(70,20)
+        btn.setFont(QFont('Arial', 10))
         sublayout.addWidget(btn)
         btn2 = QComboBox()
         btn2.addItems(['ns','us' ,'ms', 'str (ns)'])
         btn2.setFixedSize(70,20)
+        btn2.setFont(QFont('Arial', 10))
         sublayout.addWidget(btn2)
         btn.textChanged.connect(lambda text, cb=btn2: self.handle_text_change(text, cb))
         
@@ -1489,6 +1821,7 @@ class PulseGUI(QMainWindow):
             btn = QCheckBox()
             btn.setText(self.channel_names_map[index-1])
             btn.setCheckable(True)
+            btn.setFont(QFont('Arial', 10))
             layout_data.addWidget(btn)
         
         
@@ -1532,9 +1865,7 @@ class PulseGUI(QMainWindow):
 
     def save_to_file(self):
 
-        self.device_handle.data_matrix = self.read_data()
-        self.device_handle.delay_array = self.read_delay()
-        self.device_handle.channel_names = self.read_channel_names()
+        self.save_data()
 
         options = QFileDialog.Options()
         fileName, _ = QFileDialog.getSaveFileName(self,'select','','data_figure (*.npz)',options=options)
@@ -1578,17 +1909,18 @@ class PulseGUI(QMainWindow):
             layout_sub.itemAt(0).widget().setText(f'{self.channel_names_map[channel]} delay')
         # replace delay row
 
+        if self.drag_container is None:
+            return
+        else:
+            pulse_list = [item for item in self.drag_container.items if item.item_type=='pulse']
+            for item in pulse_list:
+                if item is not None:
+                    widget = item.widget
+                    layout = widget.layout()
+                    item = layout.itemAt(channel+1)
+                    item.widget().setText(f'{self.channel_names_map[channel]}')
 
-        count = self.layout_dataset.count()-2  #number of pulses 
-        for i in range(count):
-            item = self.layout_dataset.itemAt(i+2)#first is delay
-            if item is not None:
-                widget = item.widget()
-                layout = widget.layout()
-                item = layout.itemAt(channel+1)
-                item.widget().setText(f'{self.channel_names_map[channel]}')
-
-        # replace pulse row
+            # replace pulse row
 
 
 
@@ -1597,6 +1929,8 @@ class PulseGUI(QMainWindow):
         self.device_handle.data_matrix_tmp = self.read_data()
         self.device_handle.delay_array_tmp = self.read_delay() 
         self.device_handle.channel_names_tmp = self.read_channel_names() 
+        self.device_handle.repeat_info_tmp = self.read_repeat_info()
+
 
 def GUI_Pulse(device_handle, is_in_GUI=False):
     """
