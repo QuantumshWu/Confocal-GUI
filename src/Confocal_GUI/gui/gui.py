@@ -385,6 +385,7 @@ class MainWindow(QMainWindow):
 
         if plot_type == '1D':
             if self.measurement_PLE is not None:
+                self.stop_plot(is_close_selector=True, cur_plot='PLE')
                 data_figure = DataFigure(None, address = files[0][:-4] + '*', fig=self.canvas_PLE.fig)
                 figure_title = (files[0][:-4]).split('\\')[-1]
                 data_figure.fig.axes[0].set_title(f'{figure_title}')
@@ -392,10 +393,11 @@ class MainWindow(QMainWindow):
                 data_figure.fig.canvas.draw()
                 self.data_figure_PLE = data_figure
             else:
-                self.print_log(f'Cannot load PLE plot_type')
+                self.print_log(f'Cannot load 1D plot_type')
                 return
         elif plot_type == '2D':
             if self.measurement_PL is not None:
+                self.stop_plot(is_close_selector=True, cur_plot='PL')
                 data_figure = DataFigure(None, address = files[0][:-4] + '*', fig=self.canvas_PL.fig)
                 figure_title = (files[0][:-4]).split('\\')[-1]
                 data_figure.fig.axes[1].set_title(f'{figure_title}')
@@ -403,7 +405,7 @@ class MainWindow(QMainWindow):
                 data_figure.fig.canvas.draw()
                 self.data_figure_PL = data_figure
             else:
-                self.print_log(f'Cannot load PL plot_type')
+                self.print_log(f'Cannot load 2D plot_type')
                 return
         else:
             self.print_log(f'Cannot load unknown plot_type')
@@ -643,16 +645,16 @@ class MainWindow(QMainWindow):
         if is_close_selector:
             # make sure no residual selector which may cause thread problem
             if cur_plot=='PL':
-                if hasattr(self, f'live_plot_PL') and self.live_plot_PL is not None:
-                    for selector in self.live_plot_PL.selector:
+                if hasattr(self, f'data_figure_PL') and self.data_figure_PL is not None:
+                    for selector in self.data_figure_PL.selector:
                         selector.set_active(False)
             elif cur_plot=='PLE':
-                if hasattr(self, 'live_plot_PLE') and self.live_plot_PLE is not None:
-                    for selector in self.live_plot_PLE.selector:
+                if hasattr(self, 'data_figure_PLE') and self.data_figure_PLE is not None:
+                    for selector in self.data_figure_PLE.selector:
                         selector.set_active(False)
             elif cur_plot=='Live':
-                if hasattr(self, 'live_plot_Live') and self.live_plot_Live is not None:
-                    for selector in self.live_plot_Live.selector:
+                if hasattr(self, 'data_figure_Live') and self.live_plot_Live is not None:
+                    for selector in self.data_figure_Live.selector:
                         selector.set_active(False)
 
 

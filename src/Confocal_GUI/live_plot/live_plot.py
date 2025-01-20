@@ -214,7 +214,8 @@ class LoadAcquire(threading.Thread):
         self.daemon = True
         self.is_running = True
         self.is_done = False
-        self.points_done = len(self.data_x) #how many data points have done, will control display
+        self.points_done = len([data for data in self.data_y.flatten() if not np.isnan(data)]) 
+        #how many data points have done, will control display, filter out all np.nan which should be points not done
         self.repeat_done = 0
         
     
@@ -290,11 +291,10 @@ class LivePlotGUI(ABC):
         
     def init_figure_and_data(self):
         change_to_nbagg(params_type = 'nbagg', scale=self.scale)
-        #hide_elements()
         # make sure environment enables interactive then updating figure
         plt.ion()
 
-        if self.fig is None:
+        if not self.have_init_fig:
 
             self.convert_widget_to_fig()
 
@@ -308,6 +308,8 @@ class LivePlotGUI(ABC):
             self.fig.canvas.resizable = False
             self.fig.canvas.capture_scroll = True
             LivePlotGUI.display_handle = display_immediately(self.fig, f'{LivePlotGUI.display_handle_id}')
+            self.fig.canvas.layout.display = 'none'
+            # set to invisble to skip the inti fig display
             self.axes = self.fig.add_subplot(111)
         else:
             self.axes = self.fig.axes[0]
@@ -316,11 +318,14 @@ class LivePlotGUI(ABC):
         self.axes.ticklabel_format(axis='y', style='sci', scilimits=(-3,3))
         # make sure no long ticks induce cut off of label
 
-        self.init_core()         
-        
-        if not self.have_init_fig:
-            self.fig.tight_layout()
+        self.init_core() 
+        self.fig.tight_layout()
         self.fig.canvas.draw()
+
+        if not self.have_init_fig:      
+            self.fig.canvas.layout.display = 'initial'
+            # set fit to visible 
+
         self.bg_fig = self.fig.canvas.copy_from_bbox(self.fig.bbox)  # store bg
 
         
@@ -330,7 +335,6 @@ class LivePlotGUI(ABC):
         self.points_done = self.data_generator.points_done
         # update points done so new plot
         self.update_core()
-            
 
         self.axes.draw_artist(self.line)
         self.fig.canvas.blit(self.fig.bbox)
@@ -416,6 +420,7 @@ class LivePlotGUI(ABC):
         else:
             max_data_y = np.max(self.data_y.flatten())
             min_data_y = np.min(self.data_y.flatten())
+
 
         if max_data_y == 0:
             return False
@@ -504,179 +509,63 @@ class PLELive(LivePlotGUI):
 class PLLive(LivePlotGUI):
     
     def init_core(self):
-        
+
         cmap_ = matplotlib.cm.get_cmap('inferno')
         cmap = cmap_.copy()
-        cmap.set_under(cmap_(0))
+        cmap.set_bad(cmap_(0))
         half_step_x = 0.5*(self.data_x[0][-1] - self.data_x[0][0])/len(self.data_x[0])
         half_step_y = 0.5*(self.data_x[1][-1] - self.data_x[1][0])/len(self.data_x[1])
         extents = [self.data_x[0][0]-half_step_x, self.data_x[0][-1]+half_step_x, \
                    self.data_x[1][-1]+half_step_y, self.data_x[1][0]-half_step_y] #left, right, bottom, up
+
+
         self.line = self.axes.imshow(self.data_y, animated=True, alpha=1, cmap=cmap, extent=extents)
-        self.cbar = self.fig.colorbar(self.line)
+        divider = make_axes_locatable(self.axes)
+        self.cax = divider.append_axes("right", size="5%", pad=0.15)
+        self.cbar = self.fig.colorbar(self.line, cax = self.cax)
+
+        self.fig.axes[0].set_xlim((extents[0], extents[1]))
+        self.fig.axes[0].set_ylim((extents[2], extents[3]))
+
+
+        self.cbar.set_label(self.ylabel + ' x1')
         self.axes.set_ylabel(self.xlabel[1])
         self.axes.set_xlabel(self.xlabel[0])
-        self.cbar.set_label(self.ylabel + ' x1')
 
-        self.vmin = 0
-        self.vmax = 0
-            
+
         
     def update_core(self):
-        
-        if np.max(self.data_y)==0:
-            vmin = 0
-        else:
-            vmin = np.min(self.data_y[self.data_y!=0])
 
-        vmax = np.max(self.data_y)
+        is_redraw = self.relim()
+        if is_redraw or (self.repeat_done!=self.data_generator.repeat_done):
 
-        if vmax == vmin:
-                vmax = vmin + 1
+            self.ylabel = self.labels[1] + f' x{self.data_generator.repeat_done + 1}'
+            self.repeat_done = self.data_generator.repeat_done
+            self.cbar.set_label(self.ylabel)
 
-        if vmin*0.8 < self.vmin or self.vmax < vmax*1.2:
-            self.vmin = vmin*0.8
-            self.vmax = vmax*1.2
-        # filter out zero data
-
-            self.line.set_clim(vmin=vmin, vmax=np.max(self.data_y))
-            self.fig.canvas.draw()
+            self.fig.canvas.draw() 
             self.bg_fig = self.fig.canvas.copy_from_bbox(self.fig.bbox)
 
-
         self.fig.canvas.restore_region(self.bg_fig)
+
         self.line.set_array(self.data_y)
+        # other data just np.nan and controlled by set_bad
+        
 
     def set_ylim(self):
         self.line.set_clim(vmin=self.ylim_min, vmax=self.ylim_max)
         
     def choose_selector(self):
+
         self.area = AreaSelector(self.fig.axes[0])
         self.cross = CrossSelector(self.fig.axes[0])
         self.zoom = ZoomPan(self.fig.axes[0])
         
+
+
+        self.fig.canvas.draw()        
         self.selector = [self.area, self.cross, self.zoom]
 
-class PLDisLive_backup(LivePlotGUI):
-
-    def init_core(self):
-
-        cmap_ = matplotlib.cm.get_cmap('inferno')
-        cmap = cmap_.copy()
-        cmap.set_under(cmap_(0))
-        half_step_x = 0.5*(self.data_x[0][-1] - self.data_x[0][0])/len(self.data_x[0])
-        half_step_y = 0.5*(self.data_x[1][-1] - self.data_x[1][0])/len(self.data_x[1])
-        extents = [self.data_x[0][0]-half_step_x, self.data_x[0][-1]+half_step_x, \
-                   self.data_x[1][-1]+half_step_y, self.data_x[1][0]-half_step_y] #left, right, bottom, up
-
-        if self.have_init_fig:
-            # such as in GUI
-            self.cbar = self.fig.axes[0].images[0].colorbar
-            self.axright = self.fig.axes[1]
-            self.cax = self.fig.axes[2]
-
-            self.line = self.fig.axes[0].images[0]
-            self.line.set(cmap = cmap, extent=extents)
-            self.line.set_array(self.data_y)
-            self.cbar.update_normal(self.line)
-
-        else:
-
-            width, height = self.fig.get_size_inches()
-            self.fig.set_size_inches(width, height*1.25)
-            self.line = self.axes.imshow(self.data_y, animated=True, alpha=1, cmap=cmap, extent=extents)
-            self.cax = divider.append_axes("right", size="5%", pad=0.15)
-            self.cbar = self.fig.colorbar(self.line, cax = self.cax)
-            divider = make_axes_locatable(self.axes)
-            self.axright = divider.append_axes("top", size="20%", pad=0.25)
-
-        self.vmin = 0
-        self.vmax = 0
-        self.counts_max = 5
-        # filter out zero data
-        
-        
-        if np.max(self.data_y.flatten()) == 0:
-            hist_data = [0, 0]
-        else:
-            hist_data = [i for i in self.data_y.flatten() if i != 0]
-        self.n, self.bins, self.patches = self.axright.hist(hist_data, orientation='vertical', bins=30, color='grey')
-        self.axright.set_ylim(0, self.counts_max)
-
-        self.cbar.set_label(self.ylabel + ' x1')
-        self.axes.set_ylabel(self.xlabel[1])
-        self.axes.set_xlabel(self.xlabel[0])
-
-        
-    def update_core(self):
-        
-        if np.max(self.data_y.flatten()) == 0:
-            self.hist_data = [0, 0]
-            vmin = 0
-            vmax = np.max(self.data_y) + 1
-        else:
-            vmin = np.min(self.data_y[self.data_y!=0])
-            vmax = np.max(self.data_y)
-            if vmax == vmin:
-                vmax = vmin + 1
-            self.hist_data = [i for i in self.data_y.flatten() if i != 0]
-
-        self.n, _ = np.histogram(self.hist_data, bins=self.bins)
-
-        
-        if vmin*0.8 < self.vmin or self.vmax < vmax*1.2:
-            self.vmin = vmin*0.8
-            self.vmax = vmax*1.2
-        # filter out zero data
-
-            self.line.set_clim(vmin=vmin, vmax=vmax)
-            
-            self.n, self.bins, self.patches = self.axright.hist(self.hist_data, orientation='vertical', 
-                                                                bins=30, color='grey')
-            self.counts_max = np.max(self.n) + 5
-            self.axright.set_ylim(0, self.counts_max)
-            self.axright.set_xlim(vmin - (vmax-vmin)*0.1, vmax + (vmax-vmin)*0.1)
-            self.fig.canvas.draw()
-            self.bg_fig = self.fig.canvas.copy_from_bbox(self.fig.bbox)
-            
-        elif np.max(self.n) >= self.counts_max:
-            self.counts_max = np.max(self.n) + 5
-            self.axright.set_ylim(0, self.counts_max)
-            self.fig.canvas.draw()
-            self.bg_fig = self.fig.canvas.copy_from_bbox(self.fig.bbox)
-
-
-        self.fig.canvas.restore_region(self.bg_fig)
-        self.line.set_array(self.data_y)
-        
-        for count, patch in zip(self.n, self.patches):
-            patch.set_height(count)
-            #patch.set_width(0.5)
-        
-        self.axright.draw_artist(self.axright.patch)
-        for patch in self.patches:
-            self.axright.draw_artist(patch)
-
-    def set_ylim(self):
-        self.line.set_clim(vmin=self.ylim_min, vmax=self.ylim_max)
-            
-        
-    def choose_selector(self):
-        self.area = AreaSelector(self.fig.axes[0])
-        self.cross = CrossSelector(self.fig.axes[0])
-        self.zoom = ZoomPan(self.fig.axes[0])
-        
-        cmap = self.axes.images[0].colorbar.mappable.get_cmap()
-        self.line_l = self.axright.axvline(np.min(self.hist_data), color=cmap(0))
-        self.line_h = self.axright.axvline(np.max(self.hist_data), color=cmap(0.95))
-        self.drag_line = DragVLine(self.line_l, self.line_h, self.update_clim, self.axright)
-        
-        self.selector = [self.area, self.cross, self.zoom, self.drag_line]
-    
-    def update_clim(self):
-        vmin = self.line_l.get_xdata()[0]
-        vmax = self.line_h.get_xdata()[0]
-        self.line.set_clim(vmin, vmax)
 
 
 class PLDisLive(LivePlotGUI):
@@ -685,7 +574,7 @@ class PLDisLive(LivePlotGUI):
 
         cmap_ = matplotlib.cm.get_cmap('inferno')
         cmap = cmap_.copy()
-        cmap.set_under(cmap_(0))
+        cmap.set_bad(cmap_(0))
         half_step_x = 0.5*(self.data_x[0][-1] - self.data_x[0][0])/len(self.data_x[0])
         half_step_y = 0.5*(self.data_x[1][-1] - self.data_x[1][0])/len(self.data_x[1])
         extents = [self.data_x[0][0]-half_step_x, self.data_x[0][-1]+half_step_x, \
@@ -708,13 +597,23 @@ class PLDisLive(LivePlotGUI):
         else:
 
             width, height = self.fig.get_size_inches()
-            self.fig.set_size_inches(width, height*1.25)
-            self.line = self.axes.imshow(self.data_y, animated=True, alpha=1, cmap=cmap, extent=extents)
+            #self.fig.set_size_inches(width, height*1.25)
+            divider = make_axes_locatable(self.axes)        
             self.cax = divider.append_axes("right", size="5%", pad=0.15)
-            self.cbar = self.fig.colorbar(self.line, cax = self.cax)
-            divider = make_axes_locatable(self.axes)
             self.axright = divider.append_axes("top", size="20%", pad=0.25)
-
+            self.fig.set_size_inches(width, height*1.25)
+            #self.fig.tight_layout()
+            #self.fig.canvas.draw()
+            #self.line = self.axes.imshow(self.data_y, animated=True, alpha=1, cmap=cmap, extent=extents)
+            self.line = self.axes.imshow(np.zeros(np.shape(self.data_y)), animated=True, alpha=1, cmap=cmap, extent=extents)
+            self.fig.tight_layout()
+            self.fig.canvas.draw()
+            #print('did')
+            #time.sleep(1)
+            self.cbar = self.fig.colorbar(self.line, cax = self.cax)
+            #self.fig.canvas.draw()
+            #print('after did')
+            #time.sleep(1)
             self.fig.axes[0].set_xlim((extents[0], extents[1]))
             self.fig.axes[0].set_ylim((extents[2], extents[3]))
 
@@ -726,7 +625,7 @@ class PLDisLive(LivePlotGUI):
         self.axright.autoscale_view()
         # reset axright ticks, labels
         self.n, self.bins, self.patches = self.axright.hist(self.data_y.flatten()[:self.points_done], orientation='vertical',\
-             bins=self.points_total//4, color='grey', range=(self.ylim_min, self.ylim_max))
+             bins=np.max((self.points_total//4, 100)), color='grey', range=(self.ylim_min, self.ylim_max))
         self.axright.set_ylim(0, self.counts_max)
         for patch in self.patches:
             patch.set_animated(True)
@@ -736,6 +635,9 @@ class PLDisLive(LivePlotGUI):
         self.axes.set_xlabel(self.xlabel[0])
 
         self.axright.tick_params(axis='both', which='both',bottom=False,top=False)
+
+        #print('after init')
+        #time.sleep(1)
 
         
     def update_core(self):
@@ -757,11 +659,8 @@ class PLDisLive(LivePlotGUI):
 
         self.fig.canvas.restore_region(self.bg_fig)
 
-        data_y_done = self.data_y.flatten()[:self.points_done]
-        padding_points = (self.points_total-self.points_done) if (self.points_total>self.points_done) else 0
-        data_under = np.array([self.ylim_min for i in range(padding_points)])
-        self.line.set_array(np.append(data_y_done, data_under).reshape((len(self.data_x[0]), len(self.data_x[1]))))
-        # make sure padding data always below minimum even for negative data points
+        self.line.set_array(self.data_y)
+        # other data just np.nan and controlled by set_bad
    
         for count, patch in zip(self.n, self.patches):
             patch.set_height(count)
@@ -771,7 +670,7 @@ class PLDisLive(LivePlotGUI):
     def set_ylim(self):
         self.line.set_clim(vmin=self.ylim_min, vmax=self.ylim_max)
         self.n, self.bins, self.patches = self.axright.hist(self.data_y.flatten()[:self.points_done], orientation='vertical',\
-             bins=self.points_total//4, color='grey', range=(self.ylim_min, self.ylim_max))
+             bins=np.max((self.points_total//4, 100)), color='grey', range=(self.ylim_min, self.ylim_max))
         self.axright.set_xlim(self.ylim_min, self.ylim_max)
         for patch in self.patches:
             patch.set_animated(True) 
@@ -1144,12 +1043,15 @@ class DataFigure():
             self.selector = live_plot.selector
             self.info = live_plot.data_generator.info
             self.live_plot = live_plot
-            # load all necessary info defined in device.info for device in config_instances
-            self.data_x = live_plot.data_generator.data_x[:live_plot.data_generator.points_done]
-            self.data_y = live_plot.data_generator.data_y[:live_plot.data_generator.points_done]
-            # only get data acquired from data_generator
+            # load all necessary info defined in device.info for device in config_instances\
             self.plot_type = live_plot.data_generator.plot_type
             self.measurement_name = live_plot.data_generator.measurement_name
+
+
+            self.data_x = live_plot.data_generator.data_x
+            self.data_y = live_plot.data_generator.data_y
+            # only get data acquired from data_generator
+
         else:
             if '*' in address:
                 self.is_error = False
@@ -1176,14 +1078,9 @@ class DataFigure():
                 x_label = data_generator.info.get('x_label', 'Data')
                 y_label = data_generator.info.get('y_label', f'Counts/{exposure}s x1')
 
-                if fig is None:
-                    _live_plot = PLELive(labels=[x_label, y_label[:-3]], \
-                                        update_time=0.1, data_generator=data_generator, data=[self.data_x, self.data_y], \
-                                        config_instances = None, relim_mode = relim_mode)
-                else:
-                    _live_plot = PLELive(labels=[x_label, y_label[:-3]], \
-                                        update_time=0.1, data_generator=data_generator, data=[self.data_x, self.data_y], \
-                                        config_instances = None, relim_mode = relim_mode, fig=fig)
+                _live_plot = PLELive(labels=[x_label, y_label[:-3]], \
+                                    update_time=0.1, data_generator=data_generator, data=[self.data_x, self.data_y], \
+                                    config_instances = None, relim_mode = relim_mode, fig=fig)
 
             else:
                 self.data_x = data_generator.data_x
@@ -1191,14 +1088,9 @@ class DataFigure():
                 x_label = data_generator.info.get('x_label', ['X', 'Y'])
                 y_label = data_generator.info.get('y_label', f'Counts/{exposure}s x1')
 
-                if fig is None:
-                    _live_plot = PLDisLive(labels=[x_label, y_label[:-3]], \
-                            update_time=1, data_generator=data_generator, data=[self.data_x, self.data_y], \
-                            config_instances = None, relim_mode = relim_mode)
-                else:
-                    _live_plot = PLGUILive(labels=[x_label, y_label[:-3]], \
-                            update_time=1, data_generator=data_generator, data=[self.data_x, self.data_y], \
-                            config_instances = None, relim_mode = relim_mode, fig=fig)
+                _live_plot = PLDisLive(labels=[x_label, y_label[:-3]], \
+                        update_time=1, data_generator=data_generator, data=[self.data_x, self.data_y], \
+                        config_instances = None, relim_mode = relim_mode, fig=fig)
 
             fig, selector = _live_plot.plot()
             self.fig = _live_plot.fig
@@ -1207,20 +1099,12 @@ class DataFigure():
             # load all necessary info defined in device.info for device in config_instances
 
 
-
         self.p0 = None
         self.fit = None
         self.text = None
         self.log_info = '' # information for log output
         self.unit = 'nm'
         
-    
-    @property
-    def data(self):
-        return self._data
-    @data.setter
-    def data(self, data_x_data_y):
-        print('can not assign data')
 
     def xlim(self, x_min, x_max):
         self.fig.axes[0].set_xlim(x_min, x_max)
@@ -1305,19 +1189,22 @@ class DataFigure():
         self.fig.canvas.draw()
 
     def _select_fit(self, min_num=2):
+        valid_index = [i for i, data in enumerate(self.data_y) if not np.isnan(data)]
+        # index of none np.nan data
         if self.selector[0] is None:
-            return self.data_x, self.data_y
+            return self.data_x[valid_index], self.data_y[valid_index]
         else:
             xl, xh, yl, yh = self.selector[0].range
             if (xl is None) or (xh is None):
-                return self.data_x, self.data_y
+                return self.data_x[valid_index], self.data_y[valid_index]
             if (xl - xh)==0:
-                return self.data_x, self.data_y
-            index_l = np.argmin(np.abs(self.data_x - xl))
-            index_h = np.argmin(np.abs(self.data_x - xh))
+                return self.data_x[valid_index], self.data_y[valid_index]
+
+            index_l = np.argmin(np.abs(self.data_x[valid_index] - xl))
+            index_h = np.argmin(np.abs(self.data_x[valid_index] - xh))
             if np.abs(index_l - index_h)<=min_num:
-                return self.data_x, self.data_y
-            return self.data_x[index_l:index_h], self.data_y[index_l:index_h]
+                return self.data_x[valid_index], self.data_y[valid_index]
+            return self.data_x[valid_index][index_l:index_h], self.data_y[valid_index][index_l:index_h]
 
 
     def lorent(self, p0=None, is_display=True, is_fit=True):

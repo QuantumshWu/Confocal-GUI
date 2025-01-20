@@ -738,6 +738,16 @@ class VirtualCounter(BaseCounter):
                     return np.random.poisson(parent.exposure*odmr_dict['odmr_height'])/np.random.poisson(parent.exposure*odmr_dict['odmr_height'])
                 else:
                     return np.random.poisson(lambda_counts)/np.random.poisson(lambda_counts_ref)
+
+            elif self.data_mode == 'dual':
+                lambda_counts = parent.exposure*odmr_dict['odmr_height']*(1-(odmr_dict['odmr_width']/2)**2\
+                                         /((frequency-odmr_dict['odmr_center'])**2 + (odmr_dict['odmr_width']/2)**2))
+
+                lambda_counts_ref = parent.exposure*odmr_dict['odmr_height']
+                if not parent.rf.on:
+                    return [np.random.poisson(lambda_counts_ref), np.random.poisson(lambda_counts_ref)]
+                else:
+                    return [np.random.poisson(lambda_counts), np.random.poisson(lambda_counts_ref)]
             
             
         else: # None of these cases
