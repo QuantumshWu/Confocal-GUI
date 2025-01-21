@@ -1,0 +1,7 @@
+matplotlib
+numpy
+scipy
+pyqt5
+ipympl
+pyvisa
+jupyterlab
