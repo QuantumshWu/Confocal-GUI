@@ -79,7 +79,7 @@ class USB6346(BaseCounter, BaseScanner):
     exit_handler method defines how to close task when exit
     """
     
-    def __init__(self, exposure=1):
+    def __init__(self, exposure=1, port_config=None):
 
         import atexit
         import nidaqmx
@@ -88,7 +88,10 @@ class USB6346(BaseCounter, BaseScanner):
         from nidaqmx.stream_readers import AnalogMultiChannelReader
         import warnings 
 
-        #warnings.filterwarnings('ignore', category=nidaqmx.errors.DaqWarning)
+        if port_config is None:
+            port_config = {'analog_signal':'ai0', 'analog_gate':'ai1', 'analog_gate_ref':'ai2',\
+                           'apd_signal':'PFI3', 'apd_gate':'PFI4', 'apd_gate_ref':'PFI5'}
+
         self.nidaqmx = nidaqmx
 
         self.task = nidaqmx.Task()
@@ -193,16 +196,16 @@ class USB6346(BaseCounter, BaseScanner):
             self.task_counter_ctr = self.nidaqmx.Task()
             self.task_counter_ctr.ci_channels.add_ci_count_edges_chan("Dev1/ctr1")
             # ctr1 source PFI3, gate PFI4
-            self.task_counter_ctr.triggers.pause_trigger.dig_lvl_src = '/Dev1/PFI4'
-            self.task_counter_ctr.ci_channels.all.ci_count_edges_term = '/Dev1/PFI3'
+            self.task_counter_ctr.triggers.pause_trigger.dig_lvl_src = '/Dev1/'+port_config['apd_gate']
+            self.task_counter_ctr.ci_channels.all.ci_count_edges_term = '/Dev1/'+port_config['apd_signal']
             self.task_counter_ctr.triggers.pause_trigger.trig_type = self.nidaqmx.constants.TriggerType.DIGITAL_LEVEL
             self.task_counter_ctr.triggers.pause_trigger.dig_lvl_when = self.nidaqmx.constants.Level.LOW
 
             self.task_counter_ctr_ref = self.nidaqmx.Task()
             self.task_counter_ctr_ref.ci_channels.add_ci_count_edges_chan("Dev1/ctr2")
             # ctr1 source PFI3, gate PFI5
-            self.task_counter_ctr_ref.triggers.pause_trigger.dig_lvl_src = '/Dev1/PFI5'
-            self.task_counter_ctr_ref.ci_channels.all.ci_count_edges_term = '/Dev1/PFI3'
+            self.task_counter_ctr_ref.triggers.pause_trigger.dig_lvl_src = '/Dev1/'+port_config['apd_gate_ref']
+            self.task_counter_ctr_ref.ci_channels.all.ci_count_edges_term = '/Dev1/'+port_config['apd_signal']
             self.task_counter_ctr_ref.triggers.pause_trigger.trig_type = self.nidaqmx.constants.TriggerType.DIGITAL_LEVEL
             self.task_counter_ctr_ref.triggers.pause_trigger.dig_lvl_when = self.nidaqmx.constants.Level.LOW
 
@@ -222,9 +225,9 @@ class USB6346(BaseCounter, BaseScanner):
             self.close_old_tasks()
 
             self.task_counter_ai = self.nidaqmx.Task()
-            self.task_counter_ai.ai_channels.add_ai_voltage_chan("Dev1/ai0")
-            self.task_counter_ai.ai_channels.add_ai_voltage_chan("Dev1/ai1")
-            self.task_counter_ai.ai_channels.add_ai_voltage_chan("Dev1/ai2")
+            self.task_counter_ai.ai_channels.add_ai_voltage_chan('Dev1/'+port_config['analog_signal'])
+            self.task_counter_ai.ai_channels.add_ai_voltage_chan('Dev1/'+port_config['analog_gate'])
+            self.task_counter_ai.ai_channels.add_ai_voltage_chan('Dev1/'+port_config['analog_gate_ref'])
             # for analog counter
             self.task_counter_ai.start()
             self.counter_mode = counter_mode
@@ -290,20 +293,20 @@ class USB6346(BaseCounter, BaseScanner):
 
         if self.data_mode == 'single':
 
-            return data_main
+            return [data_main,]
 
         elif self.data_mode == 'ref_div':
 
             if data_main==0 or data_ref==0:
-                return 0
+                return [0,]
             else:
-                return data_main/data_ref
+                return [data_main/data_ref,]
 
         elif self.data_mode == 'ref_sub':
-            return data_main - data_ref
+            return [(data_main - data_ref),]
 
         elif self.data_mode == 'dual':
-            return data_main, data_ref
+            return [data_main, data_ref]
 
         else:
             print(f'can only be one of the {self.valid_data_mode}')
@@ -314,8 +317,6 @@ class USB6346(BaseCounter, BaseScanner):
         if cls._instance is not None:
 
             cls._instance.close_old_tasks()
-
-
             cls._instance = None
 
 
@@ -336,7 +337,6 @@ class DSG836(BaseRF):
         self.handle = rm.open_resource(visa_str)
         self._power = eval(self.handle.query('SOURce:Power?')[:-1])
         self._frequency = eval(self.handle.query('SOURce:FREQuency?')[:-1])
-        self._iq = False # if IQ modulation is on
         self._on = False # if output is on
         self.power_ul = 10
 
@@ -418,7 +418,7 @@ class Pulse(BasePulse):
 
     def gui(self, is_in_GUI=False):
         GUI_Pulse(self, is_in_GUI)
-
+    gui.__doc__ = GUI_Pulse.__doc__
 
     def off_pulse(self):
 

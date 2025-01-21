@@ -278,6 +278,10 @@ class BasePulse(ABC):
         self.data_matrix_tmp = np.array([[1000, 1,0,0,0,0,0,0,0], [1000, 1,0,0,0,0,0,0,0]])
         self._repeat_info = [0, -1, 1] # start_index, end_index(include), repeat_times
         self.repeat_info_tmp = [0, -1, 1]
+
+        self._ref_info = {"is_ref":False, "signal":None, "DAQ":None, "DAQ_ref":None} #
+        self.ref_info_tmp = {"is_ref":False, "signal":None, "DAQ":None, "DAQ_ref":None}
+
         # _data_matrix for on_pulse(), data_matrix_tmp for reopen gui display
         self.channel_names = ['', '', '', '', '', '', '', '']
         self.channel_names_tmp = ['', '', '', '', '', '', '', '']
@@ -344,6 +348,23 @@ class BasePulse(ABC):
         if not ((0<=value[0]<=(len(self.data_matrix)-2)) and ((value[1]-value[0])>=1 or (value[1]==-1))):
             print('Invalid repeat_info content.')
         self._repeat_info = [int(item) for item in value]
+        # must all be integers
+
+    @property
+    def ref_info(self):
+        return self._ref_info
+    
+    @ref_info.setter
+    def ref_info(self, value):
+        if len(value)!= 4 or not isinstance(value, dict):
+            print('invalid ref_info, example {"is_ref":False, "signal":None, "DAQ":None, "DAQ_ref":None}')
+            return
+        if value.get('is_ref', None) not in [True, False]:
+            print('Invalid ref_info["is_ref"].')
+            return
+        if not all(value.get(key, True) in [None, 0, 1, 2, 3, 4, 5, 6, 7] for key in ['signal', 'DAQ', 'DAQ_ref']):
+            print('Invalid ref_info["signal"] or ref_info["DAQ"] or ref_info["DAQ_ref"].')
+        self._ref_info = value
         # must all be integers
 
     @property
@@ -438,16 +459,40 @@ class BasePulse(ABC):
         time_slices = []
         for channel in range(8):
             time_slice = []
+
             for period in data_matrix[:start_index]:
                 time_slice.append([self.load_x_to_str(period[0], 'duration'), period[channel+1]])
-            # brefore repeat sequence
+            # before repeat sequence
             for repeat in range(int(self.repeat_info[2])):
                 for period in data_matrix[start_index:end_index]:
                     time_slice.append([self.load_x_to_str(period[0], 'duration'), period[channel+1]])
             # repeat sequence
             for period in data_matrix[end_index:]:
                 time_slice.append([self.load_x_to_str(period[0], 'duration'), period[channel+1]])
-            # after reepat sequence
+            # after repeat sequence
+
+            if self.ref_info['is_ref']:
+                # repeat one more time with disabling 'signal' and replace 'DAQ' with 'DAQ_ref' channel
+                def apply_ref(channel, period):
+                    if channel==self.ref_info['signal']:
+                        return 0
+                    if channel==self.ref_info['DAQ']:
+                        return 0
+                    if channel==self.ref_info['DAQ_ref']:
+                        return period[self.ref_info['DAQ']+1]
+                    return period[channel+1]
+
+                for period in data_matrix[:start_index]:
+                    time_slice.append([self.load_x_to_str(period[0], 'duration'), apply_ref(channel, period)])
+                # before repeat sequence
+                for repeat in range(int(self.repeat_info[2])):
+                    for period in data_matrix[start_index:end_index]:
+                        time_slice.append([self.load_x_to_str(period[0], 'duration'), apply_ref(channel, period)])
+                # repeat sequence
+                for period in data_matrix[end_index:]:
+                    time_slice.append([self.load_x_to_str(period[0], 'duration'), apply_ref(channel, period)])
+                # after repeat sequence
+
 
             time_slice_delayed = self.delay(self.load_x_to_str(self.delay_array[channel], 'delay'), time_slice)
             time_slices.append(time_slice_delayed)
@@ -472,7 +517,8 @@ class BasePulse(ABC):
         np.savez(addr + '_pulse' + '.npz', data_matrix = np.array(self.data_matrix, dtype=object), \
             delay_array = np.array(self.delay_array, dtype=object), \
             channel_names = np.array(self.channel_names, dtype=object), \
-            repeat_info = np.array(self.repeat_info, dtype=object))
+            repeat_info = np.array(self.repeat_info, dtype=object),\
+            ref_info = np.array(self.ref_info, dtype=object))
 
     def load_from_file(self, addr):
         import glob
@@ -496,6 +542,15 @@ class BasePulse(ABC):
         self.delay_array = loaded['delay_array']
         self.channel_names = loaded['channel_names']
         self.repeat_info = loaded['repeat_info']
+        self.ref_info = loaded['ref_info'].item()
+
+        self.data_matrix_tmp = loaded['data_matrix']
+        self.delay_array_tmp = loaded['delay_array']
+        self.channel_names_tmp = loaded['channel_names']
+        self.repeat_info_tmp = loaded['repeat_info']
+        self.ref_info_tmp = loaded['ref_info'].item()
+        # also load to GUI
+
     
     def delay(self, delay, time_slice):
         # accept time slice
@@ -684,10 +739,14 @@ class VirtualCounter(BaseCounter):
                 ple_dict[key] = parent.config_instances.get(key, 1)
             
             time.sleep(exposure)
-            wavelength = parent.laser_stabilizer.desired_wavelength
-            lambda_counts = parent.exposure*ple_dict['ple_height']*(ple_dict['ple_width']/2)**2\
+            wavelength = parent.laser_stabilizer.desired_wavelength if parent.laser_stabilizer.desired_wavelength is not None else 0
+            #print(wavelength, parent.laser_stabilizer)
+            lambda_counts = exposure*ple_dict['ple_height']*(ple_dict['ple_width']/2)**2\
                                      /((wavelength-ple_dict['ple_center'])**2 + (ple_dict['ple_width']/2)**2)
-            return np.random.poisson(lambda_counts)
+            if data_mode=='dual':
+                return [np.random.poisson(lambda_counts),np.random.poisson(lambda_counts)]
+            else:
+                return [np.random.poisson(lambda_counts),]
         
         elif _class == 'PLMeasurement':
             
@@ -699,9 +758,9 @@ class VirtualCounter(BaseCounter):
             position = np.array([parent.scanner.x, parent.scanner.y])
             distance = np.linalg.norm(np.array(pl_dict['pl_center']) - position)
             
-            lambda_counts = parent.exposure*(pl_dict['pl_height']*(pl_dict['pl_width']/2)**2\
+            lambda_counts = exposure*(pl_dict['pl_height']*(pl_dict['pl_width']/2)**2\
                                      /((distance)**2 + (pl_dict['pl_width']/2)**2) + pl_dict['pl_bg'])
-            return np.random.poisson(lambda_counts)
+            return [np.random.poisson(lambda_counts),]
 
         elif _class == 'ODMRMeasurement' or _class == 'LiveMeasurement':
             odmr_dict = {'odmr_height':None, 'odmr_width':None, 'odmr_center':None}
@@ -709,42 +768,43 @@ class VirtualCounter(BaseCounter):
                 odmr_dict[key] = parent.config_instances.get(key, 1)
             
             time.sleep(exposure)
-            frequency = parent.rf.frequency
+            rf = parent.config_instances['rf']
+            frequency = rf.frequency
 
 
             if self.data_mode == 'single':
-                lambda_counts = parent.exposure*odmr_dict['odmr_height']*(1-(odmr_dict['odmr_width']/2)**2\
+                lambda_counts = exposure*odmr_dict['odmr_height']*(1-(odmr_dict['odmr_width']/2)**2\
                                          /((frequency-odmr_dict['odmr_center'])**2 + (odmr_dict['odmr_width']/2)**2))
 
-                if not parent.rf.on:
-                    return np.random.poisson(parent.exposure*odmr_dict['odmr_height'])
+                if not rf.on:
+                    return [np.random.poisson(exposure*odmr_dict['odmr_height']),]
                 else:
-                    return np.random.poisson(lambda_counts)
+                    return [np.random.poisson(lambda_counts),]
             elif self.data_mode == 'ref_sub':
-                lambda_counts = parent.exposure*odmr_dict['odmr_height']*(1-(odmr_dict['odmr_width']/2)**2\
+                lambda_counts = exposure*odmr_dict['odmr_height']*(1-(odmr_dict['odmr_width']/2)**2\
                                          /((frequency-odmr_dict['odmr_center'])**2 + (odmr_dict['odmr_width']/2)**2))
 
-                lambda_counts_ref = parent.exposure*odmr_dict['odmr_height']
-                if not parent.rf.on:
-                    return np.random.poisson(parent.exposure*odmr_dict['odmr_height']) - np.random.poisson(parent.exposure*odmr_dict['odmr_height'])
+                lambda_counts_ref = exposure*odmr_dict['odmr_height']
+                if not rf.on:
+                    return [np.random.poisson(exposure*odmr_dict['odmr_height']) - np.random.poisson(exposure*odmr_dict['odmr_height']),]
                 else:
-                    return np.random.poisson(lambda_counts) - np.random.poisson(lambda_counts_ref)
+                    return [np.random.poisson(lambda_counts) - np.random.poisson(lambda_counts_ref),]
             elif self.data_mode == 'ref_div':
-                lambda_counts = parent.exposure*odmr_dict['odmr_height']*(1-(odmr_dict['odmr_width']/2)**2\
+                lambda_counts = exposure*odmr_dict['odmr_height']*(1-(odmr_dict['odmr_width']/2)**2\
                                          /((frequency-odmr_dict['odmr_center'])**2 + (odmr_dict['odmr_width']/2)**2))
 
-                lambda_counts_ref = parent.exposure*odmr_dict['odmr_height']
-                if not parent.rf.on:
-                    return np.random.poisson(parent.exposure*odmr_dict['odmr_height'])/np.random.poisson(parent.exposure*odmr_dict['odmr_height'])
+                lambda_counts_ref = exposure*odmr_dict['odmr_height']
+                if not rf.on:
+                    return [np.random.poisson(exposure*odmr_dict['odmr_height'])/np.random.poisson(exposure*odmr_dict['odmr_height']),]
                 else:
-                    return np.random.poisson(lambda_counts)/np.random.poisson(lambda_counts_ref)
+                    return [np.random.poisson(lambda_counts)/np.random.poisson(lambda_counts_ref),]
 
             elif self.data_mode == 'dual':
-                lambda_counts = parent.exposure*odmr_dict['odmr_height']*(1-(odmr_dict['odmr_width']/2)**2\
+                lambda_counts = exposure*odmr_dict['odmr_height']*(1-(odmr_dict['odmr_width']/2)**2\
                                          /((frequency-odmr_dict['odmr_center'])**2 + (odmr_dict['odmr_width']/2)**2))
 
-                lambda_counts_ref = parent.exposure*odmr_dict['odmr_height']
-                if not parent.rf.on:
+                lambda_counts_ref = exposure*odmr_dict['odmr_height']
+                if not rf.on:
                     return [np.random.poisson(lambda_counts_ref), np.random.poisson(lambda_counts_ref)]
                 else:
                     return [np.random.poisson(lambda_counts), np.random.poisson(lambda_counts_ref)]
@@ -759,9 +819,9 @@ class VirtualCounter(BaseCounter):
             position = np.array([parent.scanner.x, parent.scanner.y])
             distance = np.linalg.norm(np.array(pl_dict['pl_center']) - position)
             
-            lambda_counts = parent.exposure*(pl_dict['pl_height']*(pl_dict['pl_width']/2)**2\
+            lambda_counts = exposure*(pl_dict['pl_height']*(pl_dict['pl_width']/2)**2\
                                      /((distance)**2 + (pl_dict['pl_width']/2)**2) + pl_dict['pl_bg'])
-            return np.random.poisson(lambda_counts)
+            return [np.random.poisson(lambda_counts),]
 
 
 class VirtualScanner(BaseScanner):
@@ -853,7 +913,10 @@ class VirtualPulse(BasePulse):
         super().__init__()
 
     def gui(self, is_in_GUI=False):
+
         GUI_Pulse(self, is_in_GUI)
+
+    gui.__doc__ = GUI_Pulse.__doc__
 
 
     def off_pulse(self):

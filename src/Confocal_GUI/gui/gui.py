@@ -103,9 +103,8 @@ class MainWindow(QMainWindow):
         self.measurement_PLE = measurement_PLE
         self.measurement_Live = measurement_Live
         self.ui = ui
+        self.in_update_plot = False
         self.is_stop_plot_done = True
-        self.mutex = QMutex() # thread lock for update_plot
-
         ui_path = os.path.join(os.path.dirname(__file__), self.ui)
         uic.loadUi(ui_path, self)
 
@@ -123,13 +122,18 @@ class MainWindow(QMainWindow):
         self.load_default()
         self.connect_buttons()
         self.init_widget()
+
         self.show()
 
-    def load_figures(self):
 
+
+    def load_figures(self):
+        PLE_x_label = '' if self.measurement_PLE is None else f'{self.measurement_PLE.x_name} ({self.measurement_PLE.x_unit})'
+        PLE_y_label = '' if self.measurement_PLE is None else f'Counts/{self.measurement_PLE.exposure}s'
+        PL_y_label = '' if self.measurement_PL is None else f'Counts/{self.measurement_PL.exposure}s'
         figures = [
-            {'child_name': 'widget_figure_PL', 'labels': ['X', 'Y', 'Counts'], 'canvas_name': 'canvas_PL', 'mode': 'PLdis'},
-            {'child_name': 'widget_figure_PLE', 'labels': ['Wavelength', 'Counts'], 'canvas_name': 'canvas_PLE', 'mode': 'PLE'},
+            {'child_name': 'widget_figure_PL', 'labels': ['X', 'Y', PL_y_label], 'canvas_name': 'canvas_PL', 'mode': 'PLdis'},
+            {'child_name': 'widget_figure_PLE', 'labels': [PLE_x_label, PLE_y_label], 'canvas_name': 'canvas_PLE', 'mode': 'PLE'},
             {'child_name': 'widget_figure_Live', 'labels': ['Data', 'Counts'], 'canvas_name': 'canvas_Live', 'mode': 'PLE'} 
         ]
 
@@ -290,12 +294,12 @@ class MainWindow(QMainWindow):
                 {'name': 'doubleSpinBox_step_PLE', 'value': lambda: abs(self.measurement_PLE.data_x[0] - self.measurement_PLE.data_x[1])},
                 {'name': 'doubleSpinBox_wavelength', 'value': lambda: self.measurement_PLE.data_x[0]},
                 # PLE
-                {'name': 'doubleSpinBox_xl', 'value': lambda: self.measurement_PL.data_x[0][0]},
-                {'name': 'doubleSpinBox_xu', 'value': lambda: self.measurement_PL.data_x[0][-1]},
-                {'name': 'doubleSpinBox_yl', 'value': lambda: self.measurement_PL.data_x[1][0]},
-                {'name': 'doubleSpinBox_yu', 'value': lambda: self.measurement_PL.data_x[1][-1]},
+                {'name': 'doubleSpinBox_xl', 'value': lambda: self.measurement_PL.x_array[0]},
+                {'name': 'doubleSpinBox_xu', 'value': lambda: self.measurement_PL.x_array[-1]},
+                {'name': 'doubleSpinBox_yl', 'value': lambda: self.measurement_PL.y_array[0]},
+                {'name': 'doubleSpinBox_yu', 'value': lambda: self.measurement_PL.y_array[-1]},
                 {'name': 'doubleSpinBox_exposure_PL', 'value': lambda: self.measurement_PL.exposure},
-                {'name': 'doubleSpinBox_step_PL', 'value': lambda: abs(self.measurement_PL.data_x[0][0] - self.measurement_PL.data_x[0][1])},
+                {'name': 'doubleSpinBox_step_PL', 'value': lambda: abs(self.measurement_PL.x_array[0] - self.measurement_PL.x_array[1])},
                 # PL
             ]
         }
@@ -344,6 +348,9 @@ class MainWindow(QMainWindow):
             self.comboBox_counter_mode.setCurrentText(self.measurement_PL.counter_mode)
             self.comboBox_data_mode.setCurrentText(self.measurement_PL.data_mode)
             self.comboBox_device_gui.addItems(list(self.config_instances.keys()))
+
+        if 'pulse' in list(self.config_instances.keys()):
+            self.comboBox_device_gui.setCurrentText('pulse')
 
         # set all combo box
         if self.findChild(QPushButton, 'pushButton_reattach') is not None:
@@ -577,7 +584,6 @@ class MainWindow(QMainWindow):
         
         
         self.live_plot_Live.init_figure_and_data()
-        
         self.timer = QtCore.QTimer()
         self.timer.setInterval(int(1000*self.live_plot_Live.update_time))  # Interval in milliseconds
         self.timer.timeout.connect(self.update_plot)
@@ -587,60 +593,69 @@ class MainWindow(QMainWindow):
         
     def update_plot(self):
 
-        with QMutexLocker(self.mutex):
-            # lock this method
-            self.is_stop_plot_done = False
-            attr = self.cur_plot
-            live_plot_handle = getattr(self, f'live_plot_{attr}')
+        self.in_update_plot = True
+        self.is_stop_plot_done = False
+        attr = self.cur_plot
+        live_plot_handle = getattr(self, f'live_plot_{attr}')
 
-            if live_plot_handle.data_generator.thread.is_alive() and self.is_running:
+        if live_plot_handle.data_generator.thread.is_alive() and self.is_running:
+            if (live_plot_handle.data_generator.points_done == live_plot_handle.points_done):
+                # if no new data then no update
+                self.in_update_plot = False
+                return
+            live_plot_handle.update_figure()
 
-                live_plot_handle.update_figure()
+            self.estimate_PL_time()
+            self.estimate_PLE_time()
+            # update estimate finish time
+        else:
+            self.timer.stop()
+            live_plot_handle.stop()
+            # stop data_generator
+            live_plot_handle.update_figure()  
+            live_plot_handle.after_plot()
+            setattr(self, f'data_figure_{attr}', DataFigure(live_plot_handle))
+            self.is_running = False
+            self.estimate_PL_time()
+            self.estimate_PLE_time()
 
-                self.estimate_PL_time()
-                self.estimate_PLE_time()
-                # update estimate finish time
-            else:
-                self.timer.stop()
-                live_plot_handle.stop()
-                # stop data_generator
+            self.is_stop_plot_done = True
 
-                live_plot_handle.update_figure()  
-                live_plot_handle.line.set_animated(False)                
-                live_plot_handle.axes.set_autoscale_on(False)     
-                live_plot_handle.choose_selector()
-                setattr(self, f'data_figure_{attr}', DataFigure(live_plot_handle))
-                self.is_running = False
-
-                self.estimate_PL_time()
-                self.estimate_PLE_time()
-
-                self.is_stop_plot_done = True
-            
+        self.in_update_plot = False
     
     def stop_plot(self, is_close_selector=False, cur_plot='PL'):
         self.print_log(f'Plot stopped')
         self.is_running = False
         self.is_fit = False
         attr = self.cur_plot
-        
+
+
         if hasattr(self, 'timer'):
             self.timer.stop()
+        while self.in_update_plot:
+            time.sleep(0.1)
         if not self.is_stop_plot_done:
             self.update_plot()
         # enforce another plot instantly to go through end plot procedure
+
+
         if hasattr(self, 'live_plot_PLE'):
             self.checkBox_is_stabilizer.setDisabled(False)
             self.doubleSpinBox_wavelength.setDisabled(False)
         if hasattr(self, 'live_plot_PL'):
             self.checkBox_is_bind.setChecked(False)
             self.checkBox_is_bind.setDisabled(False)
-
         if hasattr(self, 'live_plot_PL') and self.live_plot_PL is not None:
             self.estimate_PL_time()
 
         if hasattr(self, 'live_plot_PLE') and self.live_plot_PLE is not None:
             self.estimate_PLE_time() 
+
+        attr = self.cur_plot
+        if hasattr(self, f'live_plot_{attr}'):
+            live_plot_handle = getattr(self, f'live_plot_{attr}')
+            live_plot_handle.stop()
+
 
         if is_close_selector:
             # make sure no residual selector which may cause thread problem
@@ -656,7 +671,6 @@ class MainWindow(QMainWindow):
                 if hasattr(self, 'data_figure_Live') and self.live_plot_Live is not None:
                     for selector in self.data_figure_Live.selector:
                         selector.set_active(False)
-
 
 
 
@@ -766,9 +780,10 @@ class MainWindow(QMainWindow):
            
         self.read_data_PL()
 
-        data_x = np.array([np.arange(self.xl, self.xu, self.step_PL), np.arange(self.yl, self.yu, self.step_PL)])
+        x_array = np.arange(self.xl, self.xu, self.step_PL)
+        y_array = np.arange(self.yl, self.yu, self.step_PL)
 
-        self.measurement_PL.load_params(data_x = data_x, exposure=self.exposure_PL, repeat=self.repeat,\
+        self.measurement_PL.load_params(x_array=x_array, y_array=y_array, exposure=self.exposure_PL, repeat=self.repeat,\
             counter_mode=self.counter_mode, data_mode=self.data_mode, relim_mode=self.relim_PL)
                 
 
@@ -781,6 +796,7 @@ class MainWindow(QMainWindow):
 
 
         data_y = self.measurement_PL.data_y
+        data_x = self.measurement_PL.data_x
         self.live_plot_PL = PLDisLive(labels=[['X', 'Y'], f'Counts/{self.exposure_PL:.2f}s'], \
                         update_time=1, data_generator=self.measurement_PL, data=[data_x, data_y],\
                                        fig=self.canvas_PL.fig, config_instances=self.config_instances, relim_mode = self.relim_PL)
@@ -957,7 +973,12 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event):
         if self.detached_window is not None:
             self.reattach_page()
-        self.stop_plot()
+
+        attr = self.cur_plot
+        if hasattr(self, f'live_plot_{attr}'):
+            live_plot_handle = getattr(self, f'live_plot_{attr}')
+            live_plot_handle.stop()
+
         plt.close('all') # make sure close all plots which avoids error message
 
             
@@ -1412,6 +1433,47 @@ class DragContainer(QWidget):
 
 
 class PulseGUI(QMainWindow):
+    """
+    GUI:
+
+        Off Pulse/On Pulse:
+            button to off and on pulse, using pulse sequence currently in the GUI.
+            On pulse will also save current pulse sequence.
+
+        Remove/Add Column:
+            button to remove or add one more pulse column
+
+        Save to/Load from file:
+            button to save pulse to file(*pulse.npz) or load from saved pulse(*pulse.npz)
+            
+        Save Pulses:
+            button to apply current pulse sequence (potentially used by measurement) but not on pulse.
+
+        Add/Delete Bracket:
+            button to add a bracket which defines which part of pulse sequence should be repeated
+
+        Ref settings:
+            if checkbox is checked, will automatically repeat current sequence another time for reference,
+            where the second sequence disables signal and replace DAQ gate with DAQ_ref gate
+
+        x:
+            number in Channel delay or pulse duration can be a number or expression, if expression, then corresponding
+            time will be replaced by pulse.x property when pulse.read_data() is called
+            e.g.
+                first run
+                pulse.x = 100
+                pulse1 duration: 1000-x -> 1000-100=900  
+
+                second run
+                pulse.x = 200
+                pulse1 duration: 1000-x -> 1000-200=800
+
+            which enables configure pulse sequence before measurement, and gives measurement an option to change pulse
+            on demand by only changing pulse.x or config_instances['pulse'].x 
+
+        Pulse:
+            you can drag and insert all pulses into any new position
+    """
 
     def __init__(self, device_handle, parent=None):
         super().__init__()
@@ -1476,6 +1538,10 @@ class PulseGUI(QMainWindow):
         self.btn_add_bracket.setFixedSize(150,100)
         self.layout_saveload.addWidget(self.btn_add_bracket)
 
+        self.btn_ref_info = self.add_ref_info()
+        self.btn_ref_info.setFixedSize(150,150)
+        self.layout_saveload.addWidget(self.btn_ref_info)
+
         self.load_data()
 
         self.show()
@@ -1493,6 +1559,31 @@ class PulseGUI(QMainWindow):
 
         self.save_data()
         self.device_handle.on_pulse()
+
+    def add_ref_info(self):
+        group_box = QGroupBox('Ref settings')
+        group_layout = QVBoxLayout()
+
+        self.checkbox = QCheckBox('Auto append ref')
+        group_layout.addWidget(self.checkbox)
+
+        self.comboboxes = {}
+        combobox_labels = ['Signal', 'DAQ', 'DAQ_ref']
+        for label_text in combobox_labels:
+            h_layout = QHBoxLayout()
+            label = QLabel(label_text)
+            combobox = QComboBox()
+            combobox.addItem('None')
+            combobox.addItems([f'Ch{channel}' for channel in range(8)])
+            self.comboboxes[label_text] = combobox
+
+            h_layout.addWidget(label)
+            h_layout.addWidget(combobox)
+            group_layout.addLayout(h_layout)
+
+        group_box.setLayout(group_layout)
+        return group_box
+
 
     def handle_text_change(self, text, combo_box):
         
@@ -1598,11 +1689,13 @@ class PulseGUI(QMainWindow):
             self.data_matrix = self.device_handle.data_matrix_tmp
             self.channel_names = self.device_handle.channel_names_tmp
             self.repeat_info = self.device_handle.repeat_info_tmp
+            self.ref_info = self.device_handle.ref_info_tmp
         else:
             self.delay_array = self.device_handle.delay_array
             self.data_matrix = self.device_handle.data_matrix
             self.channel_names = self.device_handle.channel_names
             self.repeat_info = self.device_handle.repeat_info
+            self.ref_info = self.device_handle.ref_info
 
         self.add_channel_names()
         name_widget = self.layout_dataset.itemAt(0).widget()
@@ -1678,7 +1771,15 @@ class PulseGUI(QMainWindow):
             # otherwise just default repeat_info setting and no bracket
             self.on_add_bracket(self.repeat_info[0], self.repeat_info[1])
 
-
+        # load ref_info
+        checkbox = self.btn_ref_info.layout().itemAt(0).widget()
+        checkbox.setChecked(self.ref_info['is_ref'])
+        combobox = self.btn_ref_info.layout().itemAt(1).layout().itemAt(1).widget()
+        combobox.setCurrentText(f'Ch{self.ref_info["signal"]}')
+        combobox = self.btn_ref_info.layout().itemAt(2).layout().itemAt(1).widget()
+        combobox.setCurrentText(f'Ch{self.ref_info["DAQ"]}')
+        combobox = self.btn_ref_info.layout().itemAt(3).layout().itemAt(1).widget()
+        combobox.setCurrentText(f'Ch{self.ref_info["DAQ_ref"]}')
 
     def save_data(self):
         """
@@ -1688,6 +1789,7 @@ class PulseGUI(QMainWindow):
         self.device_handle.delay_array = self.read_delay()
         self.device_handle.channel_names = self.read_channel_names()
         self.device_handle.repeat_info = self.read_repeat_info()
+        self.device_handle.ref_info = self.read_ref_info()
 
                     
     def read_data(self):
@@ -1781,6 +1883,18 @@ class PulseGUI(QMainWindow):
             repeat = layout_sub.itemAt(1).widget().value()
 
             return [start_index, end_index, repeat]
+
+    def read_ref_info(self):
+        new_ref_info = {}
+        checkbox = self.btn_ref_info.layout().itemAt(0).widget()
+        new_ref_info['is_ref'] = checkbox.isChecked()
+        combobox = self.btn_ref_info.layout().itemAt(1).layout().itemAt(1).widget()
+        new_ref_info['signal'] = None if combobox.currentText()=='None' else int(combobox.currentText()[-1])
+        combobox = self.btn_ref_info.layout().itemAt(2).layout().itemAt(1).widget()
+        new_ref_info['DAQ'] = None if combobox.currentText()=='None' else int(combobox.currentText()[-1])
+        combobox = self.btn_ref_info.layout().itemAt(3).layout().itemAt(1).widget()
+        new_ref_info['DAQ_ref'] = None if combobox.currentText()=='None' else int(combobox.currentText()[-1])
+        return new_ref_info
     
         
     def remove_column(self):
@@ -1932,6 +2046,7 @@ class PulseGUI(QMainWindow):
         self.device_handle.delay_array_tmp = self.read_delay() 
         self.device_handle.channel_names_tmp = self.read_channel_names() 
         self.device_handle.repeat_info_tmp = self.read_repeat_info()
+        self.device_handle.ref_info_tmp = self.read_ref_info()
 
 
 def GUI_Pulse(device_handle, is_in_GUI=False):
@@ -1963,3 +2078,4 @@ def GUI_Pulse(device_handle, is_in_GUI=False):
         except SystemExit as se:
             if se.code != 0:
                 raise se
+GUI_Pulse.__doc__ = PulseGUI.__doc__

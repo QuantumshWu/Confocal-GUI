@@ -10,191 +10,8 @@ import numbers
 
 from Confocal_GUI.live_plot import *
 from Confocal_GUI.gui import *
+from .base import register_measurement, BaseMeasurement, live
 
-
-class BaseMeasurement(ABC):
-    """
-    Base class defines measurements
-
-    base procedure is
-
-    >>> measurement = Mesurement()
-    # choose measurement class
-    >>> mesurement.init_assign(params)
-    # which will reset initial state 
-    >>> mesurement.start()
-    # data_generator starts
-    >>> mesurement.stop()
-
-    #or 
-
-    >>> ple(params)
-    # equivalent to above plus choose live_plot class
-
-    #or
-
-    >>> ple(params, is_GUI)
-    # to GUI, now params is optional
-
-    GUI uses measurement.device_to_state() methods etc.
-    """
-
-    def __init__(self, config_instances):
-        super().__init__()
-        self.config_instances = config_instances
-        self.assign_names()
-
-    def _iterate_data_x(self):
-        """
-        Generate indices and corresponding x values for iteration.
-        Supports both 1D and 2D data_x.
-        """
-        if isinstance(self.data_x[0], numbers.Number):
-            for i, x in enumerate(self.data_x):
-                yield i, x
-        else:
-            for j, y in enumerate(self.data_x[1]):
-                for i, x in enumerate(self.data_x[0]):
-                    yield (i, j), (x, y)
-
-
-
-
-    def _data_generator(self):
-        # defines core of data_generator, how .start() call will lead to
-        self.to_initial_state()
-
-        for self.repeat_done in range(self.repeat):
-            for indices, x in self._iterate_data_x():
-                if not self.is_running:
-                    return
-                self.device_to_state(x)
-                self.update_data_y(indices)
-                self.points_done += 1
-
-        self.is_done = True
-        self.to_final_state()
-
-    def start(self):
-        if not self.loaded_params:
-            print('missing params, use measurement.load_params()')
-            return
-
-        self.is_running = True
-        self.is_done = False
-        self.points_done = 0
-        self.repeat_done = 1
-        # reset data_generator
-
-        # how data_generator is called by live_plot
-        self.thread = threading.Thread(target=self._data_generator, daemon=True)
-        self.thread.start()
-
-
-
-    def stop(self):
-        if self.thread.is_alive():
-            self.is_running = False
-            self.thread.join()
-        self.to_final_state()
-        self.loaded_params = False
-
-
-    @abstractmethod
-    def device_to_state(self, x):
-        # move device state to x from data_x
-        # also need to include such as rf.on = True etc.
-        # to make sure device_to_state(x) call will bring device_x to desired state x
-        # but power can be set from set device
-        pass
-
-    @abstractmethod
-    def to_initial_state(self):
-        # move device/data state to initial state before measurement
-        pass
-
-    @abstractmethod
-    def to_final_state(self):
-        # move device/data state to final state after measurement
-        pass
-
-    @abstractmethod
-    def read_x(self):
-        # read_x for GUI uses
-        pass
-
-    @abstractmethod
-    def update_data_y(self, i):
-        # defines how to update data_y
-        # normally will be
-        # counts = self.counter(self.exposure, parent=self) 
-        # data_y[i] += counts
-        pass
-
-    @abstractmethod
-    def assign_names(self):
-        # defines measurement names etc.
-        # init assignment of config instances
-        pass
-
-    @abstractmethod
-    def load_params(self):
-        # defines how to load params
-        pass
-
-    @abstractmethod
-    def plot(self):
-        # defines how to call in jupyter
-        pass
-
-
-
-
-measurement_registry = {}
-
-def run_measurement(name, **kwargs):
-    """
-    connect run_measurement(name) func to measurement_registry['name'] func
-    """
-    cls = measurement_registry.get(name)
-    if cls is None:
-        raise ValueError(f"No measurement registered with name '{name}'")
-    measurement = cls({**kwargs}['config_instances'])
-    return measurement.plot(**kwargs)
-
-def register_measurement(name: str):
-    """
-    register 'name' func to package and allow a faster call
-    e.g. from confocal_gui.logic import ple
-    e.g. ple(**kwargs) is same as calling PLEMeasurement(**kwargs).plot(**kwargs)
-    """
-    def decorator(cls):
-        measurement_registry[name] = cls
-
-        
-        def measure_func(**kwargs):
-            return run_measurement(name, **kwargs)
-
-        if hasattr(cls, 'load_params'):
-            measure_func.__doc__ = cls.load_params.__doc__
-
-        measure_func.__name__ = name
-
-
-        parent_module = sys.modules[__name__] 
-        #print(parent_module, 'parent')
-        setattr(parent_module, name, measure_func)
-
-
-        if '__all__' in parent_module.__dict__:
-            if name not in parent_module.__all__:
-                parent_module.__all__.append(name)
-        else:
-            parent_module.__all__ = [name]
-
-
-        return cls
-    return decorator
 
 
 @register_measurement("ple") #allow a faster call to .load_params() using ple()
@@ -222,7 +39,8 @@ class PLEMeasurement(BaseMeasurement):
 
     def update_data_y(self, i):
         counts = self.counter.read_counts(self.exposure, parent = self, counter_mode=self.counter_mode, data_mode=self.data_mode)
-        self.data_y[i] = counts if np.isnan(self.data_y[i]) else (self.data_y[i] + counts)
+        self.data_y[i] = counts if np.isnan(self.data_y[i][0]) else [(self.data_y[i][j] + counts[j]) for j in range(len(counts))]
+        return counts
 
     def assign_names(self):
         # only assign once measurement is created
@@ -247,13 +65,25 @@ class PLEMeasurement(BaseMeasurement):
     def load_params(self, data_x=None, exposure=0.1, config_instances=None, repeat=1, is_GUI=False, \
         counter_mode='apd', data_mode='single', relim_mode='normal', is_plot=True):
         """
-        ple func doc str
+        ple
+
+        args:
+        (data_x=None, exposure=0.1, config_instances=None, repeat=1, is_GUI=False,
+        counter_mode='apd', data_mode='single', relim_mode='normal'):
+
+        example:
+        fig, data_figure = ple(data_x=np.arange(737.1-0.005, 737.1+0.005, 0.0005), exposure=0.1, 
+                                config_instances=config_instances, repeat=1, is_GUI=False, 
+                                counter_mode='apd', data_mode='single', relim_mode='normal')
+
         """
         self.loaded_params = True
         if data_x is None:
             data_x = np.arange(737.1-0.005, 737.1+0.005, 0.0005)
         self.data_x = data_x
-        self.data_y = np.full(np.shape(self.data_x), np.nan)
+        len_counts = len(self.config_instances['counter'].read_counts(0.01, parent = self, counter_mode=counter_mode, data_mode=data_mode))
+        # try initialize counter and acquire data length
+        self.data_y = np.full((len(self.data_x), len_counts), np.nan)
         self.exposure = exposure
         self.repeat = repeat
         self.is_GUI = is_GUI
@@ -310,7 +140,8 @@ class ODMRMeasurement(BaseMeasurement):
 
     def update_data_y(self, i):
         counts = self.counter.read_counts(self.exposure, parent = self, counter_mode=self.counter_mode, data_mode=self.data_mode)
-        self.data_y[i] = counts if np.isnan(self.data_y[i]) else (self.data_y[i] + counts)
+        self.data_y[i] = counts if np.isnan(self.data_y[i][0]) else [(self.data_y[i][j] + counts[j]) for j in range(len(counts))]
+        return counts
 
     def assign_names(self):
 
@@ -333,13 +164,26 @@ class ODMRMeasurement(BaseMeasurement):
     def load_params(self, data_x=None, exposure=0.1, power=-10, config_instances=None, repeat=1, is_GUI=False, \
         counter_mode='apd', data_mode='single', relim_mode='tight', is_plot=True):
         """
-        odmr func doc str
+        odmr
+
+        args:
+        (data_x=None, exposure=0.1, power=-10, config_instances=None, repeat=1, is_GUI=False,
+        counter_mode='apd', data_mode='single', relim_mode='normal'):
+
+        example:
+        fig, data_figure = odmr(data_x=np.arange(2.88-0.1, 2.88+0.1, 0.001), exposure=0.1, 
+                                power=-10, 
+                                config_instances=config_instances, repeat=1, is_GUI=False, 
+                                counter_mode='apd', data_mode='single', relim_mode='normal')
+
         """
         self.loaded_params = True
         if data_x is None:
             data_x = np.arange(2.88-0.1, 2.88+0.1, 0.001)
         self.data_x = data_x
-        self.data_y = np.full(np.shape(self.data_x), np.nan)
+        len_counts = len(self.config_instances['counter'].read_counts(0.01, parent = self, counter_mode=counter_mode, data_mode=data_mode))
+        # try initialize counter and acquire data length
+        self.data_y = np.full((len(self.data_x), len_counts), np.nan)        
         self.exposure = exposure
         self.repeat = repeat
         self.is_GUI = is_GUI
@@ -366,90 +210,6 @@ class ODMRMeasurement(BaseMeasurement):
             data_generator = self
             liveplot = PLELive(labels=[f'{self.x_name} ({self.x_unit})', f'Counts/{self.exposure}s'], \
                                 update_time=0.1, data_generator=data_generator, data=[data_x, data_y], \
-                                config_instances = self.config_instances, relim_mode=self.relim_mode)
-            fig, selector = liveplot.plot()
-            data_figure = DataFigure(liveplot)
-            return fig, data_figure
-
-
-@register_measurement('live') #allow a faster call to .load_params() using ple()
-class LiveMeasurement(BaseMeasurement):
-
-    def device_to_state(self, frequency):
-        # move device state to x from data_x, defaul frequency in GHz
-        pass
-
-
-    def to_initial_state(self):
-        # move device/data state to initial state before measurement
-        pass
-
-
-    def to_final_state(self):
-        # move device/data state to final state after measurement
-        pass
-
-    def read_x(self):
-        pass
-
-    def update_data_y(self, i):
-        counts = self.counter.read_counts(self.exposure, parent = self, counter_mode=self.counter_mode, data_mode=self.data_mode)
-        self.data_y[:] = np.roll(self.data_y, 1)
-        self.data_y[0] = counts 
-
-    def assign_names(self):
-
-        self.x_name = 'Data'
-        self.x_unit = '1'
-        self.measurement_name = 'Live'
-        self.x_device_name = ''
-        self.plot_type = '1D'
-        self.is_change_unit = False
-        self.loaded_params = False
-        self.counter = self.config_instances.get('counter', None)
-        self.scanner = self.config_instances.get('scanner', None)
-        # init assignment
-        if (self.counter is None):
-            raise KeyError('Missing devices in config_instances')
-
-
-    def load_params(self, data_x=None, exposure=0.1, config_instances=None, is_finite=False, is_GUI=False, repeat=1, \
-        counter_mode='apd', data_mode='single', relim_mode='normal', is_plot=True):
-        """
-        live func doc str
-        """
-        self.loaded_params = True
-        if is_finite==False:
-            self.repeat = int(1e6)
-        else:
-            self.repeat = repeat
-        # large enough and in practical infinite
-        if data_x is None:
-            data_x = np.arange(100)
-        self.data_x = data_x
-        self.data_y = np.full(np.shape(self.data_x), np.nan)
-        self.exposure = exposure
-        self.is_GUI = is_GUI
-        self.counter_mode = counter_mode
-        self.data_mode = data_mode
-        self.relim_mode = relim_mode
-        self.is_plot = is_plot
-        self.info = {'measurement_name':self.measurement_name, 'plot_type':self.plot_type, 'exposure':self.exposure\
-                    , 'repeat':self.repeat, 'scanner':(None if self.scanner is None else (self.scanner.x, self.scanner.y))}
-
-    def plot(self, **kwargs):
-        self.load_params(**kwargs)
-        if not self.is_plot:
-            return self
-
-        if self.is_GUI:
-            return None, None
-        else:
-            data_x = self.data_x
-            data_y = self.data_y
-            data_generator = self
-            liveplot = PLELive(labels=[f'{self.x_name} ({self.x_unit})', f'Counts/{self.exposure}s'], \
-                                update_time=0.01, data_generator=data_generator, data=[data_x, data_y], \
                                 config_instances = self.config_instances, relim_mode=self.relim_mode)
             fig, selector = liveplot.plot()
             data_figure = DataFigure(liveplot)
@@ -490,12 +250,11 @@ class PLMeasurement(BaseMeasurement):
         y = self.scanner.y
         return (x, y)
 
-    def update_data_y(self, index):
-        counts = self.counter.read_counts(self.exposure, parent = self, counter_mode=self.counter_mode, data_mode=self.data_mode)
-        i, j = index
- 
-        self.data_y[j][i] = counts if np.isnan(self.data_y[j][i]) else (self.data_y[j][i]+counts)
+    def update_data_y(self, i):
+        counts = (self.counter.read_counts(self.exposure, parent = self, counter_mode=self.counter_mode, data_mode=self.data_mode))[:1]
+        self.data_y[i] = counts if np.isnan(self.data_y[i][0]) else [(self.data_y[i][j] + counts[j]) for j in range(len(counts))]
         # if has data then set to np.nan
+        return counts
 
     def assign_names(self):
 
@@ -511,10 +270,21 @@ class PLMeasurement(BaseMeasurement):
         if (self.counter is None) or (self.scanner is None):
             raise KeyError('Missing devices in config_instances')
 
-    def load_params(self, data_x=None, exposure=0.1, config_instances=None, repeat = 1, wavelength=None, is_GUI=False, is_dis=True, \
+    def load_params(self, x_array=None, y_array=None, exposure=0.1, config_instances=None, repeat = 1, wavelength=None, is_GUI=False, is_dis=True, \
         counter_mode='apd', data_mode='single', relim_mode='normal', is_plot=True):
         """
-        pl func doc str
+        pl
+
+        args:
+        (x_array=None, y_array=None, exposure=0.1, config_instances=None, repeat=1, wavelength=None, 
+        is_GUI=False, is_dis=True, 
+        counter_mode='apd', data_mode='single', relim_mode='normal'):
+
+        example:
+        fig, data_figure = pl(x_array = np.arange(-10, 10, 1), y_array = np.arange(-10, 10, 1), exposure=0.1, 
+                                config_instances=config_instances, repeat=1, is_GUI=False, is_dis=True,
+                                counter_mode='apd', data_mode='single', relim_mode='normal')
+
         """
         self.loaded_params = True
         self.is_dis = is_dis
@@ -527,10 +297,17 @@ class PLMeasurement(BaseMeasurement):
             self.wavemeter = self.config_instances.get('wavemeter')
             self.laser_stabilizer = self.config_instances.get('laser_stabilizer')
 
-        if data_x is None:
-            data_x = [np.arange(-10, 10, 1), np.arange(-10, 10, 1)]
-        self.data_x = data_x
-        self.data_y = np.full((len(self.data_x[1]), len(self.data_x[0])), np.nan)
+        if (x_array is None) or (y_array is None):
+            x_array = np.arange(-10, 10, 1)
+            y_array = np.arange(-10, 10, 1)
+        self.x_array = x_array
+        self.y_array = y_array
+        self.data_x = []
+        for y in self.y_array:
+            for x in self.x_array:
+                self.data_x.append((x, y))
+        self.data_x = np.array(self.data_x)
+        self.data_y = np.full((len(self.data_x), 1), np.nan)        
         # set nan as default of no data
 
         self.exposure = exposure
@@ -569,8 +346,6 @@ class PLMeasurement(BaseMeasurement):
             data_figure = DataFigure(liveplot)
             return fig, data_figure
 
-
-        
   
 
 # ----------------------- below will write soon-----------------------------------------------

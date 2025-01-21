@@ -1,8 +1,6 @@
 *.log
-*.npz
 *.jpg
 *.pyc
-/jupyter notebook examples/.ipynb_checkpoints
-/jupyter notebook examples/.ipynb_checkpoints
-/jupyter notebook examples/.ipynb_checkpoints
-/jupyter notebook examples/.ipynb_checkpoints
+jupyter notebook examples/
+!jupyter notebook examples/examples with virtual devices.ipynb
+!jupyter notebook examples/examples for UO optics lab.ipynb
