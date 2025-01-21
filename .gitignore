@@ -2,6 +2,5 @@
 *.jpg
 *.pyc
 jupyter notebook examples/
-!jupyter notebook examples/examples for UO optics lab.ipynb
 !jupyter notebook examples/examples with virtual devices.ipynb
 
