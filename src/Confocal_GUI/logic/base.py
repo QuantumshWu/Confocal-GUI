@@ -48,17 +48,6 @@ class BaseMeasurement(ABC):
         """
         for i, x in enumerate(self.data_x):
             yield i, x
-        """
-        if isinstance(self.data_x[0], numbers.Number):
-            for i, x in enumerate(self.data_x):
-                yield i, x
-        else:
-            for j, y in enumerate(self.data_x[1]):
-                for i, x in enumerate(self.data_x[0]):
-                    yield (i, j), (x, y)
-
-        """
-
 
     def _data_generator(self):
         # defines core of data_generator, how .start() call will lead to
@@ -67,6 +56,8 @@ class BaseMeasurement(ABC):
         for self.repeat_done in range(self.repeat):
             for indices, x in self._iterate_data_x():
                 if not self.is_running:
+                    self.is_done = True
+                    self.to_final_state()
                     return
                 self.device_to_state(x)
                 counts = self.update_data_y(indices)
@@ -96,7 +87,6 @@ class BaseMeasurement(ABC):
         if self.thread.is_alive():
             self.is_running = False
             self.thread.join()
-        self.to_final_state()
         self.loaded_params = False
 
 

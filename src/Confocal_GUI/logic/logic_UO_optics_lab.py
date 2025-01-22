@@ -119,7 +119,7 @@ class RFWithPulseMeasurement(BaseMeasurement):
 
 def rabi(data_x=None, exposure=0.1, power=-10, frequency=2.88, pulse_file=None, config_instances=None, \
         repeat=1, is_GUI=False, \
-        counter_mode='apd', data_mode='ref_sub', relim_mode='tight'):
+        counter_mode='apd', data_mode='ref_sub', relim_mode='tight', is_plot=True):
     """
     rabi
 
@@ -157,11 +157,11 @@ def rabi(data_x=None, exposure=0.1, power=-10, frequency=2.88, pulse_file=None, 
 
     return measurement.plot(data_x=data_x, exposure=exposure, power=power, frequency=frequency, pulse_file=pulse_file,\
                     config_instances=config_instances, repeat=repeat, is_GUI=is_GUI, counter_mode=counter_mode,\
-                    data_mode=data_mode, relim_mode=relim_mode)
+                    data_mode=data_mode, relim_mode=relim_mode, is_plot=is_plot)
 
 def ramsey(data_x=None, exposure=0.1, power=-10, frequency=2.88, pulse_file=None, config_instances=None, \
         repeat=1, is_GUI=False, \
-        counter_mode='apd', data_mode='ref_sub', relim_mode='tight'):
+        counter_mode='apd', data_mode='ref_sub', relim_mode='tight', is_plot=True):
     """
     ramsey
 
@@ -199,11 +199,11 @@ def ramsey(data_x=None, exposure=0.1, power=-10, frequency=2.88, pulse_file=None
 
     return measurement.plot(data_x=data_x, exposure=exposure, power=power, frequency=frequency, pulse_file=pulse_file,\
                     config_instances=config_instances, repeat=repeat, is_GUI=is_GUI, counter_mode=counter_mode,\
-                    data_mode=data_mode, relim_mode=relim_mode)
+                    data_mode=data_mode, relim_mode=relim_mode, is_plot=is_plot)
 
 def spinecho(data_x=None, exposure=0.1, power=-10, frequency=2.88, pulse_file=None, config_instances=None, \
         repeat=1, is_GUI=False, \
-        counter_mode='apd', data_mode='ref_sub', relim_mode='tight'):
+        counter_mode='apd', data_mode='ref_sub', relim_mode='tight', is_plot=True):
     """
     spinecho
 
@@ -241,12 +241,12 @@ def spinecho(data_x=None, exposure=0.1, power=-10, frequency=2.88, pulse_file=No
 
     return measurement.plot(data_x=data_x, exposure=exposure, power=power, frequency=frequency, pulse_file=pulse_file,\
                     config_instances=config_instances, repeat=repeat, is_GUI=is_GUI, counter_mode=counter_mode,\
-                    data_mode=data_mode, relim_mode=relim_mode)
+                    data_mode=data_mode, relim_mode=relim_mode, is_plot=is_plot)
 
 
 def roduration(data_x=None, exposure=0.1, power=-10, frequency=2.88, pulse_file=None, \
     config_instances=None, repeat=1, is_GUI=False, \
-        counter_mode='apd', data_mode='ref_sub', relim_mode='tight'):
+        counter_mode='apd', data_mode='ref_sub', relim_mode='tight', is_plot=True):
     """
     roduration
 
@@ -286,12 +286,12 @@ def roduration(data_x=None, exposure=0.1, power=-10, frequency=2.88, pulse_file=
 
     return measurement.plot(data_x=data_x, exposure=exposure, power=power, frequency=frequency, pulse_file=pulse_file,\
                     config_instances=config_instances, repeat=repeat, is_GUI=is_GUI, counter_mode=counter_mode,\
-                    data_mode=data_mode, relim_mode=relim_mode)
+                    data_mode=data_mode, relim_mode=relim_mode, is_plot=is_plot)
 
 
 def t1(data_x=None, exposure=0.1, power=-10, frequency=2.88, pulse_file=None, config_instances=None, \
         repeat=1, is_GUI=False, \
-        counter_mode='apd', data_mode='ref_sub', relim_mode='tight'):
+        counter_mode='apd', data_mode='ref_sub', relim_mode='tight', is_plot=True):
     """
     t1
 
@@ -329,7 +329,7 @@ def t1(data_x=None, exposure=0.1, power=-10, frequency=2.88, pulse_file=None, co
 
     return measurement.plot(data_x=data_x, exposure=exposure, power=power, frequency=frequency, pulse_file=pulse_file,\
                     config_instances=config_instances, repeat=repeat, is_GUI=is_GUI, counter_mode=counter_mode,\
-                    data_mode=data_mode, relim_mode=relim_mode)
+                    data_mode=data_mode, relim_mode=relim_mode, is_plot=is_plot)
     
 
 

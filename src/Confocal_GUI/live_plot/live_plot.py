@@ -1138,8 +1138,10 @@ class DataFigure():
     def ylim(self, y_min, y_max):
         self.fig.axes[0].set_ylim(y_min, y_max)
 
+    def close_selector(self):
+        for selector in self.selector:
+            selector.set_active(False)
 
-        
     def save(self, addr='', extra_info=None):
         current_time = time.localtime()
         current_date = time.strftime("%Y-%m-%d", current_time)

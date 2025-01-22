@@ -1,5 +1,6 @@
 import numpy as np
-from .base import *
+from .__init__ import *
+# share all function names with __init__
 from Confocal_GUI.gui import *
 
 

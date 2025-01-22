@@ -185,9 +185,11 @@ class WaveMeter671(BaseWavemeter):
     """
     
 
-    def __init__(self):
+    def __init__(self, ip=None):
         import telnetlib
-        self.HOST = '10.199.199.1'
+        if ip is None:
+            ip = '10.199.199.1'
+        self.HOST = ip
         self.tn = telnetlib.Telnet(self.HOST, timeout=1)
         self.tn.write(b'*IDN?\r\n')
         time.sleep(0.5)
@@ -197,7 +199,8 @@ class WaveMeter671(BaseWavemeter):
     @property
     def wavelength(self):
         self.tn.write(b':READ:WAV?\r\n')
-        self._wavelength = float(self.tn.expect([b'\r\n'])[-1])
+        data = self.tn.expect([b'\r\n'])[-1]
+        self._wavelength = float(data.decode('utf-8')[:-2])
         return self._wavelength
     
     def connect(self):

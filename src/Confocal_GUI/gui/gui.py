@@ -91,10 +91,11 @@ class MainWindow(QMainWindow):
     def __init__(self, config_instances, measurement_PL, measurement_PLE, measurement_Live, ui='GUI.ui'):
         super().__init__()
         self.config_instances = config_instances
-        self.is_running = False
         self.data_figure_PL = None
         self.data_figure_PLE = None
+        self.data_figure_Live = None
         self.cur_plot = 'PL'
+        self.cur_live_plot = None
         self.is_fit = False
         self.spl = 299792458
         self.is_save_to_jupyter_flag = True
@@ -103,8 +104,8 @@ class MainWindow(QMainWindow):
         self.measurement_PLE = measurement_PLE
         self.measurement_Live = measurement_Live
         self.ui = ui
-        self.in_update_plot = False
-        self.is_stop_plot_done = True
+        self.is_plot_done = True
+        self.mutex = QMutex()
         ui_path = os.path.join(os.path.dirname(__file__), self.ui)
         uic.loadUi(ui_path, self)
 
@@ -369,7 +370,6 @@ class MainWindow(QMainWindow):
     def load_file(self):
         from Confocal_GUI.live_plot import LoadAcquire
         import glob
-        self.stop_plot()
         options = QFileDialog.Options()
         fileName, _ = QFileDialog.getOpenFileName(self,'select','','data_figure (*.jpg *.npz)',options=options)
 
@@ -392,7 +392,11 @@ class MainWindow(QMainWindow):
 
         if plot_type == '1D':
             if self.measurement_PLE is not None:
-                self.stop_plot(is_close_selector=True, cur_plot='PLE')
+                self.stop_plot()
+                # make sure no residual selector which may cause thread problem
+                if self.data_figure_PLE is not None:
+                        self.data_figure_PLE.close_selector()
+
                 data_figure = DataFigure(None, address = files[0][:-4] + '*', fig=self.canvas_PLE.fig)
                 figure_title = (files[0][:-4]).split('\\')[-1]
                 data_figure.fig.axes[0].set_title(f'{figure_title}')
@@ -404,7 +408,11 @@ class MainWindow(QMainWindow):
                 return
         elif plot_type == '2D':
             if self.measurement_PL is not None:
-                self.stop_plot(is_close_selector=True, cur_plot='PL')
+                self.stop_plot()
+                # make sure no residual selector which may cause thread problem
+                if self.data_figure_PL is not None:
+                        self.data_figure_PL.close_selector()
+
                 data_figure = DataFigure(None, address = files[0][:-4] + '*', fig=self.canvas_PL.fig)
                 figure_title = (files[0][:-4]).split('\\')[-1]
                 data_figure.fig.axes[1].set_title(f'{figure_title}')
@@ -566,10 +574,13 @@ class MainWindow(QMainWindow):
 
 
     def start_plot_Live(self):
-        self.stop_plot(is_close_selector=True, cur_plot = 'Live')
+        self.stop_plot()
+        # make sure no residual selector which may cause thread problem
+        if self.data_figure_Live is not None:
+                self.data_figure_Live.close_selector()
+
         self.print_log(f'Live started')
         self.cur_plot = 'Live'
-        self.is_running = True
         self.read_data_Live()
         
         
@@ -583,6 +594,7 @@ class MainWindow(QMainWindow):
                                          fig=self.canvas_Live.fig, config_instances=self.config_instances, relim_mode = self.relim_Live)
         
         
+        self.cur_live_plot = self.live_plot_Live
         self.live_plot_Live.init_figure_and_data()
         self.timer = QtCore.QTimer()
         self.timer.setInterval(int(1000*self.live_plot_Live.update_time))  # Interval in milliseconds
@@ -592,52 +604,41 @@ class MainWindow(QMainWindow):
             
         
     def update_plot(self):
+        with QMutexLocker(self.mutex):
+            # basically copy of live_plot.plot() method, to handle the update in pyqt thread
+            self.is_plot_done = False
+            if not self.cur_live_plot.data_generator.is_done:
+                if (self.cur_live_plot.data_generator.points_done == self.cur_live_plot.points_done):
+                    # if no new data then no update
+                    return
 
-        self.in_update_plot = True
-        self.is_stop_plot_done = False
-        attr = self.cur_plot
-        live_plot_handle = getattr(self, f'live_plot_{attr}')
+                self.cur_live_plot.update_figure()
+                self.estimate_PL_time()
+                self.estimate_PLE_time()
+                # update estimate finish time
+            else:
+                if not self.timer.isActive():
+                    self.is_plot_done = True
+                    return
+                else:
+                    self.timer.stop()
+                    self.cur_live_plot.update_figure()
+                    self.estimate_PL_time()
+                    self.estimate_PLE_time()
 
-        if live_plot_handle.data_generator.thread.is_alive() and self.is_running:
-            if (live_plot_handle.data_generator.points_done == live_plot_handle.points_done):
-                # if no new data then no update
-                self.in_update_plot = False
-                return
-            live_plot_handle.update_figure()
-
-            self.estimate_PL_time()
-            self.estimate_PLE_time()
-            # update estimate finish time
-        else:
-            self.timer.stop()
-            live_plot_handle.stop()
-            # stop data_generator
-            live_plot_handle.update_figure()  
-            live_plot_handle.after_plot()
-            setattr(self, f'data_figure_{attr}', DataFigure(live_plot_handle))
-            self.is_running = False
-            self.estimate_PL_time()
-            self.estimate_PLE_time()
-
-            self.is_stop_plot_done = True
-
-        self.in_update_plot = False
+                    self.cur_live_plot.data_generator.stop()  
+                    self.cur_live_plot.after_plot()
+                    setattr(self, f'data_figure_{self.cur_plot}', DataFigure(self.cur_live_plot))
+                    self.is_plot_done = True
     
-    def stop_plot(self, is_close_selector=False, cur_plot='PL'):
+    def stop_plot(self):
         self.print_log(f'Plot stopped')
-        self.is_running = False
         self.is_fit = False
-        attr = self.cur_plot
 
-
-        if hasattr(self, 'timer'):
-            self.timer.stop()
-        while self.in_update_plot:
-            time.sleep(0.1)
-        if not self.is_stop_plot_done:
+        if self.cur_live_plot is not None:
+            self.cur_live_plot.stop()
             self.update_plot()
-        # enforce another plot instantly to go through end plot procedure
-
+            # block excuetion until plot is done
 
         if hasattr(self, 'live_plot_PLE'):
             self.checkBox_is_stabilizer.setDisabled(False)
@@ -647,30 +648,9 @@ class MainWindow(QMainWindow):
             self.checkBox_is_bind.setDisabled(False)
         if hasattr(self, 'live_plot_PL') and self.live_plot_PL is not None:
             self.estimate_PL_time()
-
         if hasattr(self, 'live_plot_PLE') and self.live_plot_PLE is not None:
-            self.estimate_PLE_time() 
-
-        attr = self.cur_plot
-        if hasattr(self, f'live_plot_{attr}'):
-            live_plot_handle = getattr(self, f'live_plot_{attr}')
-            live_plot_handle.stop()
-
-
-        if is_close_selector:
-            # make sure no residual selector which may cause thread problem
-            if cur_plot=='PL':
-                if hasattr(self, f'data_figure_PL') and self.data_figure_PL is not None:
-                    for selector in self.data_figure_PL.selector:
-                        selector.set_active(False)
-            elif cur_plot=='PLE':
-                if hasattr(self, 'data_figure_PLE') and self.data_figure_PLE is not None:
-                    for selector in self.data_figure_PLE.selector:
-                        selector.set_active(False)
-            elif cur_plot=='Live':
-                if hasattr(self, 'data_figure_Live') and self.live_plot_Live is not None:
-                    for selector in self.data_figure_Live.selector:
-                        selector.set_active(False)
+            self.estimate_PLE_time()
+                
 
 
 
@@ -690,7 +670,7 @@ class MainWindow(QMainWindow):
     def estimate_PL_time(self):
         if self.findChild(QLineEdit, 'lineEdit_time_PL') is None:
             return
-        if self.is_running and self.cur_plot=='PL':
+        if hasattr(self, 'live_plot_PL') and self.live_plot_PL.data_generator.thread.is_alive:
             points_total = self.live_plot_PL.points_total
             points_done = self.live_plot_PL.points_done
             ratio = points_done/points_total
@@ -773,11 +753,13 @@ class MainWindow(QMainWindow):
             
             
     def start_plot_PL(self):
-        self.stop_plot(is_close_selector=True, cur_plot='PL')
+        self.stop_plot()
+        # make sure no residual selector which may cause thread problem
+        if self.data_figure_PL is not None:
+                self.data_figure_PL.close_selector()
+
         self.print_log(f'PL started')
-        self.cur_plot = 'PL'
-        self.is_running = True
-           
+        self.cur_plot = 'PL'  
         self.read_data_PL()
 
         x_array = np.arange(self.xl, self.xu, self.step_PL)
@@ -801,7 +783,7 @@ class MainWindow(QMainWindow):
                         update_time=1, data_generator=self.measurement_PL, data=[data_x, data_y],\
                                        fig=self.canvas_PL.fig, config_instances=self.config_instances, relim_mode = self.relim_PL)
         
-        
+        self.cur_live_plot = self.live_plot_PL
         self.live_plot_PL.init_figure_and_data()
         
         self.timer = QtCore.QTimer()
@@ -828,7 +810,7 @@ class MainWindow(QMainWindow):
     def estimate_PLE_time(self):
         if self.findChild(QLineEdit, 'lineEdit_time_PLE') is None:
             return
-        if self.is_running and self.cur_plot=='PLE':
+        if hasattr(self, 'live_plot_PLE') and self.live_plot_PLE.data_generator.thread.is_alive:
             points_total = self.live_plot_PLE.points_total
             points_done = self.live_plot_PLE.points_done
             ratio = points_done/points_total
@@ -934,10 +916,13 @@ class MainWindow(QMainWindow):
 
 
     def start_plot_PLE(self):
-        self.stop_plot(is_close_selector=True, cur_plot='PLE')
+        self.stop_plot()
+        # make sure no residual selector which may cause thread problem
+        if self.data_figure_PLE is not None:
+                self.data_figure_PLE.close_selector()
+
         self.print_log(f'{self.measurement_PLE.measurement_name} started')
         self.cur_plot = 'PLE'
-        self.is_running = True
         self.pushButton_load.setText(f'Load file:')
                     
         
@@ -958,7 +943,7 @@ class MainWindow(QMainWindow):
                                      update_time=1, data_generator=self.measurement_PLE, data=[data_x, data_y],\
                                     fig=self.canvas_PLE.fig, config_instances=self.config_instances, relim_mode = self.relim_PLE)
         
-
+        self.cur_live_plot = self.live_plot_PLE
         self.live_plot_PLE.init_figure_and_data()
         
         
@@ -974,10 +959,8 @@ class MainWindow(QMainWindow):
         if self.detached_window is not None:
             self.reattach_page()
 
-        attr = self.cur_plot
-        if hasattr(self, f'live_plot_{attr}'):
-            live_plot_handle = getattr(self, f'live_plot_{attr}')
-            live_plot_handle.stop()
+        if self.cur_live_plot is not None:
+            self.cur_live_plot.stop()
 
         plt.close('all') # make sure close all plots which avoids error message
 
