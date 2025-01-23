@@ -268,8 +268,9 @@ class BasePulse(ABC):
     """
     Base class for pulse control
     """
-    def __init__(self):
-        self.t_resolution = 2 # minumum allowed pulse width, 2ns for spin core, will round all time durations beased on this
+    def __init__(self, t_resolution=(10,2)):
+        self.t_resolution = t_resolution 
+        # minumum allowed pulse (width, resolution), (10, 2) for spin core, will round all time durations beased on this
         self._valid_str = ['+', '-', 'x', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9']
 
         self.delay_array = np.array([0,0,0,0,0,0,0,0])
@@ -291,12 +292,32 @@ class BasePulse(ABC):
         self.total_duration = 0
         self.x = 10 # postive int in ns, a timing varible used to replace all 'x' in timing array and matrix, effective only in read_data()
 
-    def round_up(self, t):
+    def round_up(self, t, type='resolution'):
         # round up t into multiple of self.t_resolution or keep t if str
-        if isinstance(t, Number):
-            return int(t) if t%self.t_resolution==0 else int((t//self.t_resolution + 1)*self.t_resolution)
-        elif isinstance(t, str):
-            return t
+        valid_type = ['width', 'resolution']
+        if type not in valid_type:
+            print(f'type must be one of {valid_type}')
+            return
+        if type=='resolution':
+            if isinstance(t, Number):
+                if t%self.t_resolution==0:
+                    return int(t)
+                else:
+                    print(f'Due to resolution limit, rounded time resolution to {self.t_resolution[1]}')
+                    return int((t//self.t_resolution + 1)*self.t_resolution)
+            elif isinstance(t, str):
+                return t
+
+        elif type=='width':
+            if isinstance(t, Number):
+                if t>self.t_resolution[0]:
+                    return int(t)
+                else:
+                    print(f'Due to resolution limit, rounded width to {self.t_resolution[0]}')
+                    return int(self.t_resolution[0])
+            else
+                print('Wrong input width, must be a number')
+
 
     @property
     def delay_array(self):
@@ -512,12 +533,12 @@ class BasePulse(ABC):
 
         if type == 'time_slices':
         
-            return time_slices
+            return [[[self.round_up(period[0], type='width'), period[1]] for period in time_slice] for time_slice in time_slices]
 
         elif type == 'data_matrix':
             # process, convert time_slices to data_matrix_delayed
-
-            return self._time_slices_to_data_matrix(time_slices)
+            data_matrix_delayed = self._time_slices_to_data_matrix(time_slices)
+            return [[self.round_up(period[i], type='width') if i==0 else period[i] for i in range(len(period))] for period in data_matrix_delayed]
 
     def _time_slices_to_data_matrix(self, time_slices):
         data_matrix = []
