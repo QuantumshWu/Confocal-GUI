@@ -60,8 +60,8 @@ class BaseMeasurement(ABC):
                     self.to_final_state()
                     return
                 self.device_to_state(x)
-                counts = self.update_data_y(indices)
-                self.points_done += len(counts)
+                self.update_data_y(indices)
+                self.points_done += 1
 
         self.is_done = True
         self.to_final_state()

@@ -265,7 +265,7 @@ class LivePlotGUI(ABC):
         self.ylabel = labels[1]
         self.data_x = data[0]
         self.data_y = data[1]
-        self.points_total = len(self.data_y.flatten())
+        self.points_total = len(self.data_x.flatten())
         
         self.update_time = update_time
         self.data_generator = data_generator
@@ -430,11 +430,11 @@ class LivePlotGUI(ABC):
         # 'normal' will relim to fit 0 and upper bound
         
         if 0<self.points_done<self.points_total:
-            max_data_y = np.max(self.data_y.flatten()[:self.points_done])
-            min_data_y = np.min(self.data_y.flatten()[:self.points_done])
+            max_data_y = np.nanmax(self.data_y[:self.points_done])
+            min_data_y = np.nanmin(self.data_y[:self.points_done])
         else:
-            max_data_y = np.max(self.data_y.flatten())
-            min_data_y = np.min(self.data_y.flatten())
+            max_data_y = np.nanmax(self.data_y)
+            min_data_y = np.nanmin(self.data_y)
 
         if max_data_y == 0:
             return False
@@ -487,7 +487,7 @@ class PLELive(LivePlotGUI):
             self.blit_axes.append(self.axes)
             self.blit_artists.append(line)
 
-        self.axes.set_xlim(np.min(self.data_x), np.max(self.data_x))
+        self.axes.set_xlim(np.nanmin(self.data_x), np.nanmax(self.data_x))
         self.axes.set_ylim(self.ylim_min, self.ylim_max)
 
         self.axes.set_ylabel(self.ylabel + ' x1')
@@ -500,7 +500,7 @@ class PLELive(LivePlotGUI):
             self.repeat_done = self.data_generator.repeat_done
             self.axes.set_ylabel(self.ylabel)
 
-            is_redraw = self.relim()
+            self.relim()
             self.fig.canvas.draw()
             self.bg_fig = self.fig.canvas.copy_from_bbox(self.fig.bbox)  # update ylim so need redraw
 
@@ -713,8 +713,8 @@ class PLDisLive(LivePlotGUI):
         
         cmap = self.axes.images[0].colorbar.mappable.get_cmap()
 
-        y_min = np.min(self.data_y[:self.points_done])
-        y_max = np.max(self.data_y[:self.points_done])
+        y_min = np.nanmin(self.data_y[:self.points_done])
+        y_max = np.nanmax(self.data_y[:self.points_done])
         self.line_min = self.axright.axvline(y_min, color='red', linewidth=6, alpha=0.3)
         self.line_max = self.axright.axvline(y_max, color='red', linewidth=6, alpha=0.3)
 

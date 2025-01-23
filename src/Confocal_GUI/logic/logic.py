@@ -38,9 +38,25 @@ class PLEMeasurement(BaseMeasurement):
         return self.wavemeter.wavelength
 
     def update_data_y(self, i):
-        counts = self.counter.read_counts(self.exposure, parent = self, counter_mode=self.counter_mode, data_mode=self.data_mode)
-        self.data_y[i] = counts if np.isnan(self.data_y[i][0]) else [(self.data_y[i][j] + counts[j]) for j in range(len(counts))]
-        return counts
+        if self.is_adaptive:
+            self.threshold = 2*np.sqrt(1000)
+            counts = self.counter.read_counts(self.exposure, parent = self, counter_mode=self.counter_mode, data_mode=self.data_mode)[0]
+            exposure = self.exposure
+            while counts/(np.sqrt(exposure)*self.threshold) > 1:
+                counts += self.counter.read_counts(self.exposure, parent = self, counter_mode=self.counter_mode, data_mode=self.data_mode)[0]
+                exposure += self.exposure
+                if exposure/self.exposure >= 10:
+                    break
+            self.data_y[i] = [counts/(np.sqrt(exposure)*self.threshold),]
+
+        elif not self.is_repeat_create:
+            counts = self.counter.read_counts(self.exposure, parent = self, counter_mode=self.counter_mode, data_mode=self.data_mode)
+            self.data_y[i] = counts if np.isnan(self.data_y[i][0]) else [(self.data_y[i][j] + counts[j]) for j in range(len(counts))]
+            return counts
+        else:
+            counts = self.counter.read_counts(self.exposure, parent = self, counter_mode=self.counter_mode, data_mode=self.data_mode)
+            self.data_y[i, self.repeat_done] = counts[0]
+            return counts[:1]
 
     def assign_names(self):
         # only assign once measurement is created
@@ -62,8 +78,8 @@ class PLEMeasurement(BaseMeasurement):
             raise KeyError('Missing devices in config_instances')
 
 
-    def load_params(self, data_x=None, exposure=0.1, config_instances=None, repeat=1, is_GUI=False, \
-        counter_mode='apd', data_mode='single', relim_mode='normal', is_plot=True):
+    def load_params(self, data_x=None, exposure=0.1, config_instances=None, repeat=1, is_repeat_create=False, is_GUI=False, \
+        counter_mode='apd', data_mode='single', relim_mode='normal', is_plot=True, is_adaptive=False):
         """
         ple
 
@@ -83,9 +99,11 @@ class PLEMeasurement(BaseMeasurement):
         self.data_x = data_x
         len_counts = len(self.config_instances['counter'].read_counts(0.01, parent = self, counter_mode=counter_mode, data_mode=data_mode))
         # try initialize counter and acquire data length
-        self.data_y = np.full((len(self.data_x), len_counts), np.nan)
+        self.data_y = np.full((len(self.data_x), len_counts), np.nan) if not is_repeat_create else np.full((len(self.data_x), repeat), np.nan)
         self.exposure = exposure
         self.repeat = repeat
+        self.is_repeat_create = is_repeat_create
+        self.is_adaptive = is_adaptive
         self.is_GUI = is_GUI
         self.counter_mode = counter_mode
         self.data_mode = data_mode

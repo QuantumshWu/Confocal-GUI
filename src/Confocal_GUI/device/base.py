@@ -269,17 +269,19 @@ class BasePulse(ABC):
     Base class for pulse control
     """
     def __init__(self):
+        self.t_resolution = 2 # minumum allowed pulse width, 2ns for spin core, will round all time durations beased on this
+        self._valid_str = ['+', '-', 'x', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9']
 
-        self._delay_array = np.array([0,0,0,0,0,0,0,0])
+        self.delay_array = np.array([0,0,0,0,0,0,0,0])
         self.delay_array_tmp = np.array([0,0,0,0,0,0,0,0])
-        self._data_matrix = np.array([[1000, 1,0,0,0,0,0,0,0], [1000, 1,0,0,0,0,0,0,0]])
+        self.data_matrix = np.array([[1000, 1,0,0,0,0,0,0,0], [1000, 1,0,0,0,0,0,0,0]])
         # example of data_matrix [[duration in ns, on or off for channel i, ...], ...]
         # self._data_matrix can also be np.array([['x', 1,1,1,1,1,1,1,1], ['1000-x', 1,1,1,1,1,1,1,1]])
         self.data_matrix_tmp = np.array([[1000, 1,0,0,0,0,0,0,0], [1000, 1,0,0,0,0,0,0,0]])
-        self._repeat_info = [0, -1, 1] # start_index, end_index(include), repeat_times
+        self.repeat_info = [0, -1, 1] # start_index, end_index(include), repeat_times
         self.repeat_info_tmp = [0, -1, 1]
 
-        self._ref_info = {"is_ref":False, "signal":None, "DAQ":None, "DAQ_ref":None} #
+        self.ref_info = {"is_ref":False, "signal":None, "DAQ":None, "DAQ_ref":None} #
         self.ref_info_tmp = {"is_ref":False, "signal":None, "DAQ":None, "DAQ_ref":None}
 
         # _data_matrix for on_pulse(), data_matrix_tmp for reopen gui display
@@ -287,8 +289,14 @@ class BasePulse(ABC):
         self.channel_names_tmp = ['', '', '', '', '', '', '', '']
         # names of all channels, such as 'RF', 'Green', 'DAQ', 'DAQ_ref'
         self.total_duration = 0
-        self._x = 10 # postive int in ns, a timing varible used to replace all 'x' in timing array and matrix, effective only in read_data()
-        self._valid_str = ['+', '-', 'x', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9']
+        self.x = 10 # postive int in ns, a timing varible used to replace all 'x' in timing array and matrix, effective only in read_data()
+
+    def round_up(self, t):
+        # round up t into multiple of self.t_resolution or keep t if str
+        if isinstance(t, Number):
+            return int(t) if t%self.t_resolution==0 else int((t//self.t_resolution + 1)*self.t_resolution)
+        elif isinstance(t, str):
+            return t
 
     @property
     def delay_array(self):
@@ -305,7 +313,7 @@ class BasePulse(ABC):
         if not all(isinstance(item, Number) or all(elem in self._valid_str for elem in item) for item in value):
             print(f"Invalid input. Can only be one of {self._valid_str}.")
             return
-        self._delay_array = value
+        self._delay_array = [self.round_up(delay) for delay in value]
 
     @property
     def data_matrix(self):
@@ -331,7 +339,7 @@ class BasePulse(ABC):
                     print(f"Invalid input. Can only be one of {self._valid_str}.") 
                     return
 
-        self._data_matrix = value
+        self._data_matrix = [[self.round_up(item) if i==0 else item for i, item in enumerate(period)] for period in value]
 
     @property
     def repeat_info(self):
@@ -376,7 +384,7 @@ class BasePulse(ABC):
         if not isinstance(int(value), Number):
             print('x must be a number')
             return
-        self._x = int(value)
+        self._x = self.round_up(value)
 
 
     @abstractmethod    
@@ -448,7 +456,12 @@ class BasePulse(ABC):
                     print('Duration must larger than 0ns')
                     return 1
                     
-    def read_data(self):
+    def read_data(self, type='time_slices'):
+        # type ='time_slices' or 'data_matrix'
+        valid_type = ['time_slices', 'data_matrix']
+        if type not in valid_type:
+            print(f'type must be one of {valid_type}')
+            return
 
         # return delayed time_slices [[[t0, 1], [t1, 0], ...], [], [],...] for all channels
         
@@ -496,8 +509,30 @@ class BasePulse(ABC):
 
             time_slice_delayed = self.delay(self.load_x_to_str(self.delay_array[channel], 'delay'), time_slice)
             time_slices.append(time_slice_delayed)
+
+        if type == 'time_slices':
         
-        return time_slices
+            return time_slices
+
+        elif type == 'data_matrix':
+            # process, convert time_slices to data_matrix_delayed
+
+            return self._time_slices_to_data_matrix(time_slices)
+
+    def _time_slices_to_data_matrix(self, time_slices):
+        data_matrix = []
+        while len(time_slices[0])!=0:
+            t_cur = np.min([time_slice[0][0] for time_slice in time_slices])
+            # find the minimum time of first period of all channels
+            period_enable = [time_slice[0][1] for time_slice in time_slices]
+            data_matrix.append([t_cur, ] + period_enable)
+            for i in range(len(time_slices)):
+                time_slices[i][0][0] -= t_cur
+                if time_slices[i][0][0]==0:
+                    time_slices[i] = time_slices[i][1:]
+
+        return data_matrix
+
 
     def save_to_file(self, addr=''):
 
@@ -734,18 +769,24 @@ class VirtualCounter(BaseCounter):
         _class = parent.__class__.__name__
         if _class == 'PLEMeasurement':
             
-            ple_dict = {'ple_height':None, 'ple_width':None, 'ple_center':None}
+            ple_dict = {'ple_height':None, 'ple_width':None, 'ple_center':None, 'ple_bg':None}
             for key in ple_dict.keys():
                 ple_dict[key] = parent.config_instances.get(key, 1)
             
             time.sleep(exposure)
             wavelength = parent.laser_stabilizer.desired_wavelength if parent.laser_stabilizer.desired_wavelength is not None else 0
             #print(wavelength, parent.laser_stabilizer)
-            lambda_counts = exposure*ple_dict['ple_height']*(ple_dict['ple_width']/2)**2\
-                                     /((wavelength-ple_dict['ple_center'])**2 + (ple_dict['ple_width']/2)**2)
+            lambda_counts = exposure*(ple_dict['ple_height']*(ple_dict['ple_width']/2)**2\
+                                     /((wavelength-ple_dict['ple_center'])**2 + (ple_dict['ple_width']/2)**2) + ple_dict['ple_bg'])
+            lambda_ref = exposure*(ple_dict['ple_bg'])
             if data_mode=='dual':
-                return [np.random.poisson(lambda_counts),np.random.poisson(lambda_counts)]
-            else:
+                return [np.random.poisson(lambda_counts),np.random.poisson(lambda_ref)]
+            elif self.data_mode == 'ref_sub':
+                return [np.random.poisson(lambda_counts)-np.random.poisson(lambda_ref),]
+            elif self.data_mode == 'ref_div':
+                ref = np.random.poisson(lambda_ref)
+                return [np.random.poisson(lambda_counts)/ref if ref!=0 else 0,]
+            elif self.data_mode == 'single':
                 return [np.random.poisson(lambda_counts),]
         
         elif _class == 'PLMeasurement':
@@ -929,8 +970,7 @@ class VirtualPulse(BasePulse):
         self.off_pulse()
         
         
-        time_slices = self.read_data()
-        print('-'*100)
+        time_slices = self.read_data(type='time_slices')
         for ii, time_slice in enumerate(time_slices):
             print(f'Ch{ii}', time_slice)
         return time_slices
