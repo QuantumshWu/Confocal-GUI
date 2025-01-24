@@ -1072,14 +1072,14 @@ class DeviceGUI(QDialog):
             current_value.setEnabled(False)
             current_value.setMaxLength(10)
             current_value.setFont(font)
-            current_value.setFixedWidth(100)
+            current_value.setFixedWidth(150)
             current_value.setFixedHeight(30)
 
             # Determine the input control based on property type
             if prop_type == 'float':
                 input_control = QDoubleSpinBox()
                 input_control.setFont(font)
-                input_control.setFixedWidth(100)
+                input_control.setFixedWidth(150)
                 input_control.setFixedHeight(30)
 
                 # Dynamically get the lower and upper bounds from the device
@@ -1098,7 +1098,7 @@ class DeviceGUI(QDialog):
             elif prop_type == 'str':
                 input_control = QComboBox()
                 input_control.setFont(font)
-                input_control.setFixedWidth(100)
+                input_control.setFixedWidth(150)
                 input_control.setFixedHeight(30)
                 input_control.addItems(['True', 'False'])
             else:
@@ -1130,8 +1130,8 @@ class DeviceGUI(QDialog):
 
             # Add widgets to the property layout
             prop_layout.addWidget(label)
-            prop_layout.addWidget(QLabel("Current:"))
             prop_layout.addWidget(current_value)
+            prop_layout.addStretch(1)
             prop_layout.addWidget(QLabel("Set:"))
             prop_layout.addWidget(input_control)
             prop_layout.addWidget(apply_button)

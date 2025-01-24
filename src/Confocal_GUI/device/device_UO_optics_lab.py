@@ -338,7 +338,9 @@ class DSG836(BaseRF):
         self._power = eval(self.handle.query('SOURce:Power?')[:-1])
         self._frequency = eval(self.handle.query('SOURce:FREQuency?')[:-1])
         self._on = False # if output is on
-        self.power_ul = 10
+        self.power_ub = 10
+        self.frequency_lb = 9e3
+        self.frequency_ub = 3.6e9
 
     def gui(self):
         """
@@ -355,9 +357,9 @@ class DSG836(BaseRF):
     
     @power.setter
     def power(self, value):
-        if value > self.power_ul:
-            value = self.power_ul
-            print(f'can not exceed RF power {self.power_ul}dbm')
+        if value > self.power_ub:
+            value = self.power_ub
+            print(f'can not exceed RF power {self.power_ub}dbm')
         self._power = value
         self.handle.write(f'SOURce:Power {self._power}')
     
