@@ -37,27 +37,6 @@ class PLEMeasurement(BaseMeasurement):
     def read_x(self):
         return self.wavemeter.wavelength
 
-    def update_data_y(self, i):
-        if self.is_adaptive:
-            self.threshold = 2*np.sqrt(1000)
-            counts = self.counter.read_counts(self.exposure, parent = self, counter_mode=self.counter_mode, data_mode=self.data_mode)[0]
-            exposure = self.exposure
-            while counts/(np.sqrt(exposure)*self.threshold) > 1:
-                counts += self.counter.read_counts(self.exposure, parent = self, counter_mode=self.counter_mode, data_mode=self.data_mode)[0]
-                exposure += self.exposure
-                if exposure/self.exposure >= 10:
-                    break
-            self.data_y[i] = [counts/(np.sqrt(exposure)*self.threshold),]
-
-        elif not self.is_repeat_create:
-            counts = self.counter.read_counts(self.exposure, parent = self, counter_mode=self.counter_mode, data_mode=self.data_mode)
-            self.data_y[i] = counts if np.isnan(self.data_y[i][0]) else [(self.data_y[i][j] + counts[j]) for j in range(len(counts))]
-            return counts
-        else:
-            counts = self.counter.read_counts(self.exposure, parent = self, counter_mode=self.counter_mode, data_mode=self.data_mode)
-            self.data_y[i, self.repeat_done] = counts[0]
-            return counts[:1]
-
     def assign_names(self):
         # only assign once measurement is created
         self.x_name = 'Wavelength'
@@ -78,8 +57,8 @@ class PLEMeasurement(BaseMeasurement):
             raise KeyError('Missing devices in config_instances')
 
 
-    def load_params(self, data_x=None, exposure=0.1, config_instances=None, repeat=1, is_repeat_create=False, is_GUI=False, \
-        counter_mode='apd', data_mode='single', relim_mode='normal', is_plot=True, is_adaptive=False):
+    def _load_params(self, data_x=None, exposure=0.1, config_instances=None, repeat=1, is_GUI=False, \
+        counter_mode='apd', data_mode='single', relim_mode='normal', update_mode='normal', is_plot=True):
         """
         ple
 
@@ -97,13 +76,9 @@ class PLEMeasurement(BaseMeasurement):
         if data_x is None:
             data_x = np.arange(737.1-0.005, 737.1+0.005, 0.0005)
         self.data_x = data_x
-        len_counts = len(self.config_instances['counter'].read_counts(0.01, parent = self, counter_mode=counter_mode, data_mode=data_mode))
-        # try initialize counter and acquire data length
-        self.data_y = np.full((len(self.data_x), len_counts), np.nan) if not is_repeat_create else np.full((len(self.data_x), repeat), np.nan)
+        self.update_mode = update_mode
         self.exposure = exposure
         self.repeat = repeat
-        self.is_repeat_create = is_repeat_create
-        self.is_adaptive = is_adaptive
         self.is_GUI = is_GUI
         self.counter_mode = counter_mode
         self.data_mode = data_mode
@@ -156,11 +131,6 @@ class ODMRMeasurement(BaseMeasurement):
     def read_x(self):
         return self.rf.frequency/1e9
 
-    def update_data_y(self, i):
-        counts = self.counter.read_counts(self.exposure, parent = self, counter_mode=self.counter_mode, data_mode=self.data_mode)
-        self.data_y[i] = counts if np.isnan(self.data_y[i][0]) else [(self.data_y[i][j] + counts[j]) for j in range(len(counts))]
-        return counts
-
     def assign_names(self):
 
         self.x_name = 'Frequency'
@@ -179,8 +149,8 @@ class ODMRMeasurement(BaseMeasurement):
             raise KeyError('Missing devices in config_instances')
 
 
-    def load_params(self, data_x=None, exposure=0.1, power=-10, config_instances=None, repeat=1, is_GUI=False, \
-        counter_mode='apd', data_mode='single', relim_mode='tight', is_plot=True):
+    def _load_params(self, data_x=None, exposure=0.1, power=-10, config_instances=None, repeat=1, is_GUI=False, \
+        counter_mode='apd', data_mode='single', relim_mode='tight', update_mode='normal', is_plot=True):
         """
         odmr
 
@@ -198,16 +168,14 @@ class ODMRMeasurement(BaseMeasurement):
         self.loaded_params = True
         if data_x is None:
             data_x = np.arange(2.88-0.1, 2.88+0.1, 0.001)
-        self.data_x = data_x
-        len_counts = len(self.config_instances['counter'].read_counts(0.01, parent = self, counter_mode=counter_mode, data_mode=data_mode))
-        # try initialize counter and acquire data length
-        self.data_y = np.full((len(self.data_x), len_counts), np.nan)        
+        self.data_x = data_x       
         self.exposure = exposure
         self.repeat = repeat
         self.is_GUI = is_GUI
         self.counter_mode = counter_mode
         self.data_mode = data_mode
         self.relim_mode = relim_mode
+        self.update_mode = update_mode
         self.power = power
         self.is_plot = is_plot
         self.info = {'measurement_name':self.measurement_name, 'plot_type':self.plot_type, 'exposure':self.exposure\
@@ -268,12 +236,6 @@ class PLMeasurement(BaseMeasurement):
         y = self.scanner.y
         return (x, y)
 
-    def update_data_y(self, i):
-        counts = (self.counter.read_counts(self.exposure, parent = self, counter_mode=self.counter_mode, data_mode=self.data_mode))[:1]
-        self.data_y[i] = counts if np.isnan(self.data_y[i][0]) else [(self.data_y[i][j] + counts[j]) for j in range(len(counts))]
-        # if has data then set to np.nan
-        return counts
-
     def assign_names(self):
 
         self.plot_type = '2D'
@@ -288,7 +250,7 @@ class PLMeasurement(BaseMeasurement):
         if (self.counter is None) or (self.scanner is None):
             raise KeyError('Missing devices in config_instances')
 
-    def load_params(self, x_array=None, y_array=None, exposure=0.1, config_instances=None, repeat = 1, wavelength=None, is_GUI=False, is_dis=True, \
+    def _load_params(self, x_array=None, y_array=None, exposure=0.1, config_instances=None, repeat = 1, wavelength=None, is_GUI=False, is_dis=True, \
         counter_mode='apd', data_mode='single', relim_mode='normal', is_plot=True):
         """
         pl
@@ -324,8 +286,7 @@ class PLMeasurement(BaseMeasurement):
         for y in self.y_array:
             for x in self.x_array:
                 self.data_x.append((x, y))
-        self.data_x = np.array(self.data_x)
-        self.data_y = np.full((len(self.data_x), 1), np.nan)        
+        self.data_x = np.array(self.data_x)        
         # set nan as default of no data
 
         self.exposure = exposure
@@ -334,6 +295,7 @@ class PLMeasurement(BaseMeasurement):
         self.counter_mode = counter_mode
         self.data_mode = data_mode
         self.relim_mode = relim_mode
+        self.update_mode = 'single'
         self.is_plot = is_plot
         self.info = {'measurement_name':self.measurement_name, 'plot_type':self.plot_type, 'exposure':self.exposure\
                     , 'repeat':self.repeat, 'wavelength':self.wavelength}

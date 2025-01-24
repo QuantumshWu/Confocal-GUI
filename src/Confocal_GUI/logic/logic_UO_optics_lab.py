@@ -37,11 +37,6 @@ class RFWithPulseMeasurement(BaseMeasurement):
     def read_x(self):
         return self.pulse.x
 
-    def update_data_y(self, i):
-        counts = self.counter.read_counts(self.exposure, parent = self, counter_mode=self.counter_mode, data_mode=self.data_mode)
-        self.data_y[i] = counts if np.isnan(self.data_y[i][0]) else [(self.data_y[i][j] + counts[j]) for j in range(len(counts))]
-        return counts
-
     def assign_names(self):
 
         self.x_name = 'RF duration'
@@ -63,9 +58,9 @@ class RFWithPulseMeasurement(BaseMeasurement):
             raise KeyError('Missing devices in config_instances')
 
 
-    def load_params(self, data_x=None, exposure=0.1, power=-10, frequency=2.88, pulse_file=None, config_instances=None, \
+    def _load_params(self, data_x=None, exposure=0.1, power=-10, frequency=2.88, pulse_file=None, config_instances=None, \
         repeat=1, is_GUI=False, \
-        counter_mode='apd', data_mode='ref_sub', relim_mode='tight', is_plot=True):
+        counter_mode='apd', data_mode='ref_sub', relim_mode='tight', update_mode='normal', is_plot=True):
         """
         rabi func doc str
         """
@@ -73,15 +68,14 @@ class RFWithPulseMeasurement(BaseMeasurement):
         if data_x is None:
             data_x = np.arange(10, 1000, 10)
         self.data_x = data_x
-        len_counts = len(self.config_instances['counter'].read_counts(0.01, parent = self, counter_mode=counter_mode, data_mode=data_mode))
-        # try initialize counter and acquire data length
-        self.data_y = np.full((len(self.data_x), len_counts), np.nan)        
+       
         self.exposure = exposure
         self.repeat = repeat
         self.is_GUI = is_GUI
         self.counter_mode = counter_mode
         self.data_mode = data_mode
         self.relim_mode = relim_mode
+        self.update_mode = update_mode
         self.power = power
         self.frequency = frequency
         if pulse_file is not None:

@@ -315,7 +315,7 @@ class BasePulse(ABC):
                 else:
                     print(f'Due to resolution limit, rounded width to {self.t_resolution[0]}')
                     return int(self.t_resolution[0])
-            else
+            else:
                 print('Wrong input width, must be a number')
 
 

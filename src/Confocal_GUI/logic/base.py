@@ -81,6 +81,53 @@ class BaseMeasurement(ABC):
         self.thread = threading.Thread(target=self._data_generator, daemon=True)
         self.thread.start()
 
+    def load_params(self, **kwargs):
+        self._load_params(**kwargs)
+
+        len_counts = len(self.counter.read_counts(0.01, parent = self, counter_mode=self.counter_mode, data_mode=self.data_mode))
+        valid_update_mode = ['normal', 'roll', 'new', 'adaptive', 'single']
+        if self.update_mode not in valid_update_mode:
+            print(f'update_mode must be one of {valid_update_mode}')
+            return
+
+        if self.update_mode=='new':
+            self.data_y = np.full((len(self.data_x), self.repeat), np.nan)
+        elif self.update_mode=='single':
+            self.data_y = np.full((len(self.data_x), 1), np.nan)
+        else:
+            self.data_y = np.full((len(self.data_x), len_counts), np.nan)
+
+
+    def update_data_y(self, i):
+        # defines how to update data_y
+        # normally will be
+        # counts = self.counter(self.exposure, parent=self) 
+        # data_y[i] += counts
+        counts = self.counter.read_counts(self.exposure, parent = self, counter_mode=self.counter_mode, data_mode=self.data_mode)
+
+        if self.update_mode == 'normal':
+            self.data_y[i] = counts if np.isnan(self.data_y[i][0]) else [(self.data_y[i][j] + counts[j]) for j in range(len(counts))]
+
+        elif self.update_mode == 'single':
+            self.data_y[i] = counts[:1] if np.isnan(self.data_y[i][0]) else [(self.data_y[i][j] + counts[j]) for j in range(len(counts[:1]))]
+
+        elif self.update_mode == 'roll':
+            self.data_y[:] = np.roll(self.data_y, shift=1, axis=0)
+            self.data_y[0] = counts
+
+        elif self.update_mode == 'new':
+            self.data_y[i, self.repeat_done] = counts[0]
+
+        elif self.update_mode == 'adaptive':
+            self.threshold = 2*np.sqrt(1000)
+            exposure = self.exposure
+            counts = counts[0]
+            while counts/(np.sqrt(exposure)*self.threshold) > 1:
+                counts += self.counter.read_counts(self.exposure, parent = self, counter_mode=self.counter_mode, data_mode=self.data_mode)[0]
+                exposure += self.exposure
+                if exposure/self.exposure >= 10:
+                    break
+            self.data_y[i] = [counts/(np.sqrt(exposure)*self.threshold),]
 
 
     def stop(self):
@@ -88,6 +135,10 @@ class BaseMeasurement(ABC):
             self.is_running = False
             self.thread.join()
         self.loaded_params = False
+
+    @abstractmethod
+    def _load_params(self, **kwargs):
+        pass
 
 
     @abstractmethod
@@ -114,22 +165,9 @@ class BaseMeasurement(ABC):
         pass
 
     @abstractmethod
-    def update_data_y(self, i):
-        # defines how to update data_y
-        # normally will be
-        # counts = self.counter(self.exposure, parent=self) 
-        # data_y[i] += counts
-        pass
-
-    @abstractmethod
     def assign_names(self):
         # defines measurement names etc.
         # init assignment of config instances
-        pass
-
-    @abstractmethod
-    def load_params(self):
-        # defines how to load params
         pass
 
     @abstractmethod
@@ -165,8 +203,8 @@ def register_measurement(name: str):
         def measure_func(**kwargs):
             return run_measurement(name, **kwargs)
 
-        if hasattr(cls, 'load_params'):
-            measure_func.__doc__ = cls.load_params.__doc__
+        if hasattr(cls, '_load_params'):
+            measure_func.__doc__ = cls._load_params.__doc__
 
         measure_func.__name__ = name
 
@@ -207,12 +245,6 @@ class LiveMeasurement(BaseMeasurement):
     def read_x(self):
         pass
 
-    def update_data_y(self, i):
-        counts = self.counter.read_counts(self.exposure, parent = self, counter_mode=self.counter_mode, data_mode=self.data_mode)
-        self.data_y[:] = np.roll(self.data_y, shift=1, axis=0)
-        self.data_y[0] = counts 
-        return counts
-
     def assign_names(self):
 
         self.x_name = 'Data'
@@ -229,7 +261,7 @@ class LiveMeasurement(BaseMeasurement):
             raise KeyError('Missing devices in config_instances')
 
 
-    def load_params(self, data_x=None, exposure=0.1, config_instances=None, is_finite=False, is_GUI=False, repeat=1, \
+    def _load_params(self, data_x=None, exposure=0.1, config_instances=None, is_finite=False, is_GUI=False, repeat=1, \
         counter_mode='apd', data_mode='single', relim_mode='normal', is_plot=True):
         """
         live
@@ -253,9 +285,7 @@ class LiveMeasurement(BaseMeasurement):
         if data_x is None:
             data_x = np.arange(100)
         self.data_x = data_x
-        len_counts = len(self.config_instances['counter'].read_counts(0.01, parent = self, counter_mode=counter_mode, data_mode=data_mode))
-        # try initialize counter and acquire data length
-        self.data_y = np.full((len(self.data_x), len_counts), np.nan)
+        self.update_mode = 'roll'
         self.exposure = exposure
         self.is_GUI = is_GUI
         self.counter_mode = counter_mode
