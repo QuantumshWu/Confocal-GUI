@@ -268,7 +268,7 @@ class BasePulse(ABC):
     """
     Base class for pulse control
     """
-    def __init__(self, t_resolution=(10,2)):
+    def __init__(self, t_resolution=(1,1)):
         self.t_resolution = t_resolution 
         # minumum allowed pulse (width, resolution), (10, 2) for spin core, will round all time durations beased on this
         self._valid_str = ['+', '-', 'x', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9']
@@ -300,17 +300,17 @@ class BasePulse(ABC):
             return
         if type=='resolution':
             if isinstance(t, Number):
-                if t%self.t_resolution==0:
+                if t%self.t_resolution[1]==0:
                     return int(t)
                 else:
                     print(f'Due to resolution limit, rounded time resolution to {self.t_resolution[1]}')
-                    return int((t//self.t_resolution + 1)*self.t_resolution)
+                    return int((t//self.t_resolution[1] + 1)*self.t_resolution[1])
             elif isinstance(t, str):
                 return t
 
         elif type=='width':
             if isinstance(t, Number):
-                if t>self.t_resolution[0]:
+                if t>=self.t_resolution[0]:
                     return int(t)
                 else:
                     print(f'Due to resolution limit, rounded width to {self.t_resolution[0]}')
