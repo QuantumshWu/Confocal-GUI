@@ -69,7 +69,7 @@ class TimeTaggerCounter(BaseCounter):
 
 
 
-class USB6346(BaseCounter, BaseScanner):
+class USB6346(BaseCounter, BaseScanner, SingletonMeta):
     """
     Class for NI DAQ USB-6346
     will be used for scanner: ao0, ao1 for X and Y of Galvo
@@ -91,7 +91,7 @@ class USB6346(BaseCounter, BaseScanner):
         if port_config is None:
             port_config = {'analog_signal':'ai0', 'analog_gate':'ai1', 'analog_gate_ref':'ai2',\
                            'apd_signal':'PFI3', 'apd_gate':'PFI4', 'apd_gate_ref':'PFI5'}
-
+        self.port_config = port_config
         self.nidaqmx = nidaqmx
 
         self.task = nidaqmx.Task()
@@ -196,16 +196,16 @@ class USB6346(BaseCounter, BaseScanner):
             self.task_counter_ctr = self.nidaqmx.Task()
             self.task_counter_ctr.ci_channels.add_ci_count_edges_chan("Dev1/ctr1")
             # ctr1 source PFI3, gate PFI4
-            self.task_counter_ctr.triggers.pause_trigger.dig_lvl_src = '/Dev1/'+port_config['apd_gate']
-            self.task_counter_ctr.ci_channels.all.ci_count_edges_term = '/Dev1/'+port_config['apd_signal']
+            self.task_counter_ctr.triggers.pause_trigger.dig_lvl_src = '/Dev1/'+self.port_config['apd_gate']
+            self.task_counter_ctr.ci_channels.all.ci_count_edges_term = '/Dev1/'+self.port_config['apd_signal']
             self.task_counter_ctr.triggers.pause_trigger.trig_type = self.nidaqmx.constants.TriggerType.DIGITAL_LEVEL
             self.task_counter_ctr.triggers.pause_trigger.dig_lvl_when = self.nidaqmx.constants.Level.LOW
 
             self.task_counter_ctr_ref = self.nidaqmx.Task()
             self.task_counter_ctr_ref.ci_channels.add_ci_count_edges_chan("Dev1/ctr2")
             # ctr1 source PFI3, gate PFI5
-            self.task_counter_ctr_ref.triggers.pause_trigger.dig_lvl_src = '/Dev1/'+port_config['apd_gate_ref']
-            self.task_counter_ctr_ref.ci_channels.all.ci_count_edges_term = '/Dev1/'+port_config['apd_signal']
+            self.task_counter_ctr_ref.triggers.pause_trigger.dig_lvl_src = '/Dev1/'+self.port_config['apd_gate_ref']
+            self.task_counter_ctr_ref.ci_channels.all.ci_count_edges_term = '/Dev1/'+self.port_config['apd_signal']
             self.task_counter_ctr_ref.triggers.pause_trigger.trig_type = self.nidaqmx.constants.TriggerType.DIGITAL_LEVEL
             self.task_counter_ctr_ref.triggers.pause_trigger.dig_lvl_when = self.nidaqmx.constants.Level.LOW
 
@@ -225,9 +225,9 @@ class USB6346(BaseCounter, BaseScanner):
             self.close_old_tasks()
 
             self.task_counter_ai = self.nidaqmx.Task()
-            self.task_counter_ai.ai_channels.add_ai_voltage_chan('Dev1/'+port_config['analog_signal'])
-            self.task_counter_ai.ai_channels.add_ai_voltage_chan('Dev1/'+port_config['analog_gate'])
-            self.task_counter_ai.ai_channels.add_ai_voltage_chan('Dev1/'+port_config['analog_gate_ref'])
+            self.task_counter_ai.ai_channels.add_ai_voltage_chan('Dev1/'+self.port_config['analog_signal'])
+            self.task_counter_ai.ai_channels.add_ai_voltage_chan('Dev1/'+self.port_config['analog_gate'])
+            self.task_counter_ai.ai_channels.add_ai_voltage_chan('Dev1/'+self.port_config['analog_gate_ref'])
             # for analog counter
             self.task_counter_ai.start()
             self.counter_mode = counter_mode

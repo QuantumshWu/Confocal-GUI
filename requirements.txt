@@ -5,3 +5,5 @@ pyqt5
 ipympl
 pyvisa
 jupyterlab
+
+# pyvisa-py, zeroconf, nidaqmx, pulsestreamer

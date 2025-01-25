@@ -88,6 +88,7 @@ def initialize_classes(config, lookup_dict, namespace):
 
 class SingletonMeta(type):
     # make sure all devices only have one instance
+    # mutiple initialization will get the same instance
     _instance_map = {}
     def __call__(cls, *args, **kwargs):
         if cls not in cls._instance_map:

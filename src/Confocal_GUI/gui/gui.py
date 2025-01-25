@@ -31,9 +31,9 @@ class MplCanvas(FigureCanvasQTAgg):
     """
     labels = [xlabel, ylabel]
     """
-    def __init__(self, parent=None, labels=None, mode=None, scale=1):
+    def __init__(self, parent=None, labels=None, mode=None):
 
-        change_to_inline(params_type = 'nbagg', scale=scale)
+        change_to_inline()
 
         self.fig = plt.figure()
         self.axes = self.fig.add_subplot(111)
@@ -71,10 +71,9 @@ class DetachedWindow(QMainWindow):
         self.parent_window = parent
         self.resize(640, 700)
 
-        self.scale = self.parent_window.config_instances['display_scale']
         self.init_size = self.size()
-        self.setMaximumSize(int(self.init_size.width()*self.scale), int(self.init_size.height()*self.scale))
-        self.setMinimumSize(int(self.init_size.width()*self.scale), int(self.init_size.height()*self.scale))
+        self.setMaximumSize(self.init_size.width(), self.init_size.height())
+        self.setMinimumSize(self.init_size.width(), self.init_size.height())
 
         self.widget.show()
 
@@ -109,11 +108,9 @@ class MainWindow(QMainWindow):
         ui_path = os.path.join(os.path.dirname(__file__), self.ui)
         uic.loadUi(ui_path, self)
 
-        self.scale = self.config_instances['display_scale']
         self.init_size = self.size()
-        self.setMaximumSize(int(self.init_size.width()*self.scale), int(self.init_size.height()*self.scale))
-        self.setMinimumSize(int(self.init_size.width()*self.scale), int(self.init_size.height()*self.scale))
-        self.scale_widgets(self.centralwidget, self.scale, is_recursive=True)
+        self.setMaximumSize(self.init_size.width(), self.init_size.height())
+        self.setMinimumSize(self.init_size.width(), self.init_size.height())
         self.setWindowTitle(f'ConfocalGUI@Wanglab, UOregon' )
         # set size
 
@@ -144,7 +141,7 @@ class MainWindow(QMainWindow):
                 layout = QVBoxLayout(widget)
                 layout.setContentsMargins(0, 0, 0, 0)
 
-                canvas = MplCanvas(widget, labels=fig['labels'], mode=fig['mode'], scale=self.scale)
+                canvas = MplCanvas(widget, labels=fig['labels'], mode=fig['mode'])
                 layout.addWidget(canvas)
 
                 setattr(self, fig['canvas_name'], canvas)
@@ -477,32 +474,6 @@ class MainWindow(QMainWindow):
             else:
                 device_instance.gui()
         
-
-    def scale_widgets(self, widget, scale_factor, is_recursive):
-        #print('name',widget.objectName(), 'init width', widget.font().pointSizeF(), 'fa', fa.objectName())
-
-
-        widget.setGeometry(int(widget.x()* scale_factor), int(widget.y()* scale_factor), 
-                            int(widget.width() * scale_factor), int(widget.height() * scale_factor))
-
-        font = widget.font()
-        if isinstance(widget, QDoubleSpinBox):
-            font.setPointSizeF(int(16 * scale_factor))
-        else:
-            font.setPointSizeF(int(12 * scale_factor))
-        widget.setFont(font)
-
-
-        size_policy = QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        widget.setSizePolicy(size_policy)
-
-        #print('name',widget.objectName(), 'width', widget.font().pointSizeF())
-        #widget.updateGeometry()
-        if is_recursive:
-            for child in widget.findChildren(QWidget):
-                self.scale_widgets(child, scale_factor, is_recursive=False)
-
-
 
     def read_wavemeter(self):
         wavelength = self.measurement_PLE.read_x()

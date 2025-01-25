@@ -75,7 +75,7 @@ params_inline = {
 }
 
 
-params_nbagg = {
+params_widget = {
     'axes.labelsize': 13,
     'legend.fontsize': 13,
     'xtick.labelsize': 13,
@@ -119,39 +119,15 @@ params_nbagg = {
 
 }
 
-def scale_params(params, scale):
-    scaled_params = params.copy()
-    scaled_params['figure.figsize'] = [dim * scale for dim in scaled_params['figure.figsize']]
-    for key in ['axes.labelsize', 'legend.fontsize', 'xtick.labelsize', 
-                'ytick.labelsize', 'lines.linewidth', 'lines.markersize', 
-                'ytick.major.size', 'ytick.major.width', 'xtick.major.size', 
-                'xtick.major.width', 'axes.linewidth']:
-        if key in scaled_params:
-            scaled_params[key] = scaled_params[key] * scale
-    return scaled_params
 
-
-def change_to_inline(params_type, scale):
+def change_to_inline():
     get_ipython().run_line_magic('matplotlib', 'inline')
-    if params_type == 'inline':
-        scaled_params = scale_params(params_inline, scale)
-        matplotlib.rcParams.update(scaled_params)
-    elif params_type == 'nbagg':
-        scaled_params = scale_params(params_nbagg, scale)
-        matplotlib.rcParams.update(scaled_params)
-    else:
-        print('wrong params_type')
+    matplotlib.rcParams.update(params_inline)
 
-def change_to_nbagg(params_type, scale):
+def change_to_widget():
     get_ipython().run_line_magic('matplotlib', 'widget')
-    if params_type == 'inline':
-        scaled_params = scale_params(params_inline, scale)
-        matplotlib.rcParams.update(scaled_params)
-    elif params_type == 'nbagg':
-        scaled_params = scale_params(params_nbagg, scale)
-        matplotlib.rcParams.update(scaled_params)
-    else:
-        print('wrong params_type')
+    matplotlib.rcParams.update(params_widget)
+
 
 def hide_elements():
     css_code = """
@@ -282,11 +258,7 @@ class LivePlotGUI(ABC):
         self.repeat_done = 0
         self.selector = None
         # assign value by self.choose_selector()
-        if config_instances is None:
-            self.config_instances = {'display_scale':1}
-        else:
-            self.config_instances = config_instances
-        self.scale = self.config_instances['display_scale']
+        self.config_instances = config_instances
         self.relim_mode = relim_mode
         self.valid_relim_mode = ['normal', 'tight']
 
@@ -303,7 +275,7 @@ class LivePlotGUI(ABC):
             LivePlotGUI.display_handle.update(LivePlotGUI.old_fig)
         
     def init_figure_and_data(self):
-        change_to_nbagg(params_type = 'nbagg', scale=self.scale)
+        change_to_widget()
         # make sure environment enables interactive then updating figure
         plt.ion()
 
