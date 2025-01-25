@@ -2,8 +2,10 @@ import numpy as np
 import time
 from numbers import Number
 import os
-from abc import ABC, abstractmethod
+from abc import ABC, abstractmethod, ABCMeta
+import atexit
 from Confocal_GUI.gui import *
+
 
 def initialize_classes(config, lookup_dict, namespace):
     """
@@ -86,15 +88,18 @@ def initialize_classes(config, lookup_dict, namespace):
 
 
 
-class SingletonMeta(type):
+class SingletonAndCloseMeta(ABCMeta):
     # make sure all devices only have one instance
     # mutiple initialization will get the same instance
+    # and also register close() to atexit
     _instance_map = {}
     def __call__(cls, *args, **kwargs):
         if cls not in cls._instance_map:
-            cls._instance_map[cls] = super().__call__(*args, **kwargs)
+            instance = super().__call__(*args, **kwargs)
+            atexit.register(instance.close)
+            cls._instance_map[cls] = instance
         return cls._instance_map[cls]
-        
+      
 
 class BaseLaser(ABC):
 
@@ -930,7 +935,7 @@ class VirtualScanner(BaseScanner):
 
 
 
-class VirtualLaserStabilizer(BaseLaserStabilizer):
+class VirtualLaserStabilizer(BaseLaserStabilizer, metaclass=SingletonAndCloseMeta):
     """
     VirtualLaserStabilizer class to simulate laserstabilizer which stabilize laser wavelength using feedback,
     call laserstabilizer.gui() to see all configurable parameters

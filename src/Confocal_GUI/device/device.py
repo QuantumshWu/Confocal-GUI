@@ -9,7 +9,7 @@ from .base import *
 from Confocal_GUI.gui import *
                 
     
-class TLB6700(BaseLaser):
+class TLB6700(BaseLaser, metaclass=SingletonAndCloseMeta):
     """
     laser = TLB6700()
     
@@ -77,7 +77,7 @@ class TLB6700(BaseLaser):
     def connect(self):
         self.__tlb_open()
         
-    def disconnect(self):
+    def close(self):
         self.__tlb_close()
         
     @property
@@ -102,7 +102,7 @@ class TLB6700(BaseLaser):
         self.__tlb_query(f'SOURce:VOLTage:PIEZO {self._piezo:.2f}')
 
 
-class LaserStabilizerCore(BaseLaserStabilizer):
+class LaserStabilizerCore(BaseLaserStabilizer, metaclass=SingletonAndCloseMeta):
     """
     core logic for stabilizer,
     
@@ -172,7 +172,7 @@ class LaserStabilizerCore(BaseLaserStabilizer):
         return
 
         
-class WaveMeter671(BaseWavemeter):
+class WaveMeter671(BaseWavemeter, metaclass=SingletonAndCloseMeta):
     """
     Control code for 671 Wavelength Meter
     
@@ -211,6 +211,9 @@ class WaveMeter671(BaseWavemeter):
     
     def disconnect(self):
         self.tn.close()
+
+    def close(self):
+        self.disconnect()
 
 class SGCounter(BaseCounter):
     """
@@ -404,7 +407,7 @@ class TimeTaggerCounter(BaseCounter):
 
 
 
-class USB6346(BaseCounter, BaseScanner):
+class USB6346(BaseCounter, BaseScanner, metaclass=SingletonAndCloseMeta):
     """
     Class for NI DAQ USB-6346
     will be used for scanner: ao0, ao1 for X and Y of Galvo
@@ -415,8 +418,6 @@ class USB6346(BaseCounter, BaseScanner):
     """
     
     def __init__(self, exposure=1):
-
-        import atexit
         import nidaqmx
         from nidaqmx.constants import AcquisitionType
         from nidaqmx.constants import TerminalConfiguration
@@ -444,7 +445,6 @@ class USB6346(BaseCounter, BaseScanner):
         self.reader = None
         # data_buffer for faster read
 
-        atexit.register(self.exit_handler)
         self._x = 0
         self._y = 0
 
@@ -519,6 +519,9 @@ class USB6346(BaseCounter, BaseScanner):
             task.close()
 
         self.tasks_to_close = []
+
+    def close(self):
+        self.close_old_tasks()
 
     def set_counter(self, counter_mode = 'apd'):
         if counter_mode == 'apd':
@@ -643,18 +646,9 @@ class USB6346(BaseCounter, BaseScanner):
         else:
             print(f'can only be one of the {self.valid_data_mode}')
     
-    @classmethod
-    def exit_handler(cls):
-
-        if cls._instance is not None:
-
-            cls._instance.close_old_tasks()
-
-
-            cls._instance = None
 
         
-class SGS100A(BaseRF):
+class SGS100A(BaseRF, metaclass=SingletonAndCloseMeta):
     """
     Class for RF generator SGS100A
     
@@ -740,8 +734,11 @@ class SGS100A(BaseRF):
             self.handle.write('SOURce:IQ:IMPairment:STATe OFF')
             self.handle.write('SOURce:IQ:STATe OFF')
 
+    def close(self):
+        pass
 
-class DSG836(BaseRF):
+
+class DSG836(BaseRF, metaclass=SingletonAndCloseMeta):
     """
     Class for RF generator DSG836
     
@@ -809,6 +806,9 @@ class DSG836(BaseRF):
         else:
             # from True to False
             self.handle.write('OUTPut:STATe OFF')
+
+    def close(self):
+        pass
             
 
 

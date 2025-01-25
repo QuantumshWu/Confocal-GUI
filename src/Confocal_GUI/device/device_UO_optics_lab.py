@@ -69,7 +69,7 @@ class TimeTaggerCounter(BaseCounter):
 
 
 
-class USB6346(BaseCounter, BaseScanner, SingletonMeta):
+class USB6346(BaseCounter, BaseScanner, metaclass=SingletonAndCloseMeta):
     """
     Class for NI DAQ USB-6346
     will be used for scanner: ao0, ao1 for X and Y of Galvo
@@ -81,7 +81,6 @@ class USB6346(BaseCounter, BaseScanner, SingletonMeta):
     
     def __init__(self, exposure=1, port_config=None):
 
-        import atexit
         import nidaqmx
         from nidaqmx.constants import AcquisitionType
         from nidaqmx.constants import TerminalConfiguration
@@ -112,7 +111,6 @@ class USB6346(BaseCounter, BaseScanner, SingletonMeta):
         self.reader = None
         # data_buffer for faster read
 
-        atexit.register(self.exit_handler)
         self._x = 0
         self._y = 0
 
@@ -187,6 +185,9 @@ class USB6346(BaseCounter, BaseScanner, SingletonMeta):
             task.close()
 
         self.tasks_to_close = []
+
+    def close(self):
+        self.close_old_tasks()
 
     def set_counter(self, counter_mode = 'apd'):
         if counter_mode == 'apd':
@@ -310,17 +311,9 @@ class USB6346(BaseCounter, BaseScanner, SingletonMeta):
 
         else:
             print(f'can only be one of the {self.valid_data_mode}')
-    
-    @classmethod
-    def exit_handler(cls):
-
-        if cls._instance is not None:
-
-            cls._instance.close_old_tasks()
-            cls._instance = None
 
 
-class DSG836(BaseRF):
+class DSG836(BaseRF, metaclass=SingletonAndCloseMeta):
     """
     Class for RF generator DSG836
     
@@ -389,6 +382,9 @@ class DSG836(BaseRF):
         else:
             # from True to False
             self.handle.write('OUTPut:STATe OFF')
+
+    def close(self):
+        pass
             
 class Pulse(BasePulse):
     """

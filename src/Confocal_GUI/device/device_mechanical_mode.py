@@ -10,7 +10,7 @@ from Confocal_GUI.gui import *
 
 
 
-class DLCpro(BaseLaser):
+class DLCpro(BaseLaser, metaclass=SingletonAndCloseMeta):
     """
     laser = DLCpro()
     
@@ -83,7 +83,7 @@ class DLCpro(BaseLaser):
 
 
 
-class LaserStabilizerDLCpro(BaseLaserStabilizer):
+class LaserStabilizerDLCpro(BaseLaserStabilizer, metaclass=SingletonAndCloseMeta):
     """
     core logic for stabilizer,
     
