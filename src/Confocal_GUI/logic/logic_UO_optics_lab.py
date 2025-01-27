@@ -76,10 +76,10 @@ class RFWithPulseMeasurement(BaseMeasurement):
         self.data_mode = data_mode
         self.relim_mode = relim_mode
         self.update_mode = update_mode
-        if power is None:
-            self.power = self.rf.power
-        if frequency is None:
-            self.frequency = self.rf.frequency
+
+        self.power = self.rf.power if power is None else power
+        self.frequency = self.rf.frequency if frequency is None else frequency
+
         if pulse_file is not None:
             self.pulse.load_from_file(pulse_file)
             # may load from 'rabi_pulse*'

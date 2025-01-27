@@ -177,8 +177,8 @@ class ODMRMeasurement(BaseMeasurement):
         self.relim_mode = relim_mode
         self.update_mode = update_mode
         # for non basic params, load state from device's state
-        if power is None:
-            self.power = self.rf.power
+        self.power = self.rf.power if power is None else power
+
         self.is_plot = is_plot
         self.info = {'measurement_name':self.measurement_name, 'plot_type':self.plot_type, 'exposure':self.exposure\
                     , 'repeat':self.repeat, 'power':self.power, 'scanner':(None if self.scanner is None else (self.scanner.x, self.scanner.y))}
