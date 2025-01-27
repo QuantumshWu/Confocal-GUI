@@ -149,7 +149,7 @@ class ODMRMeasurement(BaseMeasurement):
             raise KeyError('Missing devices in config_instances')
 
 
-    def _load_params(self, data_x=None, exposure=0.1, power=-10, config_instances=None, repeat=1, is_GUI=False, \
+    def _load_params(self, data_x=None, exposure=0.1, power=None, config_instances=None, repeat=1, is_GUI=False, \
         counter_mode='apd', data_mode='single', relim_mode='tight', update_mode='normal', is_plot=True):
         """
         odmr
@@ -176,7 +176,9 @@ class ODMRMeasurement(BaseMeasurement):
         self.data_mode = data_mode
         self.relim_mode = relim_mode
         self.update_mode = update_mode
-        self.power = power
+        # for non basic params, load state from device's state
+        if power is None:
+            self.power = self.rf.power
         self.is_plot = is_plot
         self.info = {'measurement_name':self.measurement_name, 'plot_type':self.plot_type, 'exposure':self.exposure\
                     , 'repeat':self.repeat, 'power':self.power, 'scanner':(None if self.scanner is None else (self.scanner.x, self.scanner.y))}

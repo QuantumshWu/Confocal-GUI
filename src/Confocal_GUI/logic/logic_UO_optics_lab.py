@@ -58,7 +58,7 @@ class RFWithPulseMeasurement(BaseMeasurement):
             raise KeyError('Missing devices in config_instances')
 
 
-    def _load_params(self, data_x=None, exposure=0.1, power=-10, frequency=2.88, pulse_file=None, config_instances=None, \
+    def _load_params(self, data_x=None, exposure=0.1, power=None, frequency=None, pulse_file=None, config_instances=None, \
         repeat=1, is_GUI=False, \
         counter_mode='apd', data_mode='ref_sub', relim_mode='tight', update_mode='normal', is_plot=True):
         """
@@ -76,8 +76,10 @@ class RFWithPulseMeasurement(BaseMeasurement):
         self.data_mode = data_mode
         self.relim_mode = relim_mode
         self.update_mode = update_mode
-        self.power = power
-        self.frequency = frequency
+        if power is None:
+            self.power = self.rf.power
+        if frequency is None:
+            self.frequency = self.rf.frequency
         if pulse_file is not None:
             self.pulse.load_from_file(pulse_file)
             # may load from 'rabi_pulse*'

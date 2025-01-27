@@ -241,9 +241,6 @@ class USB6346(BaseCounter, BaseScanner, metaclass=SingletonAndCloseMeta):
 
     def read_counts(self, exposure, counter_mode = 'apd', data_mode='single',**kwargs):
 
-        counter_mode = counter_mode
-        data_mode = data_mode
-
         self.data_mode = data_mode
         if (counter_mode != self.counter_mode):
             self.set_counter(counter_mode)
@@ -262,10 +259,13 @@ class USB6346(BaseCounter, BaseScanner, metaclass=SingletonAndCloseMeta):
             data = self.data_buffer[0, :]
             gate1 = self.data_buffer[1, :]
             gate2 = self.data_buffer[2, :]
-
             threshold = 2.7
-            data_main = float(np.mean(data[gate1 > threshold]))
-            data_ref = float(np.mean(data[gate2 > threshold]))
+
+            gate1_index = np.where(gate1 > threshold)[0]
+            gate2_index = np.where(gate2 > threshold)[0]
+
+            data_main = float(np.mean(data[gate1_index])) if len(gate1_index)!=0 else 0
+            data_ref = float(np.mean(data[gate2_index])) if len(gate2_index)!=0 else 0
 
             # seems better than np.sum()/np.sum(), don't know why?
             # may due to finite sampling rate than they have different array length

@@ -7,12 +7,13 @@ import threading
 from decimal import Decimal
 from threading import Event
 import numbers
+import itertools
 from abc import ABC, abstractmethod
 
 import matplotlib
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
-import matplotlib.ticker as mticker
+import matplotlib.ticker as ticker
 from matplotlib.ticker import AutoLocator, ScalarFormatter
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
@@ -213,6 +214,76 @@ class LoadAcquire(threading.Thread):
         if self.is_alive():
             self.is_running = False
             self.join()
+
+
+class SmartOffsetFormatter(ticker.ScalarFormatter):
+    # formatter to set offset and scale of y to not exceed border of fig
+    # rewrite ScalarFormatter to implement this
+    def __init__(self):
+        super().__init__()
+        self._offset_threshold = 1
+        self.set_powerlimits((-2, 2))
+        
+    def _compute_offset(self):
+        locs = self.locs
+        # Restrict to visible ticks.
+        vmin, vmax = sorted(self.axis.get_view_interval())
+        locs = np.asarray(locs)
+        locs = locs[(vmin <= locs) & (locs <= vmax)]
+        if not len(locs):
+            self.offset = 0
+            return
+        lmin, lmax = locs.min(), locs.max()
+        # Only use offset if there are at least two ticks and every tick has
+        # the same sign.
+        if lmin == lmax or lmin <= 0 <= lmax:
+            self.offset = 0
+            return
+        # min, max comparing absolute values (we want division to round towards
+        # zero so we work on absolute values).
+        abs_min, abs_max = sorted([abs(float(lmin)), abs(float(lmax))])
+        sign = np.copysign(1, lmin)
+        abs_mean = (abs_min + abs_max)/2
+
+        oom = np.ceil(np.log10(np.abs(locs[0] - locs[1])))
+        # Only use offset if it saves at least _offset_threshold digits.
+        n = self._offset_threshold - 1
+        self.offset = (sign * (abs_mean // 10 ** oom) * 10 ** oom
+                       if abs_mean // 10 ** oom >= 10**n
+                       else 0)
+
+    def _set_order_of_magnitude(self):
+        # if scientific notation is to be used, find the appropriate exponent
+        # if using a numerical offset, find the exponent after applying the
+        # offset. When lower power limit = upper <> 0, use provided exponent.
+        if not self._scientific:
+            self.orderOfMagnitude = 0
+            return
+        if self._powerlimits[0] == self._powerlimits[1] != 0:
+            # fixed scaling when lower power limit = upper <> 0.
+            self.orderOfMagnitude = self._powerlimits[0]
+            return
+        # restrict to visible ticks
+        vmin, vmax = sorted(self.axis.get_view_interval())
+        locs = np.asarray(self.locs)
+        locs = locs[(vmin <= locs) & (locs <= vmax)]
+        locs = np.abs(locs)
+        if not len(locs):
+            self.orderOfMagnitude = 0
+            return
+
+        oom = np.ceil(np.log10(np.abs(locs[0] - locs[1])))
+        step = np.abs(locs[0] - locs[1])
+        step_str = f'{step:.1e}'
+        step_oom = int(step_str.split('e')[-1])
+
+        if step_oom <= self._powerlimits[0]:
+            self.orderOfMagnitude = oom
+        elif step_oom >= self._powerlimits[1]:
+            self.orderOfMagnitude = oom
+        else:
+            self.orderOfMagnitude = 0
+
     
         
 class LivePlotGUI(ABC):
@@ -300,8 +371,9 @@ class LivePlotGUI(ABC):
             self.axes = self.fig.axes[0]
             
         self.clear_all() # make sure no residual artist
-        self.axes.ticklabel_format(axis='y', style='sci', scilimits=(-3,3))
+        self.axes.yaxis.set_major_formatter(SmartOffsetFormatter())
         # make sure no long ticks induce cut off of label
+
 
         self.init_core() 
         self.fig.tight_layout()
