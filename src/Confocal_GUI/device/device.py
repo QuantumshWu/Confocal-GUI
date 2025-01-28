@@ -119,7 +119,6 @@ class LaserStabilizerCore(BaseLaserStabilizer, metaclass=SingletonAndCloseMeta):
         self.v_mid = 0.5*(self.laser.piezo_max + self.laser.piezo_min)
         self.v_min = self.laser.piezo_min + 0.05*(self.laser.piezo_max - self.laser.piezo_min)
         self.v_max = self.laser.piezo_min + 0.95*(self.laser.piezo_max - self.laser.piezo_min)
-        self.freq_recent = self.spl/self.wavemeter.wavelength
         self.freq_thre = 0.05 #50MHz threshold defines when to return is_ready
         self.P = 0.8 #scaling factor of PID control
         # leaves about 10% extra space
@@ -167,7 +166,6 @@ class LaserStabilizerCore(BaseLaserStabilizer, metaclass=SingletonAndCloseMeta):
             self.is_ready = True
         else:
             self.is_ready = False
-        self.freq_recent = freq_actual   
         #print(f'recent:{freq_actual}, actual:{self.spl/self.wavemeter.wavelength}, ')
         return
 

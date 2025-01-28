@@ -218,8 +218,7 @@ class BaseLaserStabilizer(ABC):
         self.config_instances = config_instances
         self.wavemeter = self.config_instances.get('wavemeter', None)
         if self.wavemeter is None:
-            print('wavemeter is missing')
-            return 
+            raise KeyError('Missing devices in config_instances')
         self.thread = threading.Thread(target=self._run, daemon=True)
         self.thread.start()
         # will be killed if main thread is killed

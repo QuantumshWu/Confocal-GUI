@@ -18,10 +18,10 @@ from IPython import get_ipython
 from IPython.display import display, HTML
 from IPython.display import Image as IPImage
 
-from PyQt5.QtCore import QThread, pyqtSignal, QObject, Qt, QSize, QMutex, QMutexLocker, QMimeData
+from PyQt5.QtCore import QThread, pyqtSignal, QObject, Qt, QSize, QMutex, QMutexLocker, QMimeData, QRegExp
 from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget, QGridLayout, QRadioButton, QHBoxLayout, QVBoxLayout\
 , QPushButton, QGroupBox, QCheckBox, QLineEdit, QComboBox, QLabel, QFileDialog, QDoubleSpinBox, QSizePolicy, QDialog, QMessageBox, QFrame
-from PyQt5.QtGui import QPalette, QColor, QFont, QDrag, QPixmap
+from PyQt5.QtGui import QPalette, QColor, QFont, QDrag, QPixmap, QRegExpValidator
 from PyQt5 import QtCore, QtWidgets, uic
 
 from Confocal_GUI.live_plot import *
@@ -1041,17 +1041,26 @@ class DeviceGUI(QDialog):
             # Current value display (read-only)
             current_value = QLineEdit()
             current_value.setEnabled(False)
-            current_value.setMaxLength(10)
+            current_value.setMaxLength(20)  # **Increased to accommodate scientific notation**
             current_value.setFont(font)
             current_value.setFixedWidth(150)
             current_value.setFixedHeight(30)
 
             # Determine the input control based on property type
             if prop_type == 'float':
-                input_control = QDoubleSpinBox()
+                # **Use QLineEdit instead of QDoubleSpinBox to support scientific notation input**
+                input_control = QLineEdit()
                 input_control.setFont(font)
                 input_control.setFixedWidth(150)
                 input_control.setFixedHeight(30)
+
+                # **Set a regular expression validator to allow scientific notation format**
+                regex = QRegExp(r'^[-+]?\d*\.?\d+([eE][-+]?\d+)?$')
+                validator = QRegExpValidator(regex)
+                input_control.setValidator(validator)
+
+                # **Set placeholder text to guide user input format**
+                input_control.setPlaceholderText("e.g. 2e9 or 1.2")
 
                 # Dynamically get the lower and upper bounds from the device
                 lb_attr = f"{prop}_lb"
@@ -1059,13 +1068,14 @@ class DeviceGUI(QDialog):
                 try:
                     lb = getattr(self.device, lb_attr)
                     ub = getattr(self.device, ub_attr)
-                    input_control.setRange(lb, ub)
                 except AttributeError:
-                    input_control.setRange(-1e9, 1e9)  # Default range if bounds not defined
+                    lb = -1e9
+                    ub = 1e9  # **Use default range if bounds are not defined**
 
-                # Optionally, set single step and decimals
-                input_control.setSingleStep((ub - lb) / 100 if 'lb' in locals() and 'ub' in locals() else 1)
-                input_control.setDecimals(3)
+                # **Store lower and upper bounds for validation during apply**
+                input_control.lb = lb
+                input_control.ub = ub
+
             elif prop_type == 'str':
                 input_control = QComboBox()
                 input_control.setFont(font)
@@ -1085,19 +1095,10 @@ class DeviceGUI(QDialog):
             apply_button.setFixedWidth(80)
             apply_button.setFixedHeight(30)
 
-            # Connect the apply button to the appropriate handler
-            if prop_type == 'float':
-                apply_button.clicked.connect(
-                    lambda checked, p=prop, i=input_control, c=current_value: self.apply_value(p, i, c)
-                )
-            elif prop_type == 'str':
-                apply_button.clicked.connect(
-                    lambda checked, p=prop, i=input_control, c=current_value: self.apply_value(p, i, c)
-                )
-            else:
-                apply_button.clicked.connect(
-                    lambda checked, p=prop, i=input_control, c=current_value: self.apply_value(p, i, c)
-                )
+            # Connect the apply button to the handler
+            apply_button.clicked.connect(
+                lambda checked, p=prop, i=input_control, c=current_value: self.apply_value(p, i, c)
+            )
 
             # Add widgets to the property layout
             prop_layout.addWidget(label)
@@ -1125,11 +1126,42 @@ class DeviceGUI(QDialog):
         height = 150 + 60 * len(self.device.gui_property)
         self.setFixedSize(700, height)
 
+    def format_float(self, value):
+        """
+        Formats the float value based on its magnitude:
+        - If the absolute value is between 1e-3 and 1e3, display in standard decimal format without trailing zeros.
+        - Otherwise, display in scientific notation without trailing zeros.
+        """
+
+        abs_value = abs(value)
+        if abs_value==0:
+            return '0'
+        elif 1e-3 <= abs_value < 1e3:
+            # **Standard decimal format, displaying raw data
+            formatted = f"{value}"
+            return formatted
+        else:
+            # **Scientific notation format, displaying up to the last non-zero digit**
+            for i, digit in enumerate((f"{value}")[::-1]):
+                if digit!='0' and digit!='.':
+                    if '.' in ((f"{value}")[::-1])[i:]:
+                        non_zero_length = len(f"{value}")-i-1
+                    else:
+                        non_zero_length = len(f"{value}")-i
+                    break
+                non_zero_length = len(f"{value}")
+            formatted = f"{value:.{non_zero_length-1}e}"
+            return formatted
+
     def update_property_value(self, prop):
         value = getattr(self.device, prop)
         if self.controls[prop]['type'] == 'str':
             value_str = 'True' if value else 'False'
             self.controls[prop]['current_value'].setText(value_str)
+        elif self.controls[prop]['type'] == 'float':
+            # **Choose display format based on the value range**
+            formatted_value = self.format_float(value)
+            self.controls[prop]['current_value'].setText(formatted_value)
         else:
             self.controls[prop]['current_value'].setText(f'{value}')
 
@@ -1137,7 +1169,17 @@ class DeviceGUI(QDialog):
         prop_type = self.controls[prop]['type']
         try:
             if prop_type == 'float':
-                new_value = float(input_control.value())
+                input_text = input_control.text()
+                if not input_text:
+                    raise ValueError("Input cannot be empty.")
+                new_value = float(input_text)
+
+                # **Enforce bounds if they exist**
+                lb = getattr(input_control, 'lb', -1e9)
+                ub = getattr(input_control, 'ub', 1e9)
+                if not (lb <= new_value <= ub):
+                    raise ValueError(f"Value must be between {self.format_float(lb)} and {self.format_float(ub)}.")
+
             elif prop_type == 'str':
                 new_value = input_control.currentText() == 'True'
             else:
@@ -1145,6 +1187,8 @@ class DeviceGUI(QDialog):
 
             setattr(self.device, prop, new_value)
             self.update_property_value(prop)
+        except ValueError as ve:
+            QMessageBox.warning(self, "Input Error", f"Invalid input for {prop}: {ve}")
         except Exception as e:
             QMessageBox.warning(self, "Error", f"Failed to set {prop}: {e}")
 

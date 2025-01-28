@@ -40,8 +40,8 @@ class DLCpro(BaseLaser, metaclass=SingletonAndCloseMeta):
 
         self._wavelength = None
         self._piezo = self.dlc.laser1.dl.pc.voltage_set.get()
-        self.piezo_min = 68-15
-        self.piezo_max = 68+15
+        self.piezo_min = 68-20
+        self.piezo_max = 68+20
         # piezo range where DLCpro is mode-hop free
 
     def gui(self):
@@ -73,6 +73,7 @@ class DLCpro(BaseLaser, metaclass=SingletonAndCloseMeta):
             piezo = value
         else:
             print(f'Piezo {value} out of range, should be between {self.piezo_min} and {self.piezo_max}')
+            return
 
         #with self.DLCpro(self.NetworkConnection(self.ip)) as dlc:
         self.dlc.laser1.dl.pc.voltage_set.set(piezo)
@@ -101,10 +102,11 @@ class LaserStabilizerDLCpro(BaseLaserStabilizer, metaclass=SingletonAndCloseMeta
         self.v_mid = 0.5*(self.laser.piezo_max + self.laser.piezo_min)
         self.v_min = self.laser.piezo_min + 0.05*(self.laser.piezo_max - self.laser.piezo_min)
         self.v_max = self.laser.piezo_min + 0.95*(self.laser.piezo_max - self.laser.piezo_min)
-        self.freq_recent = self.spl/self.wavemeter.wavelength
         self.freq_thre = 0.05 #50MHz threshold defines when to return is_ready
         self.P = 0.8 #scaling factor of PID control
         # leaves about 10% extra space
+        self.wavelength_lb = 737.09
+        self.wavelength_ub = 737.125
 
     def gui(self):
         """
@@ -135,7 +137,6 @@ class LaserStabilizerDLCpro(BaseLaserStabilizer, metaclass=SingletonAndCloseMeta
             self.is_ready = True
         else:
             self.is_ready = False
-        self.freq_recent = freq_actual   
         return
 
 
