@@ -113,6 +113,10 @@ class USB6346(BaseCounter, BaseScanner, metaclass=SingletonAndCloseMeta):
 
         self._x = 0
         self._y = 0
+        self.x_lb = -5000
+        self.x_ub = 5000
+        self.y_lb = -5000
+        self.y_ub = 5000
 
     def gui(self):
         """
