@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 import time
 import sys, os
 import numpy as np
+import threading
 from .base import *
 from Confocal_GUI.gui import *
                 
@@ -338,6 +339,7 @@ class DSG836(BaseRF, metaclass=SingletonAndCloseMeta):
         self.power_ub = 10
         self.frequency_lb = 9e3
         self.frequency_ub = 3.6e9
+        self.lock = threading.Lock() 
 
     def gui(self):
         """
@@ -349,43 +351,47 @@ class DSG836(BaseRF, metaclass=SingletonAndCloseMeta):
         
     @property
     def power(self):
-        self._power = eval(self.handle.query('SOURce:Power?')[:-1])
-        return self._power
+        with self.lock:
+            self._power = eval(self.handle.query('SOURce:Power?')[:-1])
+            return self._power
     
     @power.setter
     def power(self, value):
-        if value > self.power_ub:
-            value = self.power_ub
-            print(f'can not exceed RF power {self.power_ub}dbm')
-        self._power = value
-        self.handle.write(f'SOURce:Power {self._power}')
+        with self.lock:
+            if value > self.power_ub:
+                value = self.power_ub
+                print(f'can not exceed RF power {self.power_ub}dbm')
+            self._power = value
+            self.handle.write(f'SOURce:Power {self._power}')
     
     @property
     def frequency(self):
-        self._frequency = eval(self.handle.query('SOURce:Frequency?')[:-1])
-        return self._frequency
+        with self.lock:
+            self._frequency = eval(self.handle.query('SOURce:Frequency?')[:-1])
+            return self._frequency
     
     @frequency.setter
     def frequency(self, value):
-        self._frequency = value
-        self.handle.write(f'SOURce:Frequency {self._frequency}')
+        with self.lock:        
+            self._frequency = value
+            self.handle.write(f'SOURce:Frequency {self._frequency}')
         
         
     @property
     def on(self):
-        return self._on
+        with self.lock:
+            return self._on
     
     @on.setter
     def on(self, value):
-        #if on_in is self._on:
-        #    return
-        self._on = value
-        if value is True:
-            # from False to True
-            self.handle.write('OUTPut:STATe ON')
-        else:
-            # from True to False
-            self.handle.write('OUTPut:STATe OFF')
+        with self.lock:
+            self._on = value
+            if value is True:
+                # from False to True
+                self.handle.write('OUTPut:STATe ON')
+            else:
+                # from True to False
+                self.handle.write('OUTPut:STATe OFF')
 
     def close(self):
         pass

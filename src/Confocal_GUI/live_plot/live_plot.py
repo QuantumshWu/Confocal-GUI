@@ -219,21 +219,35 @@ class LoadAcquire(threading.Thread):
 class SmartOffsetFormatter(ticker.ScalarFormatter):
     # formatter to set offset and scale of y to not exceed border of fig
     # rewrite ScalarFormatter to implement this
+    #
+    #        def set_locs(self, locs):
+    #        # docstring inherited
+    #           self.locs = locs
+    #           if len(self.locs) > 0:
+    #               if self._useOffset:
+    #                   self._compute_offset()
+    #               self._set_order_of_magnitude()
+    #               self._set_format()
+
     def __init__(self):
         super().__init__()
         self._offset_threshold = 1
         self.set_powerlimits((-2, 2))
+        self._useOffset = True
         
     def _compute_offset(self):
         locs = self.locs
         # Restrict to visible ticks.
         vmin, vmax = sorted(self.axis.get_view_interval())
         locs = np.asarray(locs)
-        locs = locs[(vmin <= locs) & (locs <= vmax)]
-        if not len(locs):
+        self.locs = locs[(vmin <= locs) & (locs <= vmax)]
+        self.abs_step = np.abs(self.locs[0] - self.locs[1])
+        self.oom = np.ceil(np.log10(self.abs_step))
+
+        if not len(self.locs):
             self.offset = 0
             return
-        lmin, lmax = locs.min(), locs.max()
+        lmin, lmax = self.locs.min(), self.locs.max()
         # Only use offset if there are at least two ticks and every tick has
         # the same sign.
         if lmin == lmax or lmin <= 0 <= lmax:
@@ -244,12 +258,14 @@ class SmartOffsetFormatter(ticker.ScalarFormatter):
         abs_min, abs_max = sorted([abs(float(lmin)), abs(float(lmax))])
         sign = np.copysign(1, lmin)
         abs_mean = (abs_min + abs_max)/2
+        if abs_mean <= 500*self.abs_step:
+            self.offset = 0
+            return
 
-        oom = np.ceil(np.log10(np.abs(locs[0] - locs[1])))
         # Only use offset if it saves at least _offset_threshold digits.
         n = self._offset_threshold - 1
-        self.offset = (sign * (abs_mean // 10 ** oom) * 10 ** oom
-                       if abs_mean // 10 ** oom >= 10**n
+        self.offset = (sign * (abs_mean // 10 ** self.oom) * 10 ** self.oom
+                       if abs_mean // 10 ** self.oom >= 10**n
                        else 0)
 
     def _set_order_of_magnitude(self):
@@ -263,24 +279,19 @@ class SmartOffsetFormatter(ticker.ScalarFormatter):
             # fixed scaling when lower power limit = upper <> 0.
             self.orderOfMagnitude = self._powerlimits[0]
             return
-        # restrict to visible ticks
-        vmin, vmax = sorted(self.axis.get_view_interval())
-        locs = np.asarray(self.locs)
-        locs = locs[(vmin <= locs) & (locs <= vmax)]
-        locs = np.abs(locs)
-        if not len(locs):
+
+        if not len(self.locs):
             self.orderOfMagnitude = 0
             return
 
-        oom = np.ceil(np.log10(np.abs(locs[0] - locs[1])))
-        step = np.abs(locs[0] - locs[1])
-        step_str = f'{step:.1e}'
+
+        step_str = f'{self.abs_step:.1e}'
         step_oom = int(step_str.split('e')[-1])
 
         if step_oom <= self._powerlimits[0]:
-            self.orderOfMagnitude = oom
+            self.orderOfMagnitude = self.oom
         elif step_oom >= self._powerlimits[1]:
-            self.orderOfMagnitude = oom
+            self.orderOfMagnitude = self.oom
         else:
             self.orderOfMagnitude = 0
 

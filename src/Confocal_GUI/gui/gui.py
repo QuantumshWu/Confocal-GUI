@@ -1132,6 +1132,8 @@ class DeviceGUI(QDialog):
         - If the absolute value is between 1e-3 and 1e3, display in standard decimal format without trailing zeros.
         - Otherwise, display in scientific notation without trailing zeros.
         """
+        if value is None:
+            return 'None'
 
         abs_value = abs(value)
         if abs_value==0:
