@@ -248,6 +248,9 @@
     <property name="minimum">
      <double>1.000000000000000</double>
     </property>
+    <property name="maximum">
+     <double>10000.000000000000000</double>
+    </property>
     <property name="singleStep">
      <double>1.000000000000000</double>
     </property>
@@ -274,10 +277,10 @@
      <number>0</number>
     </property>
     <property name="minimum">
-     <double>-1000.000000000000000</double>
+     <double>-10000.000000000000000</double>
     </property>
     <property name="maximum">
-     <double>100000.000000000000000</double>
+     <double>10000.000000000000000</double>
     </property>
     <property name="singleStep">
      <double>1.000000000000000</double>
@@ -647,10 +650,10 @@ to set X, Y</string>
      <number>0</number>
     </property>
     <property name="minimum">
-     <double>-999.000000000000000</double>
+     <double>-10000.000000000000000</double>
     </property>
     <property name="maximum">
-     <double>1000.000000000000000</double>
+     <double>10000.000000000000000</double>
     </property>
     <property name="singleStep">
      <double>1.000000000000000</double>
@@ -706,10 +709,10 @@ to set X, Y</string>
      <number>0</number>
     </property>
     <property name="minimum">
-     <double>-1000.000000000000000</double>
+     <double>-10000.000000000000000</double>
     </property>
     <property name="maximum">
-     <double>100000.000000000000000</double>
+     <double>10000.000000000000000</double>
     </property>
     <property name="singleStep">
      <double>1.000000000000000</double>
@@ -743,10 +746,10 @@ to set X, Y</string>
      <number>0</number>
     </property>
     <property name="minimum">
-     <double>-1000.000000000000000</double>
+     <double>-10000.000000000000000</double>
     </property>
     <property name="maximum">
-     <double>1000.000000000000000</double>
+     <double>10000.000000000000000</double>
     </property>
     <property name="singleStep">
      <double>1.000000000000000</double>
@@ -774,10 +777,10 @@ to set X, Y</string>
      <number>0</number>
     </property>
     <property name="minimum">
-     <double>-1000.000000000000000</double>
+     <double>-10000.000000000000000</double>
     </property>
     <property name="maximum">
-     <double>100000.000000000000000</double>
+     <double>10000.000000000000000</double>
     </property>
     <property name="singleStep">
      <double>1.000000000000000</double>
@@ -827,10 +830,10 @@ to set X, Y</string>
      <number>0</number>
     </property>
     <property name="minimum">
-     <double>-999.000000000000000</double>
+     <double>-10000.000000000000000</double>
     </property>
     <property name="maximum">
-     <double>1000.000000000000000</double>
+     <double>10000.000000000000000</double>
     </property>
     <property name="singleStep">
      <double>1.000000000000000</double>
@@ -1066,7 +1069,7 @@ range</string>
      <double>1.000000000000000</double>
     </property>
     <property name="maximum">
-     <double>1000.000000000000000</double>
+     <double>100000.000000000000000</double>
     </property>
     <property name="singleStep">
      <double>1.000000000000000</double>

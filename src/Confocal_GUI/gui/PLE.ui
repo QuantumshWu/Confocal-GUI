@@ -490,11 +490,14 @@
     <property name="minimum">
      <double>0.000010000000000</double>
     </property>
+    <property name="maximum">
+     <double>10000000000.000000000000000</double>
+    </property>
     <property name="singleStep">
      <double>0.000050000000000</double>
     </property>
     <property name="value">
-     <double>0.000100000000000</double>
+     <double>0.010000000000000</double>
     </property>
    </widget>
    <widget class="QPushButton" name="pushButton_save_PLE">
@@ -727,10 +730,10 @@ Device</string>
      <number>5</number>
     </property>
     <property name="minimum">
-     <double>0.100000000000000</double>
+     <double>-10000000000.000000000000000</double>
     </property>
     <property name="maximum">
-     <double>999.990000000000009</double>
+     <double>10000000000.000000000000000</double>
     </property>
     <property name="singleStep">
      <double>0.000100000000000</double>
@@ -847,10 +850,10 @@ wavelength</string>
      <number>4</number>
     </property>
     <property name="minimum">
-     <double>0.100000000000000</double>
+     <double>-10000000000.000000000000000</double>
     </property>
     <property name="maximum">
-     <double>999.990000000000009</double>
+     <double>10000000000.000000000000000</double>
     </property>
     <property name="singleStep">
      <double>0.000100000000000</double>
@@ -890,10 +893,10 @@ wavelength</string>
      <number>4</number>
     </property>
     <property name="minimum">
-     <double>0.100000000000000</double>
+     <double>-10000000000.000000000000000</double>
     </property>
     <property name="maximum">
-     <double>999.990000000000009</double>
+     <double>10000000000.000000000000000</double>
     </property>
     <property name="singleStep">
      <double>0.000100000000000</double>

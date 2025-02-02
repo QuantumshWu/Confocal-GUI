@@ -8,6 +8,7 @@ from decimal import Decimal
 from threading import Event
 import numbers
 import itertools
+import re
 from abc import ABC, abstractmethod
 
 import matplotlib
@@ -18,6 +19,7 @@ from matplotlib.ticker import AutoLocator, ScalarFormatter
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
 from matplotlib.widgets import RectangleSelector
+from matplotlib.backend_bases import MouseEvent
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 import numpy as np
 from PIL import Image as PILImage
@@ -242,7 +244,7 @@ class SmartOffsetFormatter(ticker.ScalarFormatter):
         locs = np.asarray(locs)
         self.locs = locs[(vmin <= locs) & (locs <= vmax)]
         self.abs_step = np.abs(self.locs[0] - self.locs[1])
-        self.oom = np.ceil(np.log10(self.abs_step))
+        self.oom = np.ceil(np.log10(self.abs_step)+0.01)
 
         if not len(self.locs):
             self.offset = 0
@@ -258,14 +260,10 @@ class SmartOffsetFormatter(ticker.ScalarFormatter):
         abs_min, abs_max = sorted([abs(float(lmin)), abs(float(lmax))])
         sign = np.copysign(1, lmin)
         abs_mean = (abs_min + abs_max)/2
-        if abs_mean <= 500*self.abs_step:
-            self.offset = 0
-            return
 
-        # Only use offset if it saves at least _offset_threshold digits.
-        n = self._offset_threshold - 1
-        self.offset = (sign * (abs_mean // 10 ** self.oom) * 10 ** self.oom
-                       if abs_mean // 10 ** self.oom >= 10**n
+        n = self._offset_threshold # if abs_mean <= 10**(self.oom+n) then no offset
+        self.offset = (sign * (abs_mean // 10 ** (self.oom+n)) * 10 ** (self.oom+n)
+                       if abs_mean // 10 ** self.oom >= 10**(n-0.01)
                        else 0)
 
     def _set_order_of_magnitude(self):
@@ -585,6 +583,9 @@ class PLLive(LivePlotGUI):
     
     def init_core(self):
 
+        self.axes.yaxis.set_major_formatter(ScalarFormatter())
+        self.axes.xaxis.set_major_formatter(ScalarFormatter())
+
         try:
             self.x_array = self.data_generator.x_array
             self.y_array = self.data_generator.y_array
@@ -654,6 +655,10 @@ class PLLive(LivePlotGUI):
 class PLDisLive(LivePlotGUI):
 
     def init_core(self):
+
+        self.axes.yaxis.set_major_formatter(ScalarFormatter())
+        self.axes.xaxis.set_major_formatter(ScalarFormatter())
+
         try:
             self.x_array = self.data_generator.x_array
             self.y_array = self.data_generator.y_array
@@ -706,7 +711,7 @@ class PLDisLive(LivePlotGUI):
         self.axright.relim()
         self.axright.autoscale_view()
         # reset axright ticks, labels
-        self.n_bins = np.max((self.points_total//4, 100))
+        self.n_bins = np.min((self.points_total//4, 100))
         self.n, self.bins, self.patches = self.axright.hist(self.data_y[:self.points_done], orientation='vertical',\
              bins=self.n_bins, color='grey', range=(self.ylim_min, self.ylim_max))
         self.axright.set_ylim(0, self.counts_max)
@@ -830,8 +835,8 @@ class AreaSelector():
 
         
     def onselect(self, eclick, erelease):
-        x1, y1 = eclick.xdata, eclick.ydata
-        x2, y2 = erelease.xdata, erelease.ydata
+        x1, x2, y1, y2 = self.selector.extents
+        # changed by rectangleselector
         
         if x1 == x2 or y1 == y2:
             self.range = [None, None, None, None]
@@ -886,11 +891,6 @@ class CrossSelector():
             self.color = cmap(0.95)
         else:
             self.color = 'grey'
-            
-        x_data = self.ax.lines[0].get_xdata()
-        y_data = self.ax.lines[0].get_ydata()
-        self.gap_x = np.abs(np.max(x_data) - np.min(x_data)) / 1000 if (len(x_data)>0) else 0.01
-        self.gap_y = np.abs(np.max(y_data) - np.min(y_data)) / 1000 if (len(y_data)>0) else 0.01
         
         self.cid_press = self.ax.figure.canvas.mpl_connect('button_press_event', self.on_press)
 
@@ -898,7 +898,7 @@ class CrossSelector():
         if event.inaxes == self.ax:                
             if event.button == 3:  # mouse right key
                 current_time = time.time()
-                if self.last_click_time is None or (current_time - self.last_click_time) > 0.3:
+                if (self.last_click_time is None) or (current_time - self.last_click_time) > 0.3:
                     self.last_click_time = current_time
                 else:
                     self.last_click_time = None
@@ -906,6 +906,10 @@ class CrossSelector():
                     self.ax.figure.canvas.draw()
                     return
                     
+                x_data = self.ax.lines[0].get_xdata()
+                y_data = self.ax.lines[0].get_ydata()
+                self.gap_x = np.abs(np.max(x_data) - np.min(x_data)) / 1000 if (len(x_data)>0) else 0.01
+                self.gap_y = np.abs(np.max(y_data) - np.min(y_data)) / 1000 if (len(y_data)>0) else 0.01
 
                 decimal_x = self.get_decimal_places(self.gap_x)
                 decimal_y = self.get_decimal_places(self.gap_y)
@@ -962,7 +966,6 @@ class CrossSelector():
         if not active:
             self.ax.figure.canvas.mpl_disconnect(self.cid_press)
 
-        
         
 class ZoomPan():
     def __init__(self, ax):
@@ -1088,6 +1091,51 @@ class DragVLine():
             self.ax.figure.canvas.mpl_disconnect(self.cid_release)
             self.ax.figure.canvas.mpl_disconnect(self.cid_motion)
             self.ax.figure.canvas.mpl_disconnect(self.cid_draw)
+
+
+def dummy_cross(ax, x, y):
+
+    def data_to_display(ax, xdata, ydata):
+        return ax.transData.transform((xdata, ydata))
+
+    x_disp, y_disp = data_to_display(ax, x, y)
+
+    press_event = MouseEvent(name='button_press_event',
+                         canvas=ax.figure.canvas,
+                         x=x_disp, y=y_disp,
+                         button=3)  
+    press_event.inaxes = ax  
+    ax.figure.canvas.callbacks.process('button_press_event', press_event)
+
+    time.sleep(0.31)
+
+    ax.figure.canvas.callbacks.process('button_press_event', press_event)
+
+
+
+def dummy_area(ax, x1, y1, x2, y2):
+
+    x1_disp, y1_disp = ax.transData.transform((x1, y1))
+    x2_disp, y2_disp = ax.transData.transform((x2, y2))
+
+    press_event = MouseEvent('button_press_event', ax.figure.canvas, 0, 0, button=1)
+    press_event.inaxes = ax
+    ax.figure.canvas.callbacks.process('button_press_event', press_event)
+    release_event = MouseEvent('button_release_event', ax.figure.canvas, 0, 0, button=1)
+    release_event.inaxes = ax
+    ax.figure.canvas.callbacks.process('button_release_event', release_event)
+    # close existing rectangle, otherwise bug
+
+    press_event = MouseEvent('button_press_event', ax.figure.canvas, x1_disp, y1_disp, button=1)
+    press_event.inaxes = ax
+    ax.figure.canvas.callbacks.process('button_press_event', press_event)
+    motion_event = MouseEvent('motion_notify_event', ax.figure.canvas, x2_disp, y2_disp, button=1)
+    motion_event.inaxes = ax
+    ax.figure.canvas.callbacks.process('motion_notify_event', motion_event)
+    release_event = MouseEvent('button_release_event', ax.figure.canvas, x2_disp, y2_disp, button=1)
+    release_event.inaxes = ax
+    ax.figure.canvas.callbacks.process('button_release_event', release_event)
+
             
 
 
@@ -1156,7 +1204,7 @@ class DataFigure():
             if self.plot_type == '1D':
                 self.data_x = data_generator.data_x
                 self.data_y = data_generator.data_y
-                x_label = data_generator.info.get('x_label', 'Data')
+                x_label = data_generator.info.get('x_label', 'Data (1)')
                 y_label = data_generator.info.get('y_label', f'Counts/{exposure}s x1')
 
                 _live_plot = PLELive(labels=[x_label, y_label[:-3]], \
@@ -1177,14 +1225,25 @@ class DataFigure():
             self.fig = _live_plot.fig
             self.selector = _live_plot.selector
             self.info = _live_plot.data_generator.info
+            self.live_plot = _live_plot
             # load all necessary info defined in device.info for device in config_instances
 
 
         self.p0 = None
         self.fit = None
+        self.fit_func = None
         self.text = None
         self.log_info = '' # information for log output
-        self.unit = 'nm'
+        if self.plot_type == '1D':
+            x_label = self.live_plot.xlabel
+            pattern = r'\((.+)\)$'
+            match = re.search(pattern, x_label)
+            if match:
+                self.unit = match.group(1)
+            else:
+                self.unit = '1'
+        else:
+            self.unit = '1'
         
 
     def xlim(self, x_min, x_max):
@@ -1285,6 +1344,8 @@ class DataFigure():
 
             index_l = np.argmin(np.abs(self.data_x[valid_index] - xl))
             index_h = np.argmin(np.abs(self.data_x[valid_index] - xh))
+            index_l, index_h = np.sort([index_l, index_h])
+            # in order to handle data_x from max to min (e.g. GHz unit)
             if np.abs(index_l - index_h)<=min_num:
                 return self.data_x[valid_index], self.data_y[valid_index, 0]
             return self.data_x[valid_index][index_l:index_h], self.data_y[valid_index, 0][index_l:index_h]
@@ -1360,7 +1421,7 @@ class DataFigure():
             else:
                 self._display_popt(popt, popt_str, 'lower right')
 
-
+        self.fit_func = 'lorent'
         return [popt_str, pcov], popt
 
 
@@ -1500,7 +1561,7 @@ class DataFigure():
         if is_display:
             self._display_popt(popt, popt_str, 'upper right')
             
-
+        self.fit_func = 'rabi'
         return [popt_str, pcov], popt
 
 
@@ -1569,7 +1630,7 @@ class DataFigure():
             else:
                 self._display_popt(popt, popt_str, 'lower right')
             
-
+        self.fit_func = 'decay'
         return [popt_str, pcov], popt
 
 
@@ -1584,86 +1645,78 @@ class DataFigure():
         self.fig.canvas.draw()
         self.fit = None
         self.text = None
-        
-    def _change_unit(self):
-        spl = 299792458
-        xlim = self.fig.axes[0].get_xlim()
-        
+
+    def _update_unit(self, transform):
+
         for line in self.fig.axes[0].lines:
             data_x = np.array(line.get_xdata())
             if np.array_equal(data_x, np.array([0, 1])):
                 line.set_xdata(data_x)
             else:
                 with np.errstate(divide='ignore', invalid='ignore'):
-                    new_xdata = np.where(data_x != 0, spl / data_x, np.inf)
+                    new_xdata = np.where(data_x != 0, transform(data_x), np.inf)
                     line.set_xdata(new_xdata)
-            
-        for patch in self.fig.axes[0].patches:# move rectangle
-            x, y = patch.get_xy()
-            width = patch.get_width()
-            if x==0:
-                x=np.inf
-            if width==0:
-                width=np.inf
-            patch.set_x(spl/x)
-            patch.set_width(spl/(x + width) - spl/(x))
-            
-        # set Zoom pan center, and moves all selectors accordingly
+
+        xlim = self.fig.axes[0].get_xlim()
+        self.data_x = self.fig.axes[0].lines[0].get_xdata()
+        self.fig.axes[0].set_xlim(transform(xlim[0]), transform(xlim[-1]))
+
         if self.selector == []:
             pass
         else:
             zoom_pan_handle = self.selector[2]
-            zoom_pan_handle.x_center = spl/zoom_pan_handle.x_center
+            zoom_pan_handle.x_center = transform(zoom_pan_handle.x_center)
             
             area_handle = self.selector[0]
             if area_handle.range[0] is not None:
-                area_handle.range = spl/np.array(area_handle.range)
-                
+                new_x1 = transform(self.selector[0].range[0])
+                new_x2 = transform(self.selector[0].range[1])
+                new_y1 = self.selector[0].range[2]
+                new_y2 = self.selector[0].range[3]
+                dummy_area(area_handle.ax, new_x1, new_y1, new_x2, new_y2)
             cross_handle = self.selector[1]
             if cross_handle.wavelength is not None:
-                cross_handle.wavelength = spl/cross_handle.wavelength
-            
-        self.data_x = self.fig.axes[0].lines[0].get_xdata()
-        self.data_y = self.fig.axes[0].lines[0].get_ydata()
-        self._data = [self.data_x, self.data_y]
-            
-        self.fig.axes[0].set_xlim(spl/xlim[0], spl/xlim[-1])
-            
-            
-    def to_GHz(self):
-        if self.unit == 'GHz':
-            return
+                new_x = transform(cross_handle.xy[0])
+                new_y = cross_handle.xy[1]
+                dummy_cross(cross_handle.ax, new_x, new_y) 
+
+        if self.fit is not None:
+            self.clear()
+            exec(f'self.{self.fit_func}()')
+
+    def change_unit(self):
         if self.plot_type == '2D':
-            return 
-        spl = 299792458
-        self.unit = 'GHz'
-        
-        self._change_unit()
-        
-        xlabel = self.fig.axes[0].get_xlabel()
-        self.fig.axes[0].set_xlabel(xlabel[:-4] + '(GHz)')
-        self.fig.canvas.draw()
-        
-        
-    def to_nm(self):
-        if self.unit == 'nm':
             return
-        if self.plot_type == '2D':
-            return 
-        
-        spl = 299792458
-        self.unit = 'nm'
-        
-        self._change_unit()
-        
-        xlabel = self.fig.axes[0].get_xlabel()
-        self.fig.axes[0].set_xlabel(xlabel[:-5] + '(nm)')
+
+
+        if self.unit in ['GHz', 'nm']:
+            spl = 299792458  # m/s
+            conversion_map = {
+                'nm': ('GHz', lambda x: spl / x),
+                'GHz': ('nm', lambda x: spl / x)
+            }
+        elif self.unit in ['ns', 'us', 'ms']:
+            conversion_map = {
+                'ms': ('ns', lambda x: x * 1e6),
+                'ns': ('us', lambda x: x / 1e3),
+                'us': ('ms', lambda x: x / 1e3)
+            }
+        else:
+            return
+
+
+        new_unit, conversion_func = conversion_map[self.unit]
+        self._update_unit(conversion_func)
+
+        ax = self.fig.axes[0]
+        old_xlabel = ax.get_xlabel()
+        new_xlabel = re.sub(r'\((.+)\)$', f'({new_unit})', old_xlabel)
+        self.fig.axes[0].set_xlabel(new_xlabel)
+
+        self.unit = new_unit
         self.fig.canvas.draw()
 
-
-            
-            
-
+ 
 
 
 

@@ -350,10 +350,10 @@ PL</string>
        <number>0</number>
       </property>
       <property name="minimum">
-       <double>-1000.000000000000000</double>
+       <double>-10000.000000000000000</double>
       </property>
       <property name="maximum">
-       <double>100000.000000000000000</double>
+       <double>10000.000000000000000</double>
       </property>
       <property name="singleStep">
        <double>1.000000000000000</double>
@@ -406,10 +406,10 @@ PL</string>
        <number>0</number>
       </property>
       <property name="minimum">
-       <double>-1000.000000000000000</double>
+       <double>-10000.000000000000000</double>
       </property>
       <property name="maximum">
-       <double>100000.000000000000000</double>
+       <double>10000.000000000000000</double>
       </property>
       <property name="singleStep">
        <double>1.000000000000000</double>
@@ -690,10 +690,10 @@ range</string>
        <number>0</number>
       </property>
       <property name="minimum">
-       <double>-999.000000000000000</double>
+       <double>-10000.000000000000000</double>
       </property>
       <property name="maximum">
-       <double>1000.000000000000000</double>
+       <double>10000.000000000000000</double>
       </property>
       <property name="singleStep">
        <double>1.000000000000000</double>
@@ -827,10 +827,10 @@ range</string>
        <number>0</number>
       </property>
       <property name="minimum">
-       <double>-1000.000000000000000</double>
+       <double>-10000.000000000000000</double>
       </property>
       <property name="maximum">
-       <double>1000.000000000000000</double>
+       <double>10000.000000000000000</double>
       </property>
       <property name="singleStep">
        <double>1.000000000000000</double>
@@ -965,10 +965,10 @@ range</string>
        <number>0</number>
       </property>
       <property name="minimum">
-       <double>-999.000000000000000</double>
+       <double>-10000.000000000000000</double>
       </property>
       <property name="maximum">
-       <double>1000.000000000000000</double>
+       <double>10000.000000000000000</double>
       </property>
       <property name="singleStep">
        <double>1.000000000000000</double>
@@ -1092,10 +1092,10 @@ wavelength</string>
        <number>4</number>
       </property>
       <property name="minimum">
-       <double>0.100000000000000</double>
+       <double>-10000000000.000000000000000</double>
       </property>
       <property name="maximum">
-       <double>999.990000000000009</double>
+       <double>10000000000.000000000000000</double>
       </property>
       <property name="singleStep">
        <double>0.000100000000000</double>
@@ -1129,10 +1129,10 @@ wavelength</string>
        <number>4</number>
       </property>
       <property name="minimum">
-       <double>0.100000000000000</double>
+       <double>-10000000000.000000000000000</double>
       </property>
       <property name="maximum">
-       <double>999.990000000000009</double>
+       <double>10000000000.000000000000000</double>
       </property>
       <property name="singleStep">
        <double>0.000100000000000</double>
@@ -1508,10 +1508,10 @@ range</string>
        <number>5</number>
       </property>
       <property name="minimum">
-       <double>0.100000000000000</double>
+       <double>-10000000000.000000000000000</double>
       </property>
       <property name="maximum">
-       <double>999.990000000000009</double>
+       <double>10000000000.000000000000000</double>
       </property>
       <property name="singleStep">
        <double>0.000100000000000</double>
@@ -1588,6 +1588,9 @@ PLE</string>
       </property>
       <property name="minimum">
        <double>0.000010000000000</double>
+      </property>
+      <property name="maximum">
+       <double>10000000000.000000000000000</double>
       </property>
       <property name="singleStep">
        <double>0.000050000000000</double>

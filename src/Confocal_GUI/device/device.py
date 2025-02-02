@@ -5,6 +5,7 @@ current_directory = os.path.dirname(os.path.abspath(__file__))
 # location of new focus laser driver file
 sys.path.append(current_directory)
 import numpy as np
+import threading
 from .base import *
 from Confocal_GUI.gui import *
                 
@@ -192,14 +193,16 @@ class WaveMeter671(BaseWavemeter, metaclass=SingletonAndCloseMeta):
         self.tn.write(b'*IDN?\r\n')
         time.sleep(0.5)
         self.tn.read_very_eager()
+        self.lock = threading.Lock()
         
     
     @property
     def wavelength(self):
-        self.tn.write(b':READ:WAV?\r\n')
-        data = self.tn.expect([b'\r\n'])[-1]
-        self._wavelength = float(data.decode('utf-8')[:-2])
-        return self._wavelength
+        with self.lock:
+            self.tn.write(b':READ:WAV?\r\n')
+            data = self.tn.expect([b'\r\n'])[-1]
+            self._wavelength = float(data.decode('utf-8')[:-2])
+            return self._wavelength
     
     def connect(self):
         self.tn = telnetlib.Telnet(self.HOST, timeout=1)
@@ -213,14 +216,18 @@ class WaveMeter671(BaseWavemeter, metaclass=SingletonAndCloseMeta):
     def close(self):
         self.disconnect()
 
+
 class SGCounter(BaseCounter):
     """
     Software gated counter, using time.sleep, therefore
     duration stability may not be sufficienct for some cases
     """
 
-    def __init__(self):
-        pass
+    def __init__(self, apd_signal='/Dev2/ctr1', apd_gate='/Dev2/PFI4'):
+        import nidaqmx
+        self.apd_signal = apd_signal
+        self.apd_gate = apd_gate
+        self.nidaqmx = nidaqmx
 
     @property
     def valid_counter_mode(self):
@@ -230,20 +237,20 @@ class SGCounter(BaseCounter):
     def valid_data_mode(self):
         return ['single']
 
-    def read_counts(exposure, counter_mode='apd', data_mode='single',**kwargs):
+    def read_counts(self, exposure, counter_mode='apd', data_mode='single',**kwargs):
         """
         software gated counter for USB-6211, and reset pulse every time
         """
-        with nidaqmx.Task() as task:
-            task.ci_channels.add_ci_count_edges_chan("Dev3/ctr0")
-            task.triggers.pause_trigger.dig_lvl_src = '/Dev3/PFI1'
-            task.triggers.pause_trigger.trig_type = nidaqmx.constants.TriggerType.DIGITAL_LEVEL
-            task.triggers.pause_trigger.dig_lvl_when = nidaqmx.constants.Level.LOW
+        with self.nidaqmx.Task() as task:
+            task.ci_channels.add_ci_count_edges_chan(self.apd_signal)
+            task.triggers.pause_trigger.dig_lvl_src = self.apd_gate
+            task.triggers.pause_trigger.trig_type = self.nidaqmx.constants.TriggerType.DIGITAL_LEVEL
+            task.triggers.pause_trigger.dig_lvl_when = self.nidaqmx.constants.Level.LOW
             task.start()
             time.sleep(exposure)
             data_counts = task.read()
             task.stop()
-        return data_counts
+        return [data_counts, ]
 
 
 class HighFiness(BaseWavemeter):

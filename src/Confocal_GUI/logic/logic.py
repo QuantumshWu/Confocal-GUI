@@ -253,7 +253,7 @@ class PLMeasurement(BaseMeasurement):
             raise KeyError('Missing devices in config_instances')
 
     def _load_params(self, x_array=None, y_array=None, exposure=0.1, config_instances=None, repeat = 1, wavelength=None, is_GUI=False, is_dis=True, \
-        counter_mode='apd', data_mode='single', relim_mode='normal', is_plot=True):
+        counter_mode='apd', data_mode='single', relim_mode='tight', is_plot=True):
         """
         pl
 
@@ -265,7 +265,7 @@ class PLMeasurement(BaseMeasurement):
         example:
         fig, data_figure = pl(x_array = np.arange(-10, 10, 1), y_array = np.arange(-10, 10, 1), exposure=0.1, 
                                 config_instances=config_instances, repeat=1, is_GUI=False, is_dis=True,
-                                counter_mode='apd', data_mode='single', relim_mode='normal')
+                                counter_mode='apd', data_mode='single', relim_mode='tight')
 
         """
         self.loaded_params = True

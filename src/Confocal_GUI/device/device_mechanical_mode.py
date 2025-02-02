@@ -5,6 +5,7 @@ current_directory = os.path.dirname(os.path.abspath(__file__))
 # location of new focus laser driver file
 sys.path.append(current_directory)
 import numpy as np
+import threading
 from .base import *
 from Confocal_GUI.gui import *
 
@@ -102,7 +103,7 @@ class LaserStabilizerDLCpro(BaseLaserStabilizer, metaclass=SingletonAndCloseMeta
         self.v_mid = 0.5*(self.laser.piezo_max + self.laser.piezo_min)
         self.v_min = self.laser.piezo_min + 0.05*(self.laser.piezo_max - self.laser.piezo_min)
         self.v_max = self.laser.piezo_min + 0.95*(self.laser.piezo_max - self.laser.piezo_min)
-        self.freq_thre = 0.05 #50MHz threshold defines when to return is_ready
+        self.freq_thre = 0.005 #5MHz threshold defines when to return is_ready
         self.P = 0.8 #scaling factor of PID control
         # leaves about 10% extra space
         self.wavelength_lb = 737.09
@@ -251,3 +252,181 @@ class PulseSpinCore(BasePulse):
 
         time.sleep(0.01 + self.total_duration/1e9)
         # make sure pulse is stable and ready for measurement
+
+
+
+
+class USB2120(BaseCounter, metaclass=SingletonAndCloseMeta):
+    """
+    Class for NI DAQ USB-2120
+    """
+    
+    def __init__(self, exposure=1, port_config=None):
+
+        import nidaqmx
+        from nidaqmx.constants import AcquisitionType
+        from nidaqmx.constants import TerminalConfiguration
+        from nidaqmx.stream_readers import AnalogMultiChannelReader
+        import warnings 
+
+        if port_config is None:
+            port_config = {'apd_signal':'/Dev2/ctr1', 'apd_gate':'/Dev2/PFI4'}
+        self.port_config = port_config
+        self.nidaqmx = nidaqmx
+
+        self.task = nidaqmx.Task()
+        self.nidaqmx = nidaqmx
+
+        self.counter_mode = None
+        # analog, apd
+        self.data_mode = None
+        # single, ref_div, ref_sub, dual
+
+        self.exposure = None
+        self.clock = None
+
+    @property
+    def valid_counter_mode(self):
+        return ['apd',]
+
+    @property
+    def valid_data_mode(self):
+        return ['single',]
+
+
+    def set_timing(self, exposure):
+
+        # change match case to if elif to fit python before 3.10
+
+        if self.counter_mode == 'apd':
+            self.clock = 1e3 # sampling rate for edge counting, defines when transfer counts from DAQ to PC, should be not too large to accomdate long exposure
+            self.sample_num = int(round(self.clock*exposure))
+            self.task_counter_ctr.stop()
+            self.task_counter_ctr.timing.cfg_samp_clk_timing(self.clock, source = '/Dev2/Ctr0InternalOutput', \
+                sample_mode=self.nidaqmx.constants.AcquisitionType.FINITE, samps_per_chan=self.sample_num)
+
+            self.exposure = exposure
+
+        else:
+            print(f'can only be one of the {self.valid_counter_mode}')
+
+
+
+    def close(self):
+        pass
+
+    def set_counter(self, counter_mode = 'apd'):
+        if counter_mode == 'apd':
+
+
+            self.task_counter_ctr = self.nidaqmx.Task()
+            self.task_counter_ctr.ci_channels.add_ci_count_edges_chan(self.port_config['apd_signal'])
+            # ctr1 source PFI3, gate PFI4
+            self.task_counter_ctr.triggers.pause_trigger.dig_lvl_src = self.port_config['apd_gate']
+            self.task_counter_ctr.triggers.pause_trigger.trig_type = self.nidaqmx.constants.TriggerType.DIGITAL_LEVEL
+            self.task_counter_ctr.triggers.pause_trigger.dig_lvl_when = self.nidaqmx.constants.Level.LOW
+
+
+            self.task_counter_clock = self.nidaqmx.Task()
+            self.task_counter_clock.co_channels.add_co_pulse_chan_freq(counter="Dev2/ctr0", freq=1e3, duty_cycle=0.5)
+            # ctr3 clock for buffered edge counting ctr1 and ctr2
+            self.task_counter_clock.timing.cfg_implicit_timing(sample_mode=self.nidaqmx.constants.AcquisitionType.CONTINUOUS)
+            self.task_counter_clock.start()
+            self.task_counter_ctr.start()
+
+            self.counter_mode = counter_mode
+
+        else:
+            print(f'can only be one of the {self.valid_counter_mode}')
+
+
+    def read_counts(self, exposure, counter_mode = 'apd', data_mode='single',**kwargs):
+
+        self.data_mode = data_mode
+        if (counter_mode != self.counter_mode):
+            self.set_counter(counter_mode)
+            self.set_timing(exposure)
+        elif (exposure != self.exposure):
+            self.set_timing(exposure)
+
+
+        if self.counter_mode == 'apd':
+
+            self.task_counter_clock.stop()
+            self.task_counter_ctr.stop()
+            self.task_counter_ctr.start()
+            self.task_counter_clock.start()
+
+            time.sleep(exposure)
+
+            counts_main_array = self.task_counter_ctr.read(number_of_samples_per_channel = self.sample_num)
+            data_main = float(counts_main_array[-1] - counts_main_array[0])
+
+
+        else:
+            print(f'can only be one of the {self.valid_counter_mode}')
+
+
+        if self.data_mode == 'single':
+
+            return [data_main,]
+
+        else:
+            print(f'can only be one of the {self.valid_data_mode}')
+
+
+class AFG31152(BaseScanner):
+    """
+    class for scanner AFG31152
+    
+    example:
+    >>> afg3052c = AFG3052C()
+    >>> afg3052c.x
+    10
+    >>> afg3052c.x = 20
+    
+    """
+    def __init__(self, visa_str = 'GPIB0::1::INSTR'):    
+        import pyvisa   
+        rm = pyvisa.ResourceManager()
+        self.handle = rm.open_resource(visa_str)
+        # default at x, y = 1182mV
+        #
+        self.lock = threading.Lock()
+
+    def gui(self):
+        """
+        Use self.gui_property and self.gui_property_type to determine how to display configurable parameters
+        """
+        self.gui_property = ['x', 'y']
+        self.gui_property_type = ['x', 'y']
+        GUI_Device(self)
+    
+    @property
+    def x(self):
+        with self.lock:
+            result_str = self.handle.query('SOURce1:VOLTage:LEVel:IMMediate:OFFSet?')
+            self._x = int(1000*eval(result_str[:-1]))
+            return self._x
+    
+    @x.setter
+    def x(self, value):
+        with self.lock:
+            self.handle.write(f'SOURce1:VOLTage:LEVel:IMMediate:OFFSet {value}mV')
+            result_str = self.handle.query('SOURce1:VOLTage:LEVel:IMMediate:OFFSet?')
+            self._x = int(1000*eval(result_str[:-1]))
+        
+    @property
+    def y(self):
+        with self.lock:
+            result_str = self.handle.query('SOURce2:VOLTage:LEVel:IMMediate:OFFSet?')
+            self._y = int(1000*eval(result_str[:-1]))
+            return self._y
+    
+    @y.setter
+    def y(self, value):
+        with self.lock:
+            self.handle.write(f'SOURce2:VOLTage:LEVel:IMMediate:OFFSet {value}mV')
+            result_str = self.handle.query('SOURce2:VOLTage:LEVel:IMMediate:OFFSet?')
+            self._y = int(1000*eval(result_str[:-1]))
+

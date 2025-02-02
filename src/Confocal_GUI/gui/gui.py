@@ -601,6 +601,13 @@ class MainWindow(QMainWindow):
                     self.cur_live_plot.after_plot()
                     setattr(self, f'data_figure_{self.cur_plot}', DataFigure(self.cur_live_plot))
                     self.is_plot_done = True
+
+                    if hasattr(self, 'live_plot_PLE'):
+                        self.checkBox_is_stabilizer.setDisabled(False)
+                        self.doubleSpinBox_wavelength.setDisabled(False)
+                    if hasattr(self, 'live_plot_PL'):
+                        self.checkBox_is_bind.setChecked(False)
+                        self.checkBox_is_bind.setDisabled(False)
     
     def stop_plot(self):
         self.print_log(f'Plot stopped')
@@ -846,13 +853,7 @@ class MainWindow(QMainWindow):
         if self.data_figure_PLE is None:
             self.print_log(f'No figure to change unit')
             return
-        if self.measurement_PLE.x_unit == 'nm':
-            if self.data_figure_PLE.unit == 'nm':
-                self.data_figure_PLE.to_GHz()
-                self.print_log(f'changed unit to GHz')
-            else:
-                self.data_figure_PLE.to_nm()
-                self.print_log(f'changed unit to nm')
+        self.data_figure_PLE.change_unit()
         
         
         
