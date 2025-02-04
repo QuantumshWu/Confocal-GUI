@@ -244,7 +244,13 @@ class SmartOffsetFormatter(ticker.ScalarFormatter):
         locs = np.asarray(locs)
         self.locs = locs[(vmin <= locs) & (locs <= vmax)]
         self.abs_step = np.abs(self.locs[0] - self.locs[1])
-        self.oom = np.ceil(np.log10(self.abs_step)+0.01)
+        locs_step = [0.1, 0.2, 0.5, 2.5]
+        for step in locs_step:
+            oom = np.log10(self.abs_step/step)
+            if np.abs(round(oom)-oom)<0.001:
+                self.oom = round(oom)
+        # autolocator gives locs with step in [0.1, 0.2, 0.5, 2.5]
+        # calculate oom based on last figure
 
         if not len(self.locs):
             self.offset = 0
@@ -926,10 +932,10 @@ class CrossSelector():
                                              transform=self.ax.transAxes, color=self.color)
                     self.point, = self.ax.plot(x, y, 'o', alpha=0.8, color=self.color)
                 else:
-                    self.vline.set_xdata(x)
-                    self.hline.set_ydata(y)
-                    self.point.set_xdata(x)
-                    self.point.set_ydata(y)
+                    self.vline.set_xdata([x, x])
+                    self.hline.set_ydata([y, y])
+                    self.point.set_xdata([x, ])
+                    self.point.set_ydata([y, ])
                     self.text.set_text(f'({format_str.format(x, y)})')
                 
                 self.ax.figure.canvas.draw()
@@ -1125,7 +1131,6 @@ def dummy_area(ax, x1, y1, x2, y2):
     release_event.inaxes = ax
     ax.figure.canvas.callbacks.process('button_release_event', release_event)
     # close existing rectangle, otherwise bug
-
     press_event = MouseEvent('button_press_event', ax.figure.canvas, x1_disp, y1_disp, button=1)
     press_event.inaxes = ax
     ax.figure.canvas.callbacks.process('button_press_event', press_event)
@@ -1390,8 +1395,11 @@ class DataFigure():
         [guess_center + data_x_range, guess_full_width*10, 10*data_y_range, 10*data_y_range])
         
         if is_fit and (p0 is None):
-            popt_pos, pcov_pos = curve_fit(_lorent, self.data_x_p, self.data_y_p, p0=self.p0_pos)
-            popt_neg, pcov_neg = curve_fit(_lorent, self.data_x_p, self.data_y_p, p0=self.p0_neg)
+            try:
+                popt_pos, pcov_pos = curve_fit(_lorent, self.data_x_p, self.data_y_p, p0=self.p0_pos)
+                popt_neg, pcov_neg = curve_fit(_lorent, self.data_x_p, self.data_y_p, p0=self.p0_neg)
+            except:
+                return
             loss_pos = np.sum((_lorent(self.data_x_p, *popt_pos) - self.data_y_p)**2)
             loss_neg = np.sum((_lorent(self.data_x_p, *popt_neg) - self.data_y_p)**2)
 
@@ -1401,8 +1409,10 @@ class DataFigure():
                 popt, pcov = popt_neg, pcov_neg
 
         elif is_fit and (p0 is not None):
-
-            popt, pcov = curve_fit(_lorent, self.data_x_p, self.data_y_p, p0=self.p0)
+            try:
+                popt, pcov = curve_fit(_lorent, self.data_x_p, self.data_y_p, p0=self.p0)
+            except:
+                return
 
         else:
             popt, pcov = self.p0, None
@@ -1682,18 +1692,22 @@ class DataFigure():
 
         if self.fit is not None:
             self.clear()
-            exec(f'self.{self.fit_func}()')
+            try:
+                exec(f'self.{self.fit_func}()')
+            except:
+                pass
 
     def change_unit(self):
         if self.plot_type == '2D':
             return
 
 
-        if self.unit in ['GHz', 'nm']:
+        if self.unit in ['GHz', 'nm', 'MHz']:
             spl = 299792458  # m/s
             conversion_map = {
                 'nm': ('GHz', lambda x: spl / x),
-                'GHz': ('nm', lambda x: spl / x)
+                'GHz': ('MHz', lambda x: x * 1e3),
+                'MHz': ('nm', lambda x: spl / (x/1e3))
             }
         elif self.unit in ['ns', 'us', 'ms']:
             conversion_map = {
