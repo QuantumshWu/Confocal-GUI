@@ -389,7 +389,7 @@ class MainWindow(QMainWindow):
 
         if plot_type == '1D':
             if self.measurement_PLE is not None:
-                self.stop_plot()
+                self.stop_plot(select_stop='PLE')
                 # make sure no residual selector which may cause thread problem
                 if self.data_figure_PLE is not None:
                         self.data_figure_PLE.close_selector()
@@ -405,7 +405,7 @@ class MainWindow(QMainWindow):
                 return
         elif plot_type == '2D':
             if self.measurement_PL is not None:
-                self.stop_plot()
+                self.stop_plot(select_stop='PL')
                 # make sure no residual selector which may cause thread problem
                 if self.data_figure_PL is not None:
                         self.data_figure_PL.close_selector()
@@ -609,14 +609,19 @@ class MainWindow(QMainWindow):
                         self.checkBox_is_bind.setChecked(False)
                         self.checkBox_is_bind.setDisabled(False)
     
-    def stop_plot(self):
+    def stop_plot(self, select_stop=None):
         self.print_log(f'Plot stopped')
         self.is_fit = False
 
-        if self.cur_live_plot is not None:
-            self.cur_live_plot.stop()
-            self.update_plot()
-            # block excuetion until plot is done
+        if select_stop is None:
+            if self.cur_live_plot is not None:
+                self.cur_live_plot.stop()
+                self.update_plot()
+                # block excuetion until plot is done
+        else:
+            if hasattr(self, f'live_plot_{select_stop}'):
+                plot_handle = getattr(self, f'live_plot_{select_stop}')
+                plot_handle.stop()
 
         if hasattr(self, 'live_plot_PLE'):
             self.checkBox_is_stabilizer.setDisabled(False)
@@ -648,7 +653,7 @@ class MainWindow(QMainWindow):
     def estimate_PL_time(self):
         if self.findChild(QLineEdit, 'lineEdit_time_PL') is None:
             return
-        if hasattr(self, 'live_plot_PL') and self.live_plot_PL.data_generator.thread.is_alive:
+        if hasattr(self, 'live_plot_PL') and self.live_plot_PL.data_generator.thread.is_alive():
             points_total = self.live_plot_PL.points_total
             points_done = self.live_plot_PL.points_done
             ratio = points_done/points_total
@@ -656,7 +661,8 @@ class MainWindow(QMainWindow):
 
         else:
             self.read_data_PL()
-            time = self.exposure_PL * len(np.arange(self.xl, self.xu, self.step_PL)) * len(np.arange(self.yl, self.yu, self.step_PL))
+            overhead = 0.01 # estimated 10ms overhead for single data point
+            time = (self.exposure_PL+overhead) * len(np.arange(self.xl, self.xu, self.step_PL)) * len(np.arange(self.yl, self.yu, self.step_PL))
             self.lineEdit_time_PL.setText(f'new PL finishes in {time:.2f}s')
             self.time_PL = time
 
@@ -788,7 +794,7 @@ class MainWindow(QMainWindow):
     def estimate_PLE_time(self):
         if self.findChild(QLineEdit, 'lineEdit_time_PLE') is None:
             return
-        if hasattr(self, 'live_plot_PLE') and self.live_plot_PLE.data_generator.thread.is_alive:
+        if hasattr(self, 'live_plot_PLE') and self.live_plot_PLE.data_generator.thread.is_alive():
             points_total = self.live_plot_PLE.points_total
             points_done = self.live_plot_PLE.points_done
             ratio = points_done/points_total
@@ -797,7 +803,8 @@ class MainWindow(QMainWindow):
 
         else:
             self.read_data_PLE()
-            time = (self.exposure_PLE + 0.5)* len(np.arange(self.wl, self.wu, self.step_PLE)) 
+            overhead = 0.05 # estimated 50ms overhead 
+            time = (self.exposure_PLE + overhead)* len(np.arange(self.wl, self.wu, self.step_PLE)) 
             # considering the overhead of stabilizing laser frequency
             self.lineEdit_time_PLE.setText(f'new {self.measurement_PLE.measurement_name} finishes in {time:.2f}s')
             self.time_PLE = time

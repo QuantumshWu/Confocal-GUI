@@ -40,6 +40,8 @@ class BaseMeasurement(ABC):
         super().__init__()
         self.config_instances = config_instances
         self.assign_names()
+        self.is_running = True
+        # enable using all method even before load_params()
 
     def _iterate_data_x(self):
         """
