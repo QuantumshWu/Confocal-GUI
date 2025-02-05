@@ -609,11 +609,11 @@ class MainWindow(QMainWindow):
                         self.checkBox_is_bind.setChecked(False)
                         self.checkBox_is_bind.setDisabled(False)
     
-    def stop_plot(self, select_stop=None):
+    def stop_plot(self, clicked=True, select_stop=None):
         self.print_log(f'Plot stopped')
         self.is_fit = False
-
         if select_stop is None:
+            # must be second params, cause button click event will pass a bool variable to function connected
             if self.cur_live_plot is not None:
                 self.cur_live_plot.stop()
                 self.update_plot()
@@ -930,6 +930,7 @@ class MainWindow(QMainWindow):
         self.timer.setInterval(1000*self.live_plot_PLE.update_time)  # Interval in milliseconds
         self.timer.timeout.connect(self.update_plot)
         self.timer.start()
+
         
             
 

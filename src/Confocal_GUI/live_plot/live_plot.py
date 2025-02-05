@@ -583,6 +583,56 @@ class PLELive(LivePlotGUI):
         self.zoom = ZoomPan(self.fig.axes[0])
         
         self.selector = [self.area, self.cross, self.zoom]
+
+
+class LiveAndDisLive(LivePlotGUI):
+    # live_plot class for realizing live plot plus distribution of counts
+    # default live_plot class for live() function
+    
+    def init_core(self):
+        self.lines = self.axes.plot(self.data_x, self.data_y, animated=True, alpha=1)
+        for i, line in enumerate(self.lines):
+            line.set_color(self.line_colors[i])
+            self.blit_axes.append(self.axes)
+            self.blit_artists.append(line)
+
+        self.axes.set_xlim(np.nanmin(self.data_x), np.nanmax(self.data_x))
+        self.axes.set_ylim(self.ylim_min, self.ylim_max)
+
+        self.axes.set_ylabel(self.ylabel + ' x1')
+        self.axes.set_xlabel(self.xlabel)
+        
+    def update_core(self):
+        
+        if (self.repeat_done!=self.data_generator.repeat_done):
+            self.ylabel = self.labels[1] + f' x{self.data_generator.repeat_done + 1}'
+            self.repeat_done = self.data_generator.repeat_done
+            self.axes.set_ylabel(self.ylabel)
+
+            self.relim()
+            self.fig.canvas.draw()
+            self.bg_fig = self.fig.canvas.copy_from_bbox(self.fig.bbox)  # update ylim so need redraw
+
+        else:
+
+            if self.relim():
+                self.fig.canvas.draw()
+                self.bg_fig = self.fig.canvas.copy_from_bbox(self.fig.bbox)  # update ylim so need redraw
+
+            
+        self.fig.canvas.restore_region(self.bg_fig)
+        for i, line in enumerate(self.lines):
+            line.set_data(self.data_x, self.data_y[:, i])
+
+    def set_ylim(self):
+        self.axes.set_ylim(self.ylim_min, self.ylim_max)
+        
+    def choose_selector(self):
+        self.area = AreaSelector(self.fig.axes[0])
+        self.cross = CrossSelector(self.fig.axes[0])
+        self.zoom = ZoomPan(self.fig.axes[0])
+        
+        self.selector = [self.area, self.cross, self.zoom]
         
 
 class PLLive(LivePlotGUI):
