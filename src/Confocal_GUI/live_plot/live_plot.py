@@ -401,7 +401,6 @@ class LivePlotGUI(ABC):
             # set fit to visible 
 
         self.bg_fig = self.fig.canvas.copy_from_bbox(self.fig.bbox)  # store bg
-
         
         self.data_generator.start()
         
@@ -412,8 +411,10 @@ class LivePlotGUI(ABC):
 
         for axe, artist in zip(self.blit_axes, self.blit_artists):
             axe.draw_artist(artist)
+
         self.fig.canvas.blit(self.fig.bbox)
         self.fig.canvas.flush_events()
+
         
     @abstractmethod    
     def init_core(self):
@@ -466,22 +467,37 @@ class LivePlotGUI(ABC):
     def clear_all(self):
         # code to remove selectors' plot
         for ax in self.fig.axes:
-            lines_to_remove = [line for line in ax.lines]
-            patches_to_remove = [patch for patch in ax.patches]
-            texts_to_remove = [text for text in ax.texts]
-
-
-            for line in lines_to_remove:
-                line.remove()
-            for patch in patches_to_remove:
-                patch.remove()
-            for text in texts_to_remove:
-                text.remove()
-            ax.set_title('')
-            
+            ax.clear()
+         
         self.fig.tight_layout()
-
         self.fig.canvas.draw()
+
+    def update_verts(self, bins, counts, verts, mode='horizontal'):
+        if mode=='horizontal':
+            left = bins[:-1]
+            right = bins[1:]
+            counts = counts
+            verts[:, 0, 0] = 0
+            verts[:, 0, 1] = left
+            verts[:, 1, 0] = counts
+            verts[:, 1, 1] = left
+            verts[:, 2, 0] = counts
+            verts[:, 2, 1] = right
+            verts[:, 3, 0] = 0
+            verts[:, 3, 1] = right
+        elif mode=='vertical':
+            left = bins[:-1]
+            right = bins[1:]
+            counts = counts
+            verts[:, 0, 0] = left
+            verts[:, 0, 1] = 0
+            verts[:, 1, 0] = left
+            verts[:, 1, 1] = counts
+            verts[:, 2, 0] = right
+            verts[:, 2, 1] = counts
+            verts[:, 3, 0] = right
+            verts[:, 3, 1] = 0
+
 
 
     def relim(self):
@@ -609,41 +625,34 @@ class LiveAndDisLive(LivePlotGUI):
 
         if self.have_init_fig:
             # such as in GUI
-
             self.axdis = self.fig.axes[1]
-            self.axdis.xaxis.set_major_locator(AutoLocator())
-            self.axdis.xaxis.set_major_formatter(ScalarFormatter())
-            self.axdis.relim()
-            self.axdis.autoscale_view()
-            self.axdis.tick_params(axis='y', labelleft=False)
-            self.axdis.tick_params(axis='both', which='both',bottom=False,top=False)
-
         else:
-
             divider = make_axes_locatable(self.axes)        
             self.axdis = divider.append_axes("right", size="20%", pad=0.1, sharey=self.axes)
-            self.axdis.xaxis.set_major_locator(AutoLocator())
-            self.axdis.xaxis.set_major_formatter(ScalarFormatter())
-            self.axdis.relim()
-            self.axdis.autoscale_view()
-            self.axdis.tick_params(axis='y', labelleft=False)
-            self.axdis.tick_params(axis='both', which='both',bottom=False,top=False)
-            # reset axdis ticks, labels
-            self.fig.tight_layout()
-            self.fig.canvas.draw()
 
+        self.axdis.xaxis.set_major_locator(AutoLocator())
+        self.axdis.xaxis.set_major_formatter(ScalarFormatter())
+        self.axdis.relim()
+        self.axdis.autoscale_view()
+        self.axdis.tick_params(axis='y', which='both', left=False, right=False, labelleft=False)
+        self.axdis.tick_params(axis='both', which='both',bottom=False,top=False)
+        # reset axdis ticks, labels
 
         self.counts_max = 10
         # filter out zero data
         self.n_bins = np.min((self.points_total//4, 100))
-        self.n, self.bins, self.patches = self.axdis.hist(self.data_y[:self.points_done, 0], orientation='horizontal',\
-             bins=self.n_bins, color='grey', range=(self.ylim_min, self.ylim_max))
-        self.axdis.set_xlim(0, self.counts_max)
+        self.n, self.bins = np.histogram(self.data_y[:self.points_done, 0],
+                        bins=self.n_bins, range=(self.ylim_min, self.ylim_max))
 
-        for patch in self.patches:
-            patch.set_animated(True)
-            self.blit_axes.append(self.axdis)
-            self.blit_artists.append(patch)
+        self.verts = np.empty((self.n_bins, 4, 2))
+        self.update_verts(self.bins, self.n, self.verts)
+        self.poly = matplotlib.collections.PolyCollection(self.verts, facecolors='grey', animated=True)
+        self.axdis.add_collection(self.poly)
+        self.axdis.set_xlim(0, self.counts_max)
+        self.blit_axes.append(self.axdis)
+        self.blit_artists.append(self.poly)
+        # use collection to manage hist patches
+
 
 
         self.poisson_fit_line, = self.axdis.plot(self.data_y[:, 0], [0 for data in self.data_y], color='orange', animated=True, alpha=1)
@@ -698,10 +707,15 @@ class LiveAndDisLive(LivePlotGUI):
 
             if popt[1]<=0:
                 ratio = 0
+                result = f'$\\sigma$={ratio:.2f}$\\sqrt{{\\mu}}$'
             else:
                 ratio = popt[2]/np.sqrt(popt[1])
+                if ratio <= 0.01: # ratio<1 means not a poisson distribution
+                    ratio = popt[2]/popt[1]
+                    result = f'$\\sigma$={ratio:.1e}$\\mu$'
+                else:
+                    result = f'$\\sigma$={ratio:.2f}$\\sqrt{{\\mu}}$'
 
-            result = f'$\\sigma$={ratio:.2f}$\\sqrt{{\\mu}}$'
             if not hasattr(self, 'text'):
                 self.text = self.axdis.text(0.5, 1.01, 
                                                   result, transform=self.axdis.transAxes, 
@@ -713,33 +727,31 @@ class LiveAndDisLive(LivePlotGUI):
 
         
     def update_core(self):
-
-        new_counts, _ = np.histogram(self.data_y[:self.points_done, 0], bins=self.bins)
-        bin_centers = (self.bins[:-1] + self.bins[1:]) / 2.0
         
-        if self.relim() or (self.repeat_done!=self.data_generator.repeat_done) or (np.max(new_counts) > self.counts_max):
+        if self.relim_dis() or self.relim() or (self.repeat_done!=self.data_generator.repeat_done):
 
             self.ylabel = self.labels[1] + f' x{self.data_generator.repeat_done + 1}'
             self.repeat_done = self.data_generator.repeat_done
             self.axes.set_ylabel(self.ylabel)
-            self.relim_dis()
-            self.update_dis()
+            self.n, self.bins = np.histogram(self.data_y[:self.points_done, 0],
+                            bins=self.n_bins, range=(self.ylim_min_dis, self.ylim_max_dis))
+
             self.counts_max = np.max((np.max(self.n) + 5, int(np.max(self.n)*1.5)))
             self.axdis.set_xlim(0, self.counts_max)
-
             self.fig.canvas.draw()
             self.bg_fig = self.fig.canvas.copy_from_bbox(self.fig.bbox)  # update ylim so need redraw
 
-        elif self.relim_dis():
+        else: # no need to update bins positions
+            self.n, _ = np.histogram(self.data_y[:self.points_done, 0],
+                            bins=self.bins)
+            if np.max(self.n) > self.counts_max:
+                self.counts_max = np.max((np.max(self.n) + 5, int(np.max(self.n)*1.5)))
+                self.axdis.set_xlim(0, self.counts_max)
 
-            self.update_dis()
-            self.counts_max = np.max((np.max(self.n) + 5, int(np.max(self.n)*1.5)))
-            self.axdis.set_xlim(0, self.counts_max)
+                self.fig.canvas.draw()
+                self.bg_fig = self.fig.canvas.copy_from_bbox(self.fig.bbox)  # update ylim so need redraw  
 
-            self.fig.canvas.draw()
-            self.bg_fig = self.fig.canvas.copy_from_bbox(self.fig.bbox)  # update ylim so need redraw
 
-            
         self.fig.canvas.restore_region(self.bg_fig)
         for i, line in enumerate(self.lines):
             line.set_data(self.data_x, self.data_y[:, i])
@@ -748,25 +760,8 @@ class LiveAndDisLive(LivePlotGUI):
         self.update_fit()
 
     def update_dis(self):
-        counts, bins = np.histogram(self.data_y[:self.points_done, 0],
-                                    bins=self.n_bins, range=(self.ylim_min_dis, self.ylim_max_dis))
-        self.n = counts
-        self.bins = bins
-
-        for i, patch in enumerate(self.patches):
-            # bins[i] ~ bins[i+1] y
-            y0 = bins[i]
-            dy = bins[i+1] - bins[i]
-
-            # x 0 to counts[i]
-            x0 = 0
-            dx = counts[i]
-
-            patch.set_x(x0)
-            patch.set_width(dx)
-            patch.set_y(y0)
-            patch.set_height(dy)
-
+        self.update_verts(self.bins, self.n, self.verts)
+        self.poly.set_verts(self.verts)
 
     def relim_dis(self):
         # return 1 if need redraw, only calculate relim of main data (self.data_y[:, 0])
@@ -904,16 +899,11 @@ class PLDisLive(LivePlotGUI):
                    self.y_array[-1]+half_step_y, self.y_array[0]-half_step_y] #left, right, bottom, up
 
         if self.have_init_fig:
-            # such as in GUI
-            self.cbar = self.fig.axes[0].images[0].colorbar
-            self.axright = self.fig.axes[1]
+            self.axdis = self.fig.axes[1]
             self.cax = self.fig.axes[2]
-
-            self.line = self.fig.axes[0].images[0]
-            self.line.set(cmap = cmap, extent=extents)
-            self.line.set_array(self.data_y.reshape(self.data_shape))
-            self.line.set_animated(True)
-            self.cbar.update_normal(self.line)
+            self.line = self.fig.axes[0].imshow(np.zeros(self.data_shape), animated=True, alpha=1, cmap=cmap, extent=extents)
+            self.fig.canvas.draw()
+            self.cbar = self.fig.colorbar(self.line, cax = self.cax)
 
             self.fig.axes[0].set_xlim((extents[0], extents[1]))
             self.fig.axes[0].set_ylim((extents[2], extents[3]))
@@ -923,7 +913,7 @@ class PLDisLive(LivePlotGUI):
             width, height = self.fig.get_size_inches()
             divider = make_axes_locatable(self.axes)        
             self.cax = divider.append_axes("right", size="5%", pad=0.15)
-            self.axright = divider.append_axes("top", size="20%", pad=0.25)
+            self.axdis = divider.append_axes("top", size="20%", pad=0.25)
             self.fig.set_size_inches(width, height*1.25)
             self.line = self.axes.imshow(np.zeros(self.data_shape), animated=True, alpha=1, cmap=cmap, extent=extents)
             self.fig.tight_layout()
@@ -935,64 +925,75 @@ class PLDisLive(LivePlotGUI):
 
         self.counts_max = 10
         # filter out zero data
-        self.axright.xaxis.set_major_locator(AutoLocator())
-        self.axright.xaxis.set_major_formatter(ScalarFormatter())
-        self.axright.relim()
-        self.axright.autoscale_view()
-        # reset axright ticks, labels
+        self.axdis.xaxis.set_major_locator(AutoLocator())
+        self.axdis.xaxis.set_major_formatter(ScalarFormatter())
+        self.axdis.relim()
+        self.axdis.autoscale_view()
+        # reset axdis ticks, labels
         self.n_bins = np.min((self.points_total//4, 100))
-        self.n, self.bins, self.patches = self.axright.hist(self.data_y[:self.points_done], orientation='vertical',\
-             bins=self.n_bins, color='grey', range=(self.ylim_min, self.ylim_max))
-        self.axright.set_ylim(0, self.counts_max)
+
+        self.n, self.bins = np.histogram(self.data_y[:self.points_done, 0],
+                        bins=self.n_bins, range=(self.ylim_min, self.ylim_max))
+
+        self.verts = np.empty((self.n_bins, 4, 2))
+        self.update_verts(self.bins, self.n, self.verts, mode='vertical')
+        self.poly = matplotlib.collections.PolyCollection(self.verts, facecolors='grey', animated=True)
+        self.axdis.add_collection(self.poly)
+        self.axdis.set_xlim(0, self.counts_max)
+        self.blit_axes.append(self.axdis)
+        self.blit_artists.append(self.poly)
 
         self.blit_axes.append(self.axes)
         self.blit_artists.append(self.line)
-        for patch in self.patches:
-            patch.set_animated(True)
-            self.blit_axes.append(self.axright)
-            self.blit_artists.append(patch)
+
 
         self.cbar.set_label(self.ylabel + ' x1')
         self.axes.set_ylabel(self.xlabel[1])
         self.axes.set_xlabel(self.xlabel[0])
 
-        self.axright.tick_params(axis='both', which='both',bottom=False,top=False)
+        self.axdis.tick_params(axis='both', which='both',bottom=False,top=False)
 
         
     def update_core(self):
-        new_counts, _ = np.histogram(self.data_y[:self.points_done], bins=self.bins)
-        self.n[:] = new_counts 
 
-        if self.relim() or (np.max(self.n) > self.counts_max) or (self.repeat_done!=self.data_generator.repeat_done):
-            self.counts_max = np.max((np.max(self.n) + 5, int(np.max(self.n)*1.5)))
-            self.axright.set_ylim(0, self.counts_max)
+        if self.relim() or (self.repeat_done!=self.data_generator.repeat_done):
 
             self.ylabel = self.labels[1] + f' x{self.data_generator.repeat_done + 1}'
             self.repeat_done = self.data_generator.repeat_done
             self.cbar.set_label(self.ylabel)
 
-            self.fig.canvas.draw() 
-            self.bg_fig = self.fig.canvas.copy_from_bbox(self.fig.bbox)
+            self.n, self.bins = np.histogram(self.data_y[:self.points_done, 0],
+                            bins=self.n_bins, range=(self.ylim_min, self.ylim_max))
+            self.counts_max = np.max((np.max(self.n) + 5, int(np.max(self.n)*1.5)))
+            self.axdis.set_ylim(0, self.counts_max)
+            self.fig.canvas.draw()
+            self.bg_fig = self.fig.canvas.copy_from_bbox(self.fig.bbox)  # update ylim so need redraw
+
+        else: # no need to update bins positions
+            self.n, _ = np.histogram(self.data_y[:self.points_done, 0],
+                            bins=self.bins)
+            if np.max(self.n) > self.counts_max:
+                self.counts_max = np.max((np.max(self.n) + 5, int(np.max(self.n)*1.5)))
+                self.axdis.set_ylim(0, self.counts_max)
+
+                self.fig.canvas.draw()
+                self.bg_fig = self.fig.canvas.copy_from_bbox(self.fig.bbox)  # update ylim so need redraw    
+
 
         self.fig.canvas.restore_region(self.bg_fig)
 
         self.line.set_array(self.data_y.reshape(self.data_shape))
         # other data just np.nan and controlled by set_bad
    
-        for count, patch in zip(self.n, self.patches):
-            patch.set_height(count)        
+        self.update_dis()    
+
+    def update_dis(self):
+        self.update_verts(self.bins, self.n, self.verts, mode='vertical')
+        self.poly.set_verts(self.verts)  
 
     def set_ylim(self):
         self.line.set_clim(vmin=self.ylim_min, vmax=self.ylim_max)
-        self.n, self.bins, self.patches = self.axright.hist(self.data_y[:self.points_done], orientation='vertical',\
-             bins=self.n_bins, color='grey', range=(self.ylim_min, self.ylim_max))
-        self.axright.set_xlim(self.ylim_min, self.ylim_max)
-
-        self.blit_artists[:] = self.blit_artists[:-self.n_bins]
-        for patch in self.patches:
-            patch.set_animated(True) 
-            self.blit_artists.append(patch)
-
+        self.axdis.set_xlim(self.ylim_min, self.ylim_max)
         
     def choose_selector(self):
 
@@ -1004,16 +1005,16 @@ class PLDisLive(LivePlotGUI):
 
         y_min = np.nanmin(self.data_y[:self.points_done])
         y_max = np.nanmax(self.data_y[:self.points_done])
-        self.line_min = self.axright.axvline(y_min, color='red', linewidth=6, alpha=0.3)
-        self.line_max = self.axright.axvline(y_max, color='red', linewidth=6, alpha=0.3)
+        self.line_min = self.axdis.axvline(y_min, color='red', linewidth=6, alpha=0.3)
+        self.line_max = self.axdis.axvline(y_max, color='red', linewidth=6, alpha=0.3)
 
-        self.line_l = self.axright.axvline(self.ylim_min, color=cmap(0), linewidth=6)
-        self.line_h = self.axright.axvline(self.ylim_max, color=cmap(0.95), linewidth=6)
+        self.line_l = self.axdis.axvline(self.ylim_min, color=cmap(0), linewidth=6)
+        self.line_h = self.axdis.axvline(self.ylim_max, color=cmap(0.95), linewidth=6)
 
-        self.axright.set_xticks([y_min, y_max])
-        self.axright.set_xticklabels([f'{xtick:.0f}' for xtick in [y_min, y_max]])
+        self.axdis.set_xticks([y_min, y_max])
+        self.axdis.set_xticklabels([f'{xtick:.0f}' for xtick in [y_min, y_max]])
 
-        self.drag_line = DragVLine(self.line_l, self.line_h, self.update_clim, self.axright)
+        self.drag_line = DragVLine(self.line_l, self.line_h, self.update_clim, self.axdis)
         self.fig.canvas.draw()
         # must be here to display self.line_l etc. after plot done, don't know why?
         

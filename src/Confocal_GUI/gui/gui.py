@@ -43,20 +43,21 @@ class MplCanvas(FigureCanvasQTAgg):
             
         if mode=='PL':
             
-            line = self.axes.imshow(1e4*np.random.random((100, 100)), animated=True, cmap='inferno')
+            line = self.axes.imshow(0*np.random.random((100, 100)), animated=True, cmap='inferno')
             cbar = self.fig.colorbar(line)
             cbar.set_label(labels[2])
         elif mode=='PLdis':
             
             divider = make_axes_locatable(self.axes)
-            axright = divider.append_axes("top", size="20%", pad=0.25)
+            axdis = divider.append_axes("top", size="20%", pad=0.25)
             cax = divider.append_axes("right", size="5%", pad=0.15)
             
-            line = self.axes.imshow(1e4*np.random.random((100, 100)), animated=True, cmap='inferno')
+            line = self.axes.imshow(0*np.random.random((100, 100)), animated=True, cmap='inferno')
             cbar = self.fig.colorbar(line, cax = cax)
             cbar.set_label(labels[2])
         elif mode=='PLE':
             self.axes.set_ylim(0, 1000)
+            self.axes.set_xlim(0, 100)
         elif mode=='Live':
             divider = make_axes_locatable(self.axes)
             axdis = divider.append_axes("right", size="20%", pad=0.1, sharey=self.axes)
@@ -64,6 +65,7 @@ class MplCanvas(FigureCanvasQTAgg):
             axdis.tick_params(axis='both', which='both',bottom=False,top=False)
 
             self.axes.set_ylim(0, 1000)
+            self.axes.set_xlim(0, 100)
 
             
         self.fig.tight_layout()
@@ -111,8 +113,6 @@ class MainWindow(QMainWindow):
         self.measurement_PLE = measurement_PLE
         self.measurement_Live = measurement_Live
         self.ui = ui
-        self.is_plot_done = True
-        self.mutex = QMutex()
         ui_path = os.path.join(os.path.dirname(__file__), self.ui)
         uic.loadUi(ui_path, self)
 
@@ -583,39 +583,34 @@ class MainWindow(QMainWindow):
             
         
     def update_plot(self):
-        with QMutexLocker(self.mutex):
-            # basically copy of live_plot.plot() method, to handle the update in pyqt thread
-            self.is_plot_done = False
-            if not self.cur_live_plot.data_generator.is_done:
-                if (self.cur_live_plot.data_generator.points_done == self.cur_live_plot.points_done):
-                    # if no new data then no update
-                    return
+        # basically copy of live_plot.plot() method, to handle the update in pyqt thread
+        if not self.cur_live_plot.data_generator.is_done:
+            if (self.cur_live_plot.data_generator.points_done == self.cur_live_plot.points_done):
+                # if no new data then no update
+                return
 
+            self.cur_live_plot.update_figure()
+            self.estimate_PL_time()
+            self.estimate_PLE_time()
+            # update estimate finish time
+        else:
+            if not self.timer.isActive():
+                return
+            else:
+                self.timer.stop()
                 self.cur_live_plot.update_figure()
                 self.estimate_PL_time()
                 self.estimate_PLE_time()
-                # update estimate finish time
-            else:
-                if not self.timer.isActive():
-                    self.is_plot_done = True
-                    return
-                else:
-                    self.timer.stop()
-                    self.cur_live_plot.update_figure()
-                    self.estimate_PL_time()
-                    self.estimate_PLE_time()
+                self.cur_live_plot.data_generator.stop()  
+                self.cur_live_plot.after_plot()
+                setattr(self, f'data_figure_{self.cur_plot}', DataFigure(self.cur_live_plot))
 
-                    self.cur_live_plot.data_generator.stop()  
-                    self.cur_live_plot.after_plot()
-                    setattr(self, f'data_figure_{self.cur_plot}', DataFigure(self.cur_live_plot))
-                    self.is_plot_done = True
-
-                    if hasattr(self, 'live_plot_PLE'):
-                        self.checkBox_is_stabilizer.setDisabled(False)
-                        self.doubleSpinBox_wavelength.setDisabled(False)
-                    if hasattr(self, 'live_plot_PL'):
-                        self.checkBox_is_bind.setChecked(False)
-                        self.checkBox_is_bind.setDisabled(False)
+                if hasattr(self, 'live_plot_PLE'):
+                    self.checkBox_is_stabilizer.setDisabled(False)
+                    self.doubleSpinBox_wavelength.setDisabled(False)
+                if hasattr(self, 'live_plot_PL'):
+                    self.checkBox_is_bind.setChecked(False)
+                    self.checkBox_is_bind.setDisabled(False)
     
     def stop_plot(self, clicked=True, select_stop=None):
         self.print_log(f'Plot stopped')
@@ -630,6 +625,7 @@ class MainWindow(QMainWindow):
             if hasattr(self, f'live_plot_{select_stop}'):
                 plot_handle = getattr(self, f'live_plot_{select_stop}')
                 plot_handle.stop()
+                self.update_plot()
 
         if hasattr(self, 'live_plot_PLE'):
             self.checkBox_is_stabilizer.setDisabled(False)
