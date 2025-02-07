@@ -57,6 +57,14 @@ class MplCanvas(FigureCanvasQTAgg):
             cbar.set_label(labels[2])
         elif mode=='PLE':
             self.axes.set_ylim(0, 1000)
+        elif mode=='Live':
+            divider = make_axes_locatable(self.axes)
+            axdis = divider.append_axes("right", size="20%", pad=0.1, sharey=self.axes)
+            axdis.tick_params(axis='y', labelleft=False)
+            axdis.tick_params(axis='both', which='both',bottom=False,top=False)
+
+            self.axes.set_ylim(0, 1000)
+
             
         self.fig.tight_layout()
             
@@ -132,7 +140,7 @@ class MainWindow(QMainWindow):
         figures = [
             {'child_name': 'widget_figure_PL', 'labels': ['X', 'Y', PL_y_label], 'canvas_name': 'canvas_PL', 'mode': 'PLdis'},
             {'child_name': 'widget_figure_PLE', 'labels': [PLE_x_label, PLE_y_label], 'canvas_name': 'canvas_PLE', 'mode': 'PLE'},
-            {'child_name': 'widget_figure_Live', 'labels': ['Data', 'Counts'], 'canvas_name': 'canvas_Live', 'mode': 'PLE'} 
+            {'child_name': 'widget_figure_Live', 'labels': ['Data (1)', 'Counts'], 'canvas_name': 'canvas_Live', 'mode': 'Live'} 
         ]
 
         for fig in figures:
@@ -560,7 +568,7 @@ class MainWindow(QMainWindow):
         self.measurement_Live.load_params(data_x=data_x, exposure=self.exposure_Live, repeat=self.repeat,\
             counter_mode=self.counter_mode, data_mode=self.data_mode, relim_mode=self.relim_Live)
         data_y = self.measurement_Live.data_y
-        self.live_plot_Live = PLELive(labels=['Data', f'Counts/{self.exposure_Live:.2f}s'], \
+        self.live_plot_Live = LiveAndDisLive(labels=['Data', f'Counts/{self.exposure_Live:.2f}s'], \
                             update_time=0.01, data_generator=self.measurement_Live, data=[data_x, data_y],\
                                          fig=self.canvas_Live.fig, config_instances=self.config_instances, relim_mode = self.relim_Live)
         

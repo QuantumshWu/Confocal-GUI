@@ -18,7 +18,7 @@ class RFWithPulseMeasurement(BaseMeasurement):
     def device_to_state(self, duration):
         # move device state to x from data_x, defaul frequency in GHz
         self.rf.on = True
-        self.rf.frequency = self.frequency*1e9
+        self.rf.frequency = self.frequency
         self.pulse.x = duration
         self.pulse.on_pulse()
 
@@ -26,7 +26,7 @@ class RFWithPulseMeasurement(BaseMeasurement):
     def to_initial_state(self):
         # move device/data state to initial state before measurement
         self.rf.on = True
-        self.rf.frequency = self.frequency*1e9
+        self.rf.frequency = self.frequency
 
 
     def to_final_state(self):
@@ -78,7 +78,7 @@ class RFWithPulseMeasurement(BaseMeasurement):
         self.update_mode = update_mode
 
         self.power = self.rf.power if power is None else power
-        self.frequency = self.rf.frequency if frequency is None else frequency
+        self.frequency = self.rf.frequency if frequency is None else frequency*1e9
 
         if pulse_file is not None:
             self.pulse.load_from_file(pulse_file)

@@ -25,6 +25,8 @@ import numpy as np
 from PIL import Image as PILImage
 from scipy.optimize import curve_fit
 from scipy.signal import find_peaks
+import warnings
+from scipy.optimize import OptimizeWarning
 from IPython import get_ipython
 from IPython.display import display, HTML, clear_output, Javascript, Image as IPImage
 
@@ -590,6 +592,8 @@ class LiveAndDisLive(LivePlotGUI):
     # default live_plot class for live() function
     
     def init_core(self):
+        warnings.filterwarnings("ignore", category=OptimizeWarning)
+
         self.lines = self.axes.plot(self.data_x, self.data_y, animated=True, alpha=1)
         for i, line in enumerate(self.lines):
             line.set_color(self.line_colors[i])
@@ -601,31 +605,200 @@ class LiveAndDisLive(LivePlotGUI):
 
         self.axes.set_ylabel(self.ylabel + ' x1')
         self.axes.set_xlabel(self.xlabel)
-        
-    def update_core(self):
-        
-        if (self.repeat_done!=self.data_generator.repeat_done):
-            self.ylabel = self.labels[1] + f' x{self.data_generator.repeat_done + 1}'
-            self.repeat_done = self.data_generator.repeat_done
-            self.axes.set_ylabel(self.ylabel)
 
-            self.relim()
-            self.fig.canvas.draw()
-            self.bg_fig = self.fig.canvas.copy_from_bbox(self.fig.bbox)  # update ylim so need redraw
+
+        if self.have_init_fig:
+            # such as in GUI
+
+            self.axdis = self.fig.axes[1]
+            self.axdis.xaxis.set_major_locator(AutoLocator())
+            self.axdis.xaxis.set_major_formatter(ScalarFormatter())
+            self.axdis.relim()
+            self.axdis.autoscale_view()
+            self.axdis.tick_params(axis='y', labelleft=False)
+            self.axdis.tick_params(axis='both', which='both',bottom=False,top=False)
 
         else:
 
-            if self.relim():
-                self.fig.canvas.draw()
-                self.bg_fig = self.fig.canvas.copy_from_bbox(self.fig.bbox)  # update ylim so need redraw
+            divider = make_axes_locatable(self.axes)        
+            self.axdis = divider.append_axes("right", size="20%", pad=0.1, sharey=self.axes)
+            self.axdis.xaxis.set_major_locator(AutoLocator())
+            self.axdis.xaxis.set_major_formatter(ScalarFormatter())
+            self.axdis.relim()
+            self.axdis.autoscale_view()
+            self.axdis.tick_params(axis='y', labelleft=False)
+            self.axdis.tick_params(axis='both', which='both',bottom=False,top=False)
+            # reset axdis ticks, labels
+            self.fig.tight_layout()
+            self.fig.canvas.draw()
+
+
+        self.counts_max = 10
+        # filter out zero data
+        self.n_bins = np.min((self.points_total//4, 100))
+        self.n, self.bins, self.patches = self.axdis.hist(self.data_y[:self.points_done, 0], orientation='horizontal',\
+             bins=self.n_bins, color='grey', range=(self.ylim_min, self.ylim_max))
+        self.axdis.set_xlim(0, self.counts_max)
+
+        for patch in self.patches:
+            patch.set_animated(True)
+            self.blit_axes.append(self.axdis)
+            self.blit_artists.append(patch)
+
+
+        self.poisson_fit_line, = self.axdis.plot(self.data_y[:, 0], [0 for data in self.data_y], color='orange', animated=True, alpha=1)
+        self.blit_axes.append(self.axdis)
+        self.blit_artists.append(self.poisson_fit_line)
+
+        self.points_done_fits = self.points_done
+        self.ylim_min_dis = self.ylim_min
+        self.ylim_max_dis = self.ylim_max
+
+
+    @staticmethod
+    def _gauss_func(x, A, mu, sigma):
+        return A * np.exp(- (x - mu)**2 / (2.0 * sigma**2))
+
+
+    def update_fit(self):
+        # update fitting
+
+        if not (self.points_done - self.points_done_fits)>=10:
+            return
+        else:
+            self.points_done_fits = self.points_done
+
+        mask = self.n > 0
+        bin_centers = (self.bins[:-1] + self.bins[1:]) / 2.0
+        bin_centers_fit = bin_centers[mask]
+        counts_fit = self.n[mask]
+
+        
+        if len(bin_centers_fit) == 0:
+            popt = None
+        else:
+            try:
+                popt, pcov = curve_fit(
+                    self._gauss_func,
+                    bin_centers_fit,
+                    counts_fit,
+                    p0=[np.max(counts_fit), np.mean(bin_centers_fit), (np.max(bin_centers_fit)-np.min(bin_centers_fit))/4],
+                    bounds=([0, np.min(bin_centers_fit), (np.max(bin_centers_fit)-np.min(bin_centers_fit))/10], \
+                            [np.max(counts_fit)*4, np.max(bin_centers_fit), (np.max(bin_centers_fit)-np.min(bin_centers_fit))*10])
+                )
+            except Exception as e:
+                popt = None
+
+        if popt is not None:
+            x_fit = np.sort(np.append(np.linspace(self.ylim_min, self.ylim_max, 100), bin_centers))
+            y_fit = self._gauss_func(x_fit, *popt)
+            
+            if hasattr(self, 'poisson_fit_line') and self.poisson_fit_line is not None:
+                self.poisson_fit_line.set_data(y_fit, x_fit)
+
+            if popt[1]<=0:
+                ratio = 0
+            else:
+                ratio = popt[2]/np.sqrt(popt[1])
+
+            result = f'$\\sigma$={ratio:.2f}$\\sqrt{{\\mu}}$'
+            if not hasattr(self, 'text'):
+                self.text = self.axdis.text(0.5, 1.01, 
+                                                  result, transform=self.axdis.transAxes, 
+                                                  color='orange', ha='center', va='bottom', animated=True)
+                self.blit_artists.append(self.text)
+                self.blit_axes.append(self.axdis)
+            else:
+                self.text.set_text(result)
+
+        
+    def update_core(self):
+
+        new_counts, _ = np.histogram(self.data_y[:self.points_done, 0], bins=self.bins)
+        bin_centers = (self.bins[:-1] + self.bins[1:]) / 2.0
+        
+        if self.relim() or (self.repeat_done!=self.data_generator.repeat_done) or (np.max(new_counts) > self.counts_max):
+
+            self.ylabel = self.labels[1] + f' x{self.data_generator.repeat_done + 1}'
+            self.repeat_done = self.data_generator.repeat_done
+            self.axes.set_ylabel(self.ylabel)
+            self.relim_dis()
+            self.update_dis()
+            self.counts_max = np.max((np.max(self.n) + 5, int(np.max(self.n)*1.5)))
+            self.axdis.set_xlim(0, self.counts_max)
+
+            self.fig.canvas.draw()
+            self.bg_fig = self.fig.canvas.copy_from_bbox(self.fig.bbox)  # update ylim so need redraw
+
+        elif self.relim_dis():
+
+            self.update_dis()
+            self.counts_max = np.max((np.max(self.n) + 5, int(np.max(self.n)*1.5)))
+            self.axdis.set_xlim(0, self.counts_max)
+
+            self.fig.canvas.draw()
+            self.bg_fig = self.fig.canvas.copy_from_bbox(self.fig.bbox)  # update ylim so need redraw
 
             
         self.fig.canvas.restore_region(self.bg_fig)
         for i, line in enumerate(self.lines):
             line.set_data(self.data_x, self.data_y[:, i])
+ 
+        self.update_dis()
+        self.update_fit()
 
-    def set_ylim(self):
+    def update_dis(self):
+        counts, bins = np.histogram(self.data_y[:self.points_done, 0],
+                                    bins=self.n_bins, range=(self.ylim_min_dis, self.ylim_max_dis))
+        self.n = counts
+        self.bins = bins
+
+        for i, patch in enumerate(self.patches):
+            # bins[i] ~ bins[i+1] y
+            y0 = bins[i]
+            dy = bins[i+1] - bins[i]
+
+            # x 0 to counts[i]
+            x0 = 0
+            dx = counts[i]
+
+            patch.set_x(x0)
+            patch.set_width(dx)
+            patch.set_y(y0)
+            patch.set_height(dy)
+
+
+    def relim_dis(self):
+        # return 1 if need redraw, only calculate relim of main data (self.data_y[:, 0])
+        
+        if 0<self.points_done<self.points_total:
+            max_data_y = np.nanmax(self.data_y[:self.points_done, 0])
+            min_data_y = np.nanmin(self.data_y[:self.points_done, 0])
+        else:
+            max_data_y = np.nanmax(self.data_y[:, 0])
+            min_data_y = np.nanmin(self.data_y[:, 0])
+
+        if max_data_y == 0:
+            return False
+        # no new data
+
+        data_range = max_data_y - min_data_y
+
+
+        if 0<=(self.ylim_max_dis - max_data_y)<=0.2*data_range and 0<=(min_data_y - self.ylim_min_dis)<=0.2*data_range:
+            return False
+
+        self.ylim_min_dis = min_data_y - 0.1*data_range
+        self.ylim_max_dis = max_data_y + 0.1*data_range
+
+        return True
+
+
+
+    def set_ylim(self):        
         self.axes.set_ylim(self.ylim_min, self.ylim_max)
+        self.axdis.set_ylim(self.ylim_min, self.ylim_max)
+
         
     def choose_selector(self):
         self.area = AreaSelector(self.fig.axes[0])
@@ -1299,6 +1472,8 @@ class DataFigure():
                 self.unit = '1'
         else:
             self.unit = '1'
+
+        warnings.filterwarnings("ignore", category=OptimizeWarning)
         
 
     def xlim(self, x_min, x_max):
