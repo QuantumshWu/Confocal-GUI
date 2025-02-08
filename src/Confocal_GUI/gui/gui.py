@@ -821,7 +821,8 @@ class MainWindow(QMainWindow):
         _wavelength = self.data_figure_PLE.selector[1].wavelength
         
         if _wavelength is not None:
-            self.doubleSpinBox_wavelength.setValue(_wavelength)
+            self.doubleSpinBox_wavelength.setValue(self.data_figure_PLE.transform_back(_wavelength))
+            # transform back to original unit
             self.print_log(f'{self.measurement_PLE.x_name} was read')
         else:
             self.print_log(f'No {self.measurement_PLE.x_name} to read')
@@ -878,9 +879,10 @@ class MainWindow(QMainWindow):
             self.print_log(f'no area to read range')
             return
         
+        new_xl, new_xh = np.sort([self.data_figure_PLE.transform_back(xl), self.data_figure_PLE.transform_back(xh)])
 
-        self.doubleSpinBox_wl.setValue(xl)
-        self.doubleSpinBox_wu.setValue(xh)
+        self.doubleSpinBox_wl.setValue(new_xl)
+        self.doubleSpinBox_wu.setValue(new_xh)
 
 
         self.print_log(f'{self.measurement_PLE.measurement_name} range updated')

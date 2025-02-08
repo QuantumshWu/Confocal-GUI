@@ -177,35 +177,38 @@ class LoadAcquire(threading.Thread):
 
         loaded = np.load(address, allow_pickle=True)
         keys = loaded.files
-        print("Keys in npz file:", keys)
-        print(loaded['info'].item())
+        try:
+            print("Keys in npz file:", keys)
+            print(loaded['info'].item())
 
 
-        self.info = loaded['info'].item()
-        # important information to be saved with figures 
-        self.data_x = loaded['data_x']
-        self.data_y = loaded['data_y']
-        if isinstance(self.data_x[0], numbers.Number):
-            self.plot_type = '1D'
-        else:
-            self.plot_type = '2D'
-            self.x_array = []
-            self.y_array = []
-            for x in self.data_x:
-                if x[0] not in self.x_array:
-                    self.x_array.append(x[0])
-                if x[1] not in self.y_array:
-                    self.y_array.append(x[1])    
+            self.info = loaded['info'].item()
+            # important information to be saved with figures 
+            self.data_x = loaded['data_x']
+            self.data_y = loaded['data_y']
+            if isinstance(self.data_x[0], numbers.Number):
+                self.plot_type = '1D'
+            else:
+                self.plot_type = '2D'
+                self.x_array = []
+                self.y_array = []
+                for x in self.data_x:
+                    if x[0] not in self.x_array:
+                        self.x_array.append(x[0])
+                    if x[1] not in self.y_array:
+                        self.y_array.append(x[1])    
 
-        self.exposure = loaded['info'].item()['exposure']
-        self.measurement_name = f'load_from_{address[:-4]}_'
+            self.exposure = loaded['info'].item()['exposure']
+            self.measurement_name = f'load_from_{address[:-4]}_'
 
-        self.daemon = True
-        self.is_running = True
-        self.is_done = False
-        self.points_done = len([data for data in self.data_y.flatten() if not np.isnan(data)]) 
-        #how many data points have done, will control display, filter out all np.nan which should be points not done
-        self.repeat_done = 0
+            self.daemon = True
+            self.is_running = True
+            self.is_done = False
+            self.points_done = len([data for data in self.data_y.flatten() if not np.isnan(data)]) 
+            #how many data points have done, will control display, filter out all np.nan which should be points not done
+            self.repeat_done = 0
+        except:
+            raise KeyError('Not a valid data_figure file to load')
         
     
     def run(self):
@@ -1473,7 +1476,7 @@ class DataFigure():
                 self.unit = '1'
         else:
             self.unit = '1'
-
+        self.unit_original = self.unit
         warnings.filterwarnings("ignore", category=OptimizeWarning)
         
 
@@ -1954,7 +1957,25 @@ class DataFigure():
         self.fig.axes[0].set_xlabel(new_xlabel)
 
         self.unit = new_unit
+        self._update_transform_back(conversion_map)
         self.fig.canvas.draw()
+
+    def _update_transform_back(self, conversion_map):
+        import functools
+        transforms = []
+        temp_unit = self.unit
+        while temp_unit != self.unit_original:
+            try:
+                next_unit, conv_func = conversion_map[temp_unit]
+            except KeyError:
+                print(f'Unit {temp_unit} not in conversion_map')
+                break
+            transforms.append(conv_func)
+            temp_unit = next_unit
+
+        self.transform_back = (lambda x: functools.reduce(lambda a, f: f(a), transforms, x)) if transforms else lambda x: x
+
+
 
  
 

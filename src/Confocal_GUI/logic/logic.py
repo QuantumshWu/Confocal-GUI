@@ -58,18 +58,18 @@ class PLEMeasurement(BaseMeasurement):
 
 
     def _load_params(self, data_x=None, exposure=0.1, config_instances=None, repeat=1, is_GUI=False, \
-        counter_mode='apd', data_mode='single', relim_mode='normal', update_mode='normal', is_plot=True):
+        counter_mode='apd', data_mode='single', relim_mode='tight', update_mode='normal', is_plot=True):
         """
         ple
 
         args:
         (data_x=None, exposure=0.1, config_instances=None, repeat=1, is_GUI=False,
-        counter_mode='apd', data_mode='single', relim_mode='normal'):
+        counter_mode='apd', data_mode='single', relim_mode='tight'):
 
         example:
         fig, data_figure = ple(data_x=np.arange(737.1-0.005, 737.1+0.005, 0.0005), exposure=0.1, 
                                 config_instances=config_instances, repeat=1, is_GUI=False, 
-                                counter_mode='apd', data_mode='single', relim_mode='normal')
+                                counter_mode='apd', data_mode='single', relim_mode='tight')
 
         """
         self.loaded_params = True
@@ -156,13 +156,13 @@ class ODMRMeasurement(BaseMeasurement):
 
         args:
         (data_x=None, exposure=0.1, power=-10, config_instances=None, repeat=1, is_GUI=False,
-        counter_mode='apd', data_mode='single', relim_mode='normal'):
+        counter_mode='apd', data_mode='single', relim_mode='tight'):
 
         example:
         fig, data_figure = odmr(data_x=np.arange(2.88-0.1, 2.88+0.1, 0.001), exposure=0.1, 
                                 power=-10, 
                                 config_instances=config_instances, repeat=1, is_GUI=False, 
-                                counter_mode='apd', data_mode='single', relim_mode='normal')
+                                counter_mode='apd', data_mode='single', relim_mode='tight')
 
         """
         self.loaded_params = True
@@ -260,7 +260,7 @@ class PLMeasurement(BaseMeasurement):
         args:
         (x_array=None, y_array=None, exposure=0.1, config_instances=None, repeat=1, wavelength=None, 
         is_GUI=False, is_dis=True, 
-        counter_mode='apd', data_mode='single', relim_mode='normal'):
+        counter_mode='apd', data_mode='single', relim_mode='tight'):
 
         example:
         fig, data_figure = pl(x_array = np.arange(-10, 10, 1), y_array = np.arange(-10, 10, 1), exposure=0.1, 
