@@ -309,7 +309,7 @@ class LiveMeasurement(BaseMeasurement):
             data_y = self.data_y
             data_generator = self
             liveplot = LiveAndDisLive(labels=[f'{self.x_name} ({self.x_unit})', f'Counts/{self.exposure}s'], \
-                                update_time=0.01, data_generator=data_generator, data=[data_x, data_y], \
+                                update_time=0.02, data_generator=data_generator, data=[data_x, data_y], \
                                 config_instances = self.config_instances, relim_mode=self.relim_mode)
 
             fig, selector = liveplot.plot()

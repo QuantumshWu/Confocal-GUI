@@ -369,6 +369,7 @@ class MainWindow(QMainWindow):
         time_str = current_date.replace('-', '_')
         self.lineEdit_save.setText(f'{time_str}/')
         self.estimate_PLE_time()
+        self.step_PLE_in_MHz()
         self.estimate_PL_time()
         self.update_stabilizer_step()
 

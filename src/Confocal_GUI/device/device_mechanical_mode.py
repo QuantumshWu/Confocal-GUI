@@ -41,8 +41,8 @@ class DLCpro(BaseLaser, metaclass=SingletonAndCloseMeta):
 
         self._wavelength = None
         self._piezo = self.dlc.laser1.dl.pc.voltage_set.get()
-        self.piezo_min = 68-20
-        self.piezo_max = 68+20
+        self.piezo_min = 68-25
+        self.piezo_max = 68+25
         # piezo range where DLCpro is mode-hop free
 
     def gui(self):
@@ -103,10 +103,10 @@ class LaserStabilizerDLCpro(BaseLaserStabilizer, metaclass=SingletonAndCloseMeta
         self.v_mid = 0.5*(self.laser.piezo_max + self.laser.piezo_min)
         self.v_min = self.laser.piezo_min + 0.05*(self.laser.piezo_max - self.laser.piezo_min)
         self.v_max = self.laser.piezo_min + 0.95*(self.laser.piezo_max - self.laser.piezo_min)
-        self.freq_thre = 0.005 #5MHz threshold defines when to return is_ready
+        self.freq_thre = 0.025 #25MHz threshold defines when to return is_ready
         self.P = 0.8 #scaling factor of PID control
         # leaves about 10% extra space
-        self.wavelength_lb = 737.09
+        self.wavelength_lb = 737.08
         self.wavelength_ub = 737.125
 
     def gui(self):
@@ -270,7 +270,7 @@ class USB2120(BaseCounter, metaclass=SingletonAndCloseMeta):
         import warnings 
 
         if port_config is None:
-            port_config = {'apd_signal':'/Dev2/ctr1', 'apd_gate':'/Dev2/PFI4'}
+            port_config = {'apd_signal':'/Dev2/PFI3', 'apd_gate':'/Dev2/PFI4', 'apd_gate_ref':'/Dev2/PFI1'}
         self.port_config = port_config
         self.nidaqmx = nidaqmx
 
@@ -291,7 +291,7 @@ class USB2120(BaseCounter, metaclass=SingletonAndCloseMeta):
 
     @property
     def valid_data_mode(self):
-        return ['single',]
+        return ['single', 'ref_div', 'ref_sub', 'dual']
 
 
     def set_timing(self, exposure):
@@ -302,7 +302,10 @@ class USB2120(BaseCounter, metaclass=SingletonAndCloseMeta):
             self.clock = 1e3 # sampling rate for edge counting, defines when transfer counts from DAQ to PC, should be not too large to accomdate long exposure
             self.sample_num = int(round(self.clock*exposure))
             self.task_counter_ctr.stop()
+            self.task_counter_ctr_ref.stop()
             self.task_counter_ctr.timing.cfg_samp_clk_timing(self.clock, source = '/Dev2/Ctr0InternalOutput', \
+                sample_mode=self.nidaqmx.constants.AcquisitionType.FINITE, samps_per_chan=self.sample_num)
+            self.task_counter_ctr_ref.timing.cfg_samp_clk_timing(self.clock, source = '/Dev2/Ctr0InternalOutput', \
                 sample_mode=self.nidaqmx.constants.AcquisitionType.FINITE, samps_per_chan=self.sample_num)
 
             self.exposure = exposure
@@ -320,11 +323,20 @@ class USB2120(BaseCounter, metaclass=SingletonAndCloseMeta):
 
 
             self.task_counter_ctr = self.nidaqmx.Task()
-            self.task_counter_ctr.ci_channels.add_ci_count_edges_chan(self.port_config['apd_signal'])
+            self.task_counter_ctr.ci_channels.add_ci_count_edges_chan('/Dev2/ctr1')
             # ctr1 source PFI3, gate PFI4
             self.task_counter_ctr.triggers.pause_trigger.dig_lvl_src = self.port_config['apd_gate']
+            self.task_counter_ctr.ci_channels.all.ci_count_edges_term = self.port_config['apd_signal']
             self.task_counter_ctr.triggers.pause_trigger.trig_type = self.nidaqmx.constants.TriggerType.DIGITAL_LEVEL
             self.task_counter_ctr.triggers.pause_trigger.dig_lvl_when = self.nidaqmx.constants.Level.LOW
+
+            self.task_counter_ctr_ref = self.nidaqmx.Task()
+            self.task_counter_ctr_ref.ci_channels.add_ci_count_edges_chan('/Dev2/ctr2')
+            # ctr2 source PFI3, gate PFI1
+            self.task_counter_ctr_ref.triggers.pause_trigger.dig_lvl_src = self.port_config['apd_gate_ref']
+            self.task_counter_ctr_ref.ci_channels.all.ci_count_edges_term = self.port_config['apd_signal']
+            self.task_counter_ctr_ref.triggers.pause_trigger.trig_type = self.nidaqmx.constants.TriggerType.DIGITAL_LEVEL
+            self.task_counter_ctr_ref.triggers.pause_trigger.dig_lvl_when = self.nidaqmx.constants.Level.LOW
 
 
             self.task_counter_clock = self.nidaqmx.Task()
@@ -333,6 +345,7 @@ class USB2120(BaseCounter, metaclass=SingletonAndCloseMeta):
             self.task_counter_clock.timing.cfg_implicit_timing(sample_mode=self.nidaqmx.constants.AcquisitionType.CONTINUOUS)
             self.task_counter_clock.start()
             self.task_counter_ctr.start()
+            self.task_counter_ctr_ref.start()
 
             self.counter_mode = counter_mode
 
@@ -354,13 +367,17 @@ class USB2120(BaseCounter, metaclass=SingletonAndCloseMeta):
 
             self.task_counter_clock.stop()
             self.task_counter_ctr.stop()
+            self.task_counter_ctr_ref.stop()
             self.task_counter_ctr.start()
+            self.task_counter_ctr_ref.start()
             self.task_counter_clock.start()
 
             time.sleep(exposure)
 
             counts_main_array = self.task_counter_ctr.read(number_of_samples_per_channel = self.sample_num)
+            counts_ref_array = self.task_counter_ctr_ref.read(number_of_samples_per_channel = self.sample_num)
             data_main = float(counts_main_array[-1] - counts_main_array[0])
+            data_ref = float(counts_ref_array[-1] - counts_ref_array[0])
 
 
         else:
@@ -370,6 +387,19 @@ class USB2120(BaseCounter, metaclass=SingletonAndCloseMeta):
         if self.data_mode == 'single':
 
             return [data_main,]
+
+        elif self.data_mode == 'ref_div':
+
+            if data_main==0 or data_ref==0:
+                return [0,]
+            else:
+                return [data_main/data_ref,]
+
+        elif self.data_mode == 'ref_sub':
+            return [(data_main - data_ref),]
+
+        elif self.data_mode == 'dual':
+            return [data_main, data_ref]
 
         else:
             print(f'can only be one of the {self.valid_data_mode}')

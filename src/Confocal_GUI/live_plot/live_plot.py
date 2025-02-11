@@ -199,7 +199,8 @@ class LoadAcquire(threading.Thread):
                         self.y_array.append(x[1])    
 
             self.exposure = loaded['info'].item()['exposure']
-            self.measurement_name = f'load_from_{address[:-4]}_'
+            short_addr = address[:-4].split('\\')[-1]
+            self.measurement_name = f'load_from_{short_addr}_'
 
             self.daemon = True
             self.is_running = True
@@ -391,7 +392,8 @@ class LivePlotGUI(ABC):
             self.axes = self.fig.axes[0]
             
         self.clear_all() # make sure no residual artist
-        self.axes.yaxis.set_major_formatter(SmartOffsetFormatter())
+        self.axes_formatter = SmartOffsetFormatter()
+        self.axes.yaxis.set_major_formatter(self.axes_formatter)
         # make sure no long ticks induce cut off of label
 
 
@@ -453,7 +455,7 @@ class LivePlotGUI(ABC):
 
         self.after_plot()
         LivePlotGUI.old_fig = self.fig
-
+        
         return self.fig, self.selector
 
     def after_plot(self):
@@ -567,7 +569,7 @@ class PLELive(LivePlotGUI):
             self.blit_axes.append(self.axes)
             self.blit_artists.append(line)
 
-        self.axes.set_xlim(np.nanmin(self.data_x), np.nanmax(self.data_x))
+        self.axes.set_xlim(self.data_x[0], self.data_x[-1]) # use index not min/max otherwise different orders under different units
         self.axes.set_ylim(self.ylim_min, self.ylim_max)
 
         self.axes.set_ylabel(self.ylabel + ' x1')
@@ -625,7 +627,6 @@ class LiveAndDisLive(LivePlotGUI):
         self.axes.set_ylabel(self.ylabel + ' x1')
         self.axes.set_xlabel(self.xlabel)
 
-
         if self.have_init_fig:
             # such as in GUI
             self.axdis = self.fig.axes[1]
@@ -665,6 +666,8 @@ class LiveAndDisLive(LivePlotGUI):
         self.points_done_fits = self.points_done
         self.ylim_min_dis = self.ylim_min
         self.ylim_max_dis = self.ylim_max
+
+        self.last_data_time = time.time()
 
 
     @staticmethod
@@ -719,14 +722,14 @@ class LiveAndDisLive(LivePlotGUI):
                 else:
                     result = f'$\\sigma$={ratio:.2f}$\\sqrt{{\\mu}}$'
 
-            if not hasattr(self, 'text'):
-                self.text = self.axdis.text(0.5, 1.01, 
+            if not hasattr(self, 'fit_text'):
+                self.fit_text = self.axdis.text(0.5, 1.01, 
                                                   result, transform=self.axdis.transAxes, 
                                                   color='orange', ha='center', va='bottom', animated=True)
-                self.blit_artists.append(self.text)
+                self.blit_artists.append(self.fit_text)
                 self.blit_axes.append(self.axdis)
             else:
-                self.text.set_text(result)
+                self.fit_text.set_text(result)
 
         
     def update_core(self):
@@ -754,17 +757,36 @@ class LiveAndDisLive(LivePlotGUI):
                 self.fig.canvas.draw()
                 self.bg_fig = self.fig.canvas.copy_from_bbox(self.fig.bbox)  # update ylim so need redraw  
 
-
         self.fig.canvas.restore_region(self.bg_fig)
         for i, line in enumerate(self.lines):
             line.set_data(self.data_x, self.data_y[:, i])
- 
+
+        self.update_data_meter()
         self.update_dis()
         self.update_fit()
 
     def update_dis(self):
         self.update_verts(self.bins, self.n, self.verts)
         self.poly.set_verts(self.verts)
+
+    def update_data_meter(self):
+        if (time.time()-self.last_data_time) < 0.2:
+            return
+        self.last_data_time = time.time()
+        newest_data = self.data_y[0, 0]
+        if 1e-4<=np.abs(newest_data)<=1e4:
+            newest_data_str = f'{newest_data:.{0 if self.axes_formatter.oom>=0 else -int(self.axes_formatter.oom)}f}'
+        else:
+            newest_data_str = f'{newest_data:.1e}'
+        if not hasattr(self, 'text'):
+            self.text = self.axes.text(0.9, 1.005, 
+                                              newest_data_str, transform=self.axes.transAxes, 
+                                              color='grey', ha='right', va='bottom', animated=True, fontsize=12)
+            self.blit_artists.append(self.text)
+            self.blit_axes.append(self.axes)
+        else:
+            self.text.set_text(newest_data_str)
+
 
     def relim_dis(self):
         # return 1 if need redraw, only calculate relim of main data (self.data_y[:, 0])
@@ -1466,6 +1488,10 @@ class DataFigure():
         self.fit_func = None
         self.text = None
         self.log_info = '' # information for log output
+        self._load_unit(True if (address is not None) else False)
+        warnings.filterwarnings("ignore", category=OptimizeWarning)
+
+    def _load_unit(self, is_load):
         if self.plot_type == '1D':
             x_label = self.live_plot.xlabel
             pattern = r'\((.+)\)$'
@@ -1476,8 +1502,30 @@ class DataFigure():
                 self.unit = '1'
         else:
             self.unit = '1'
-        self.unit_original = self.unit
-        warnings.filterwarnings("ignore", category=OptimizeWarning)
+
+        if not is_load:
+            self.unit_original = self.unit
+        else:
+            self.unit_original = self.info.get('unit_original', self.unit)
+            # load from saved file and has unit_original
+
+        if self.unit in ['GHz', 'nm', 'MHz']:
+            spl = 299792458  # m/s
+            self.conversion_map = {
+                'nm': ('GHz', lambda x: spl / x),
+                'GHz': ('MHz', lambda x: x * 1e3),
+                'MHz': ('nm', lambda x: spl / (x/1e3))
+            }
+        elif self.unit in ['ns', 'us', 'ms']:
+            self.conversion_map = {
+                'ms': ('ns', lambda x: x * 1e6),
+                'ns': ('us', lambda x: x / 1e3),
+                'us': ('ms', lambda x: x / 1e3)
+            }
+        else:
+            self.conversion_map = None
+
+        self._update_transform_back()
         
 
     def xlim(self, x_min, x_max):
@@ -1503,7 +1551,6 @@ class DataFigure():
             if not os.path.exists(directory):
                 os.makedirs(directory)
 
-
         self.fig.savefig(addr + self.measurement_name + time_str + '.jpg', dpi=300)
 
         if extra_info is None:
@@ -1514,13 +1561,13 @@ class DataFigure():
             x_label = self.fig.axes[0].get_xlabel()
             y_label = self.fig.axes[0].get_ylabel()
             np.savez(addr + self.measurement_name + time_str + '.npz', data_x = self.data_x, data_y = self.data_y, \
-                info = {**self.info, **extra_info, **{'x_label':x_label, 'y_label':y_label}})
+                info = {**self.info, **extra_info, **{'x_label':x_label, 'y_label':y_label, 'unit_original':self.unit_original}})
         else:
             x_label = self.fig.axes[0].get_xlabel()
             y_label = self.fig.axes[0].get_ylabel()
             z_label = self.fig.axes[0].images[0].colorbar.ax.yaxis.label.get_text()
             np.savez(addr + self.measurement_name + time_str + '.npz', data_x = self.data_x, data_y = self.data_y, \
-                info = {**self.info, **extra_info, **{'x_label':[x_label, y_label], 'y_label':z_label}})
+                info = {**self.info, **extra_info, **{'x_label':[x_label, y_label], 'y_label':z_label, 'unit_original':self.unit_original}})
 
         print(f'saved fig as {addr}{self.measurement_name}{time_str}.npz')
 
@@ -1927,28 +1974,10 @@ class DataFigure():
                 pass
 
     def change_unit(self):
-        if self.plot_type == '2D':
+        if (self.plot_type == '2D') or (self.conversion_map is None):
             return
 
-
-        if self.unit in ['GHz', 'nm', 'MHz']:
-            spl = 299792458  # m/s
-            conversion_map = {
-                'nm': ('GHz', lambda x: spl / x),
-                'GHz': ('MHz', lambda x: x * 1e3),
-                'MHz': ('nm', lambda x: spl / (x/1e3))
-            }
-        elif self.unit in ['ns', 'us', 'ms']:
-            conversion_map = {
-                'ms': ('ns', lambda x: x * 1e6),
-                'ns': ('us', lambda x: x / 1e3),
-                'us': ('ms', lambda x: x / 1e3)
-            }
-        else:
-            return
-
-
-        new_unit, conversion_func = conversion_map[self.unit]
+        new_unit, conversion_func = self.conversion_map[self.unit]
         self._update_unit(conversion_func)
 
         ax = self.fig.axes[0]
@@ -1957,16 +1986,16 @@ class DataFigure():
         self.fig.axes[0].set_xlabel(new_xlabel)
 
         self.unit = new_unit
-        self._update_transform_back(conversion_map)
+        self._update_transform_back()
         self.fig.canvas.draw()
 
-    def _update_transform_back(self, conversion_map):
+    def _update_transform_back(self):
         import functools
         transforms = []
         temp_unit = self.unit
-        while temp_unit != self.unit_original:
+        while (self.conversion_map is not None) and (temp_unit != self.unit_original):
             try:
-                next_unit, conv_func = conversion_map[temp_unit]
+                next_unit, conv_func = self.conversion_map[temp_unit]
             except KeyError:
                 print(f'Unit {temp_unit} not in conversion_map')
                 break
