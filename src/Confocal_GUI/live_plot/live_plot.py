@@ -1331,13 +1331,17 @@ def dummy_area(ax, x1, y1, x2, y2):
     x1_disp, y1_disp = ax.transData.transform((x1, y1))
     x2_disp, y2_disp = ax.transData.transform((x2, y2))
 
-    press_event = MouseEvent('button_press_event', ax.figure.canvas, 0, 0, button=1)
+    press_event = MouseEvent('button_press_event', ax.figure.canvas, x1_disp, y1_disp, button=1)
     press_event.inaxes = ax
     ax.figure.canvas.callbacks.process('button_press_event', press_event)
-    release_event = MouseEvent('button_release_event', ax.figure.canvas, 0, 0, button=1)
+    motion_event = MouseEvent('motion_notify_event', ax.figure.canvas, x2_disp, y2_disp, button=1)
+    motion_event.inaxes = ax
+    ax.figure.canvas.callbacks.process('motion_notify_event', motion_event)
+    release_event = MouseEvent('button_release_event', ax.figure.canvas, x2_disp, y2_disp, button=1)
     release_event.inaxes = ax
     ax.figure.canvas.callbacks.process('button_release_event', release_event)
-    # close existing rectangle, otherwise bug
+    # the first selection close existing rectangle, otherwise bug
+    time.sleep(0.01)
     press_event = MouseEvent('button_press_event', ax.figure.canvas, x1_disp, y1_disp, button=1)
     press_event.inaxes = ax
     ax.figure.canvas.callbacks.process('button_press_event', press_event)
@@ -1734,8 +1738,8 @@ class DataFigure():
 
         data_x_range = np.abs(self.data_x_p[-1] - self.data_x_p[0])
         data_y_range = np.abs(np.max(self.data_y_p) - np.min(self.data_y_p))
-        self.bounds = ([guess_center - data_x_range, guess_full_width/10, -10*data_y_range, -10*data_y_range], \
-        [guess_center + data_x_range, guess_full_width*10, 10*data_y_range, 10*data_y_range])
+        self.bounds = ([np.nanmin(self.data_x_p), guess_full_width/10, -10*data_y_range, -10*data_y_range], \
+        [np.nanmax(self.data_x_p), guess_full_width*10, 10*data_y_range, 10*data_y_range])
         
         self.popt_str = ['$x_0$', 'FWHM', 'H', 'B']
         popt, pcov = self._fit_and_draw(is_fit, is_display)
@@ -1783,8 +1787,8 @@ class DataFigure():
 
         data_x_range = np.abs(self.data_x_p[-1] - self.data_x_p[0])
         data_y_range = np.abs(np.max(self.data_y_p) - np.min(self.data_y_p))
-        self.bounds = ([guess_center - data_x_range, guess_full_width/10, -10*data_y_range, -10*data_y_range, 0], \
-        [guess_center + data_x_range, guess_full_width*10, 10*data_y_range, 10*data_y_range, 2*data_x_range])
+        self.bounds = ([np.nanmin(self.data_x_p), guess_full_width/10, -10*data_y_range, -10*data_y_range, 0], \
+        [np.nanmax(self.data_x_p), guess_full_width*10, 10*data_y_range, 10*data_y_range, 2*data_x_range])
         
         self.popt_str = ['$x_0$', 'FWHM', 'H', 'B', '$\\delta$']
         popt, pcov = self._fit_and_draw(is_fit, is_display)
