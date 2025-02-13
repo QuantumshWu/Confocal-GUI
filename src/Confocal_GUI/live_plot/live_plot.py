@@ -1351,7 +1351,7 @@ def dummy_area(ax, x1, y1, x2, y2):
             
 
 
-valid_fit_func = ['lorent', 'decay', 'rabi']         
+valid_fit_func = ['lorent', 'decay', 'rabi', 'lorent_zeeman']         
 class DataFigure():
     """
     The class contains all data of the figure, enables more operations
@@ -1529,43 +1529,122 @@ class DataFigure():
 
         print(f'saved fig as {addr}{self.measurement_name}{time_str}.npz')
 
+    def _min_overlap(self, ax, text, candidates=None):
+        """
+        Given a list of candidate positions in normalized coordinates, each candidate being a tuple:
+            (norm_x, norm_y, ha, va),
+        this function positions the text in the axes coordinate system (using ax.transAxes) for each candidate,
+        forces a draw (optionally hiding the text), and calculates how many of the line's data points fall within
+        the text's bounding box. The candidate with the fewest overlapping points is returned.
+        
+        Parameters:
+            ax : matplotlib.axes.Axes
+                The axes that contain the line and text.
+            line : matplotlib.lines.Line2D
+                The line object whose data points are used to check for overlap with the text bbox.
+            text : matplotlib.text.Text
+                The text object to be positioned.
+            candidates : list of tuples
+                A list of candidate positions, each specified as 
+                (normalized_x, normalized_y, ha, va), where normalized_x and normalized_y are in [0, 1] (axes coordinates),
+                and ha, va are the horizontal and vertical alignment strings.
+        """
+        # Save the original text transform to restore later.
 
-    def _display_popt(self, popt, popt_str, popt_pos):
+        if candidates is None:
+            candidates = [
+                            (0.025, 0.85, 'left', 'top'),
+                            (0.975, 0.85, 'right', 'top'),
+                            (0.025, 0.025, 'left', 'bottom'),
+                            (0.975, 0.025, 'right', 'bottom'),
+
+                            (0.025, 0.5, 'left', 'center'),
+                            (0.975, 0.5, 'right', 'center'),
+                            (0.5, 0.025, 'center', 'bottom'),
+                            (0.5, 0.85, 'center', 'top'),
+
+                            (0.5, 0.5, 'center', 'center'),
+                        ]
+                        # 0.8 to avoid overlap with crossselector and areaselector
+
+        canvas = ax.figure.canvas
+        text.set_alpha(0)
+        renderer = canvas.get_renderer()
+        
+        pts = np.column_stack([self.data_x_p, self.data_y_p])
+        pts_disp = ax.transData.transform(pts)
+
+        pts_full = np.column_stack([self.data_x, self.data_y[:, 0]])
+        pts_disp_full = ax.transData.transform(pts_full)
+        # calculate partial overlap and full data overlap, match partial minimum overlap first
+
+        
+        best_candidate_par = None
+        min_points_inside_par = np.inf
+        best_candidate_full = None
+        min_points_inside_full = np.inf
+        
+        # Iterate through all candidate positions.
+        for candidate in candidates:
+            norm_x, norm_y, ha, va = candidate
+            
+            # Set the text's alignment and position (in axes coordinates).
+            text.set_ha(ha)
+            text.set_va(va)
+            text.set_position((norm_x, norm_y))
+            
+            # Force a draw to update the text's bounding box.
+            canvas.draw()
+            bbox = text.get_window_extent(renderer)
+
+
+            inside = ((pts_disp[:, 0] >= bbox.x0) & (pts_disp[:, 0] <= bbox.x1) &
+                      (pts_disp[:, 1] >= bbox.y0) & (pts_disp[:, 1] <= bbox.y1))
+            count_inside = np.count_nonzero(inside)
+            
+            if count_inside < min_points_inside_par:
+                min_points_inside_par = count_inside
+                best_candidate_par = candidate
+
+            inside = ((pts_disp_full[:, 0] >= bbox.x0) & (pts_disp_full[:, 0] <= bbox.x1) &
+                      (pts_disp_full[:, 1] >= bbox.y0) & (pts_disp_full[:, 1] <= bbox.y1))
+            count_inside = np.count_nonzero(inside)
+            
+            if count_inside < min_points_inside_full:
+                min_points_inside_full = count_inside
+                best_candidate_full = candidate
+                points_inside_par_at_full = count_inside
+
+        best_candidate = best_candidate_full if points_inside_par_at_full==0 else best_candidate_par
+
+        text.set_alpha(1)
+
+        norm_x, norm_y, ha, va = best_candidate
+        text.set_ha(ha)
+        text.set_va(va)
+        text.set_position((norm_x, norm_y))
+        canvas.draw()
+
+    def _display_popt(self, popt, popt_str):
         # popt_str = ['amplitude', 'offset', 'omega', 'decay', 'phi'], popt_pos = 'lower left' etc
-        valid_pos = ['upper left', 'upper right', 'lower left', 'lower right']
-        if popt_pos not in valid_pos:
-            print(f'wrong popt pos, can only be {valid_pos}')
+
         _popt = popt
         formatted_popt = [f'{x:.5f}'.rstrip('0') for x in _popt]
-        result_list = [f'{name} = {value}' for name, value in zip(popt_str, formatted_popt)]
+        result_list = [f'{name}={value}' for name, value in zip(popt_str, formatted_popt)]
         formatted_popt_str = '\n'.join(result_list)
         result = f"{self.formula_str}\n{formatted_popt_str}"
         self.log_info = result
         # format popt to display as text
                     
         if self.text is None:
-            if popt_pos=='upper left':
-                self.text = self.fig.axes[0].text(0.025, 1-0.025, 
-                                                  result, transform=self.fig.axes[0].transAxes, 
-                                                  color='red', ha='left', va='top', fontsize=10)
-            elif popt_pos == 'upper right':
-                self.text = self.fig.axes[0].text(1-0.025, 1-0.025, 
-                                                  result, transform=self.fig.axes[0].transAxes, 
-                                                  color='red', ha='right', va='top', fontsize=10)
-
-            elif popt_pos == 'lower left':
-                self.text = self.fig.axes[0].text(0.025, 0.025, 
-                                                  result, transform=self.fig.axes[0].transAxes, 
-                                                  color='red', ha='left', va='bottom', fontsize=10)
-
-            elif popt_pos == 'lower right':
-                self.text = self.fig.axes[0].text(1-0.025, 0.025, 
-                                                  result, transform=self.fig.axes[0].transAxes, 
-                                                  color='red', ha='right', va='bottom', fontsize=10)
+            self.text = self.fig.axes[0].text(0.5, 0.5, 
+                                              result, transform=self.fig.axes[0].transAxes, 
+                                              color='red', ha='center', va='center', fontsize=10)
 
         else:
             self.text.set_text(result)
-            
+
+        self._min_overlap(self.fig.axes[0], self.text)
         self.fig.canvas.draw()
 
     def _select_fit(self, min_num=2):
@@ -1589,35 +1668,65 @@ class DataFigure():
                 return self.data_x[valid_index], self.data_y[valid_index, 0]
             return self.data_x[valid_index][index_l:index_h], self.data_y[valid_index, 0][index_l:index_h]
 
+    def _fit_and_draw(self, is_fit, is_display):
+        # use self.p0_list and self.bounds, self.popt_str, self._fit_func
+
+        if is_fit:
+            try:
+                loss_min = np.inf
+                for p0 in self.p0_list:
+                    popt_cur, pcov_cur = curve_fit(self._fit_func, self.data_x_p, self.data_y_p, p0=p0, bounds = self.bounds)
+                    loss_cur = np.sum((self._fit_func(self.data_x_p, *popt_cur) - self.data_y_p)**2)
+                    if loss_cur<loss_min:
+                        loss_min = loss_cur
+                        popt = popt_cur
+                        pcov = pcov_cur
+            except:
+                return
+
+        else:
+            popt, pcov = self.p0_list[0], None
+        
+        
+        if self.fit is None:
+            self.fit = self.fig.axes[0].plot(self.data_x, self._fit_func(self.data_x, *popt), color='orange', linestyle='--')
+        else:
+            self.fit[0].set_ydata(self._fit_func(self.data_x, *popt))
+        self.fig.canvas.draw()
+        
+        if is_display:
+            self._display_popt(popt, self.popt_str)
+
+        return popt, pcov
+
 
     def lorent(self, p0=None, is_display=True, is_fit=True):
         if self.plot_type == '2D':
             return 
         self.data_x_p, self.data_y_p = self._select_fit(min_num=4)
         # use the area selector results for fitting , min_num should at least be number of fitting parameters
-        spl = 299792458
-        self.formula_str = '$f(x) = H\\frac{(FWHM/2)^2}{(x - x_0)^2 + (FWHM/2)^2} + B$'
+        self.formula_str = '$f(x)=H\\frac{(FWHM/2)^2}{(x-x_0)^2+(FWHM/2)^2}+B$'
         def _lorent(x, center, full_width, height, bg):
             return height*((full_width/2)**2)/((x - center)**2 + (full_width/2)**2) + bg
-        
+        self._fit_func = _lorent
         if p0 is None:# no input
-
+            self.p0_list = []
             # likely be positive height
             guess_center = self.data_x_p[np.argmax(self.data_y_p)]
             guess_height = np.abs(np.max(self.data_y_p) - np.min(self.data_y_p))
             guess_bg = np.min(self.data_y_p)
             guess_full_width = np.abs(self.data_x_p[0]-self.data_x_p[-1])/4
-            self.p0_pos = [guess_center, guess_full_width, guess_height, guess_bg]
+            self.p0_list.append([guess_center, guess_full_width, guess_height, guess_bg])
 
             # likely be negtive height
             guess_center = self.data_x_p[np.argmin(self.data_y_p)]
             guess_height = -np.abs(np.max(self.data_y_p) - np.min(self.data_y_p))
             guess_bg = np.max(self.data_y_p)
             guess_full_width = np.abs(self.data_x_p[0]-self.data_x_p[-1])/4
-            self.p0_neg = [guess_center, guess_full_width, guess_height, guess_bg]
+            self.p0_list.append([guess_center, guess_full_width, guess_height, guess_bg])
 
         else:
-            self.p0 = p0
+            self.p0_list = [p0, ]
             guess_center = self.p0[0]
             guess_full_width = self.p0[1]
             guess_height = self.p0[2]
@@ -1628,133 +1737,59 @@ class DataFigure():
         self.bounds = ([guess_center - data_x_range, guess_full_width/10, -10*data_y_range, -10*data_y_range], \
         [guess_center + data_x_range, guess_full_width*10, 10*data_y_range, 10*data_y_range])
         
-        if is_fit and (p0 is None):
-            try:
-                popt_pos, pcov_pos = curve_fit(_lorent, self.data_x_p, self.data_y_p, p0=self.p0_pos)
-                popt_neg, pcov_neg = curve_fit(_lorent, self.data_x_p, self.data_y_p, p0=self.p0_neg)
-            except:
-                return
-            loss_pos = np.sum((_lorent(self.data_x_p, *popt_pos) - self.data_y_p)**2)
-            loss_neg = np.sum((_lorent(self.data_x_p, *popt_neg) - self.data_y_p)**2)
-
-            if loss_pos < loss_neg:
-                popt, pcov = popt_pos, pcov_pos
-            else:
-                popt, pcov = popt_neg, pcov_neg
-
-        elif is_fit and (p0 is not None):
-            try:
-                popt, pcov = curve_fit(_lorent, self.data_x_p, self.data_y_p, p0=self.p0)
-            except:
-                return
-
-        else:
-            popt, pcov = self.p0, None
-        
-        
-        if self.fit is None:
-            self.fit = self.fig.axes[0].plot(self.data_x, _lorent(self.data_x, *popt), color='orange', linestyle='--')
-        else:
-            self.fit[0].set_ydata(_lorent(self.data_x, *popt))
-        self.fig.canvas.draw()
-        
-        popt_str = ['$x_0$', 'FWHM', 'H', 'B']
-        if is_display:
-            if popt[2] > 0:
-                self._display_popt(popt, popt_str, 'upper right')
-            else:
-                self._display_popt(popt, popt_str, 'lower right')
-
+        self.popt_str = ['$x_0$', 'FWHM', 'H', 'B']
+        popt, pcov = self._fit_and_draw(is_fit, is_display)
         self.fit_func = 'lorent'
-        return [popt_str, pcov], popt
+        return [self.popt_str, pcov], popt
 
 
-    def lorent_zeeman(self, p0=None, is_display=True, func=None, bounds = None, is_fit=True):
+    def lorent_zeeman(self, p0=None, is_display=True, is_fit=True):
         #fit of PLE under B field, will rewrite soon
         if self.plot_type == '2D':
             return 
-        spl = 299792458
         
-        def _lorent_zeeman(x, center, full_width, height, bg, factor, split):
+        self.data_x_p, self.data_y_p = self._select_fit(min_num=5)
+        # use the area selector results for fitting , min_num should at least be number of fitting parameters
+        self.formula_str = '$f(x)=H(L(\\delta/2)+L(-\\delta/2))+B$'
+        def _lorent_zeeman(x, center, full_width, height, bg, split):
             return height*((full_width/2)**2)/((x - center - split/2)**2 + (full_width/2)**2) \
-                + factor*height*((full_width/2)**2)/((x - center + split/2)**2 + (full_width/2)**2) + bg
-
-
-
-
-        data_y = self.data_y
-        data_x = self.data_x
-        guess_height = (np.max(data_y)-np.min(data_y))
-        peaks, properties = find_peaks(data_y, width=3, prominence=guess_height/8) # width about 100MHz
-        peaks_largest2 = peaks[np.argsort(data_y[peaks])[::-1]][:2]
-        guess_center = data_x[int(np.mean(peaks_largest2))]
-        guess_width = 0.0007
-        guess_spl = np.abs((data_x[peaks_largest2[0]] - guess_center)*2) + 0.0001
-        data_width = np.abs(data_x[-1] - data_x[0])
-
-        
+                + height*((full_width/2)**2)/((x - center + split/2)**2 + (full_width/2)**2) + bg
+        self._fit_func = _lorent_zeeman
         if p0 is None:# no input
-            self.p0 = [guess_center, guess_width, guess_height, np.min(data_y), 1, guess_spl]
+            self.p0_list = []
+            try:
+                guess_height = (np.max(self.data_y_p)-np.min(self.data_y_p))
+                peaks, properties = find_peaks(self.data_y_p, width=1, prominence=guess_height/8) # width about 100MHz
+                if len(peaks)==0:
+                    return
+                peaks_largest = peaks[np.argsort(self.data_y_p[peaks])[::-1]]
+                for second_peak in peaks_largest:
+                    guess_center = self.data_x_p[int(np.mean([peaks_largest[0], second_peak]))]
+                    guess_full_width = properties['widths'][np.argsort(self.data_y_p[peaks])[-1]]*np.abs(self.data_x_p[1]-self.data_x_p[0])
+                    guess_spl = np.abs((self.data_x_p[second_peak] - guess_center)*2)
+                    if guess_spl<guess_full_width:
+                        guess_height = guess_height/2
+                    guess_bg = np.min(self.data_y_p)
+                    self.p0_list.append([guess_center, guess_full_width, guess_height, guess_bg, guess_spl])
+
+            except:
+                return
         else:
-            self.p0 = p0
+            self.p0_list = [p0, ]
+            guess_center = self.p0[0]
+            guess_full_width = self.p0[1]
+            guess_height = self.p0[2]
+            guess_bg = self.p0[3]
+
+        data_x_range = np.abs(self.data_x_p[-1] - self.data_x_p[0])
+        data_y_range = np.abs(np.max(self.data_y_p) - np.min(self.data_y_p))
+        self.bounds = ([guess_center - data_x_range, guess_full_width/10, -10*data_y_range, -10*data_y_range, 0], \
+        [guess_center + data_x_range, guess_full_width*10, 10*data_y_range, 10*data_y_range, 2*data_x_range])
         
-        if func is None:
-            _func = _lorent_zeeman
-        else:
-            _func = func
-
-        if bounds is None:
-            self.bounds = ([np.min(data_x), guess_width/8, guess_height/2,-np.inf, 0.99, 0.00001], \
-                              [np.max(data_x), guess_width*4, guess_height*1.1, np.inf, 1, guess_spl*5])
-        else:
-            self.bounds = bounds
-
-        if fit:
-            popt, pcov = curve_fit(_func, self.data_x_p, self.data_y_p, p0=self.p0, bounds = self.bounds)
-        else:
-            popt, pcov = self.p0, None
-        
-        
-        if self.fit is None:
-            self.fit = self.fig.axes[0].plot(self.data_x, _func(self.data_x, *popt), color='orange', linestyle='--')
-        else:
-            self.fit[0].set_ydata(_func(self.data_x, *popt))
-        self.fig.canvas.draw()
-        
-        if is_display:
-            
-
-            full_width_GHz = np.abs(spl/(popt[0]-0.5*popt[1]) - spl/(popt[0]+0.5*popt[1]))
-            splitting_GHz = np.abs(spl/(popt[0]-0.5*popt[-1]) - spl/(popt[0]+0.5*popt[-1]))
-
-            _popt = np.insert(popt, 2, full_width_GHz)
-            _popt = np.insert(_popt[:-1], len(_popt[:-1]), splitting_GHz)
-            
-            if self.unit == 'nm':
-                pass
-            else:
-                _popt[1], _popt[2] = _popt[2], _popt[1]
-            
-            popt_str = ['center', 'FWHM', 'in GHz', 'height', 'bg', 'factor', 'split (GHz)']
-            formatted_popt = [f'{x:.5f}'.rstrip('0') for x in _popt]
-            result_list = [f'{name} = {value}' for name, value in zip(popt_str, formatted_popt)]
-            formatted_popt_str = '\n'.join(result_list)
-            result = f'{formatted_popt_str}'
-            self.log_info = result
-            # format popt to display as text
-                
-            
-            if self.text is None:
-                self.text = self.fig.axes[0].text(0.025, 0.5, 
-                                                  result, transform=self.fig.axes[0].transAxes, 
-                                                  color='red', ha='left', va='center')
-            else:
-                self.text.set_text(result)
-                
-            self.fig.canvas.draw()
-            
-
-        return [popt_str, pcov], _popt
+        self.popt_str = ['$x_0$', 'FWHM', 'H', 'B', '$\\delta$']
+        popt, pcov = self._fit_and_draw(is_fit, is_display)
+        self.fit_func = 'lorent_zeeman'
+        return [self.popt_str, pcov], popt
 
 
     def rabi(self, p0=None, is_display=True, is_fit=True):
@@ -1762,10 +1797,10 @@ class DataFigure():
             return 
         self.data_x_p, self.data_y_p = self._select_fit(min_num=5)
 
-        self.formula_str = '$f(x) = A\\sin(2{\\pi}fx+\\varphi)e^{-x/\\tau} + B$'
+        self.formula_str = '$f(x)=A\\sin(2{\\pi}fx+\\varphi)e^{-x/\\tau}+B$'
         def _rabi(x, amplitude, offset, omega, decay, phi):
             return amplitude*np.sin(2*np.pi*omega*x + phi)*np.exp(-x/decay) + offset
-        
+        self._fit_func = _rabi
         if p0 is None:# no input
             guess_amplitude = np.abs(np.max(self.data_y_p) - np.min(self.data_y_p))/2
             guess_offset = np.mean(self.data_y_p)
@@ -1775,10 +1810,10 @@ class DataFigure():
 
             data_y_range = np.max(self.data_y_p) - np.min(self.data_y_p)
 
-            self.p0 = [guess_amplitude, guess_offset, guess_omega, guess_decay, guess_phi]
+            self.p0_list = [[guess_amplitude, guess_offset, guess_omega, guess_decay, guess_phi],]
 
         else:
-            self.p0 = p0
+            self.p0_list = [p0, ]
 
             guess_amplitude = self.p0[0]
             guess_offset = self.p0[1]
@@ -1791,47 +1826,34 @@ class DataFigure():
         self.bounds = ([guess_amplitude/3, guess_offset - data_y_range, guess_omega*0.5, guess_decay/5, guess_phi - np.pi/10], \
             [guess_amplitude*3, guess_offset + data_y_range, guess_omega*1.1, guess_decay*5, guess_phi + np.pi/10])
         
-        if is_fit:
-            popt, pcov = curve_fit(_rabi, self.data_x_p, self.data_y_p, p0=self.p0, bounds = self.bounds)
-        else:
-            popt, pcov = self.p0, None
-        
-        if self.fit is None:
-            self.fit = self.fig.axes[0].plot(self.data_x, _rabi(self.data_x, *popt), color='orange', linestyle='--')
-        else:
-            self.fit[0].set_ydata(_rabi(self.data_x, *popt))
-        self.fig.canvas.draw()
-        
-        popt_str = ['A', 'B', 'f', '$\\tau$', '$\\varphi$']
-        if is_display:
-            self._display_popt(popt, popt_str, 'upper right')
-            
+        self.popt_str = ['A', 'B', 'f', '$\\tau$', '$\\varphi$']
+        popt, pcov = self._fit_and_draw(is_fit, is_display)            
         self.fit_func = 'rabi'
-        return [popt_str, pcov], popt
+        return [self.popt_str, pcov], popt
 
 
     def decay(self, p0=None, is_display=True, is_fit=True):
         if self.plot_type == '2D':
             return 
         self.data_x_p, self.data_y_p = self._select_fit(min_num=3)
-        self.formula_str = '$f(x) = Ae^{-x/\\tau} + B$'
+        self.formula_str = '$f(x)=Ae^{-x/\\tau}+B$'
         def _exp_decay(x, amplitude, offset, decay):
             return amplitude*np.exp(-x/decay) + offset
-        
+        self._fit_func = _exp_decay
         if p0 is None:# no input
-
+            self.p0_list = []
             # if positive
             guess_amplitude = np.abs(np.max(self.data_y_p) - np.min(self.data_y_p))
             guess_offset = np.mean(self.data_y_p)
             guess_decay = np.abs(self.data_x_p[np.argmin(self.data_y_p)] - self.data_x_p[np.argmax(self.data_y_p)])/2
             data_y_range = np.abs(np.max(self.data_y_p) - np.min(self.data_y_p))
 
-            self.p0_pos = [guess_amplitude, guess_offset, guess_decay]
+            self.p0_list.append([guess_amplitude, guess_offset, guess_decay])
             # if negtive
-            self.p0_neg = [-guess_amplitude, guess_offset, guess_decay]
+            self.p0_list.append([-guess_amplitude, guess_offset, guess_decay])
 
         else:
-            self.p0 = p0
+            self.p0_list = [p0, ]
 
             guess_amplitude = self.p0[0]
             guess_offset = self.p0[1]
@@ -1843,40 +1865,10 @@ class DataFigure():
         self.bounds = ([-4*data_y_range, guess_offset - data_y_range, guess_decay/10], \
             [4*data_y_range, guess_offset + data_y_range, guess_decay*10])
         
-        if is_fit and (p0 is None):
-            popt_pos, pcov_pos = curve_fit(_exp_decay, self.data_x_p, self.data_y_p, p0=self.p0_pos)
-            popt_neg, pcov_neg = curve_fit(_exp_decay, self.data_x_p, self.data_y_p, p0=self.p0_neg)
-            loss_pos = np.sum((_exp_decay(self.data_x_p, *popt_pos) - self.data_y_p)**2)
-            loss_neg = np.sum((_exp_decay(self.data_x_p, *popt_neg) - self.data_y_p)**2)
-
-            if loss_pos < loss_neg:
-                popt, pcov = popt_pos, pcov_pos
-            else:
-                popt, pcov = popt_neg, pcov_neg
-
-        elif is_fit and (p0 is not None):
-
-            popt, pcov = curve_fit(_exp_decay, self.data_x_p, self.data_y_p, p0=self.p0)
-
-        else:
-            popt, pcov = self.p0, None
-        
-        
-        if self.fit is None:
-            self.fit = self.fig.axes[0].plot(self.data_x, _exp_decay(self.data_x, *popt), color='orange', linestyle='--')
-        else:
-            self.fit[0].set_ydata(_exp_decay(self.data_x, *popt))
-        self.fig.canvas.draw()
-        
-        popt_str = ['A', 'B','$\\tau$']
-        if is_display:
-            if popt[0] > 0:
-                self._display_popt(popt, popt_str, 'upper right')
-            else:
-                self._display_popt(popt, popt_str, 'lower right')
-            
+        self.popt_str = ['A', 'B','$\\tau$']
+        popt, pcov = self._fit_and_draw(is_fit, is_display)            
         self.fit_func = 'decay'
-        return [popt_str, pcov], popt
+        return [self.popt_str, pcov], popt
 
 
             

@@ -332,7 +332,7 @@ class MainWindow(QMainWindow):
 
 
         self.valid_relim_mode = ['normal', 'tight']
-        self.valid_fit_func = ['lorent', 'decay', 'rabi']
+        self.valid_fit_func = ['lorent', 'decay', 'rabi', 'lorent_zeeman']
         if self.findChild(QComboBox, 'comboBox_relim_PL') is not None:
             self.comboBox_relim_PL.addItems(self.valid_relim_mode)
             self.comboBox_relim_PL.setCurrentText(self.measurement_PL.relim_mode)
@@ -555,9 +555,6 @@ class MainWindow(QMainWindow):
 
     def start_plot_Live(self):
         self.stop_plot()
-        # make sure no residual selector which may cause thread problem
-        if self.data_figure_Live is not None:
-                self.data_figure_Live.close_selector()
 
         self.print_log(f'Live started')
         self.cur_plot = 'Live'
@@ -576,6 +573,12 @@ class MainWindow(QMainWindow):
         
         self.cur_live_plot = self.live_plot_Live
         self.live_plot_Live.init_figure_and_data()
+
+        # make sure no residual selector which may cause thread problem
+        if self.data_figure_Live is not None:
+                self.data_figure_Live.close_selector()
+                self.data_figure_Live = None
+                
         self.timer = QtCore.QTimer()
         self.timer.setInterval(int(1000*self.live_plot_Live.update_time))  # Interval in milliseconds
         self.timer.timeout.connect(self.update_plot)
@@ -743,9 +746,6 @@ class MainWindow(QMainWindow):
             
     def start_plot_PL(self):
         self.stop_plot()
-        # make sure no residual selector which may cause thread problem
-        if self.data_figure_PL is not None:
-                self.data_figure_PL.close_selector()
 
         self.print_log(f'PL started')
         self.cur_plot = 'PL'  
@@ -774,6 +774,11 @@ class MainWindow(QMainWindow):
         
         self.cur_live_plot = self.live_plot_PL
         self.live_plot_PL.init_figure_and_data()
+
+        # make sure no residual selector which may cause thread problem
+        if self.data_figure_PL is not None:
+                self.data_figure_PL.close_selector()
+                self.data_figure_PL = None
         
         self.timer = QtCore.QTimer()
         self.timer.setInterval(1000*self.live_plot_PL.update_time)  # Interval in milliseconds
@@ -903,9 +908,6 @@ class MainWindow(QMainWindow):
 
     def start_plot_PLE(self):
         self.stop_plot()
-        # make sure no residual selector which may cause thread problem
-        if self.data_figure_PLE is not None:
-                self.data_figure_PLE.close_selector()
 
         self.print_log(f'{self.measurement_PLE.measurement_name} started')
         self.cur_plot = 'PLE'
@@ -931,6 +933,11 @@ class MainWindow(QMainWindow):
         
         self.cur_live_plot = self.live_plot_PLE
         self.live_plot_PLE.init_figure_and_data()
+
+        # make sure no residual selector which may cause thread problem
+        if self.data_figure_PLE is not None:
+                self.data_figure_PLE.close_selector()
+                self.data_figure_PLE = None
         
         
         self.timer = QtCore.QTimer()
