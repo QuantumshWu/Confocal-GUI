@@ -4,7 +4,6 @@ import sys
 import glob
 import time
 import threading
-from decimal import Decimal
 from threading import Event
 import numbers
 import itertools
@@ -1068,25 +1067,6 @@ class AreaSelector():
                                                      linestyle='-', color=self.color)) 
         #set blit=True has weird bug, or implement RectangleSelector myself
         
-    
-        
-    def get_decimal_places(self, value):
-        non_zero = {'1', '2', '3', '4', '5', '6', '7', '8', '9'}
-        value_str = str(Decimal(value))
-
-        if '.' in value_str:
-            int_str, float_str = value_str.split('.')
-
-            if any(num in non_zero for num in int_str):
-                return 0
-
-            decimal = 0
-            for num_str in float_str:
-                decimal += 1
-                if num_str in non_zero:
-                    return decimal
-        else:
-            return 0
 
         
     def onselect(self, eclick, erelease):
@@ -1104,14 +1084,12 @@ class AreaSelector():
         self.range = [min(x1, x2), max(x1, x2), min(y1, y2), max(y1, y2)]
         
         
-        x_data = self.ax.lines[0].get_xdata()
-        y_data = self.ax.lines[0].get_ydata()
-        self.gap_x = np.abs(np.max(x_data) - np.min(x_data))/1000
-        self.gap_y = np.abs(np.max(y_data) - np.min(y_data))/1000
-        
-        
-        decimal_x = self.get_decimal_places(self.gap_x)
-        decimal_y = self.get_decimal_places(self.gap_y)
+        x_data = self.ax.get_xlim()
+        y_data = self.ax.get_ylim()
+        self.gap_x = np.abs(np.nanmax(x_data) - np.nanmin(x_data)) / 1000 if (len(x_data)>0) else 0.01
+        self.gap_y = np.abs(np.nanmax(y_data) - np.nanmin(y_data)) / 1000 if (len(y_data)>0) else 0.01
+        decimal_x = 0 if -int(np.ceil(np.log10(self.gap_x)))<0 else -int(np.ceil(np.log10(self.gap_x)))
+        decimal_y = 0 if -int(np.ceil(np.log10(self.gap_y)))<0 else -int(np.ceil(np.log10(self.gap_y)))
         
         format_str = f'{{:.{decimal_x}f}}, {{:.{decimal_y}f}}'
         
@@ -1161,14 +1139,12 @@ class CrossSelector():
                     self.ax.figure.canvas.draw()
                     return
                     
-                x_data = self.ax.lines[0].get_xdata()
-                y_data = self.ax.lines[0].get_ydata()
-                self.gap_x = np.abs(np.max(x_data) - np.min(x_data)) / 1000 if (len(x_data)>0) else 0.01
-                self.gap_y = np.abs(np.max(y_data) - np.min(y_data)) / 1000 if (len(y_data)>0) else 0.01
-
-                decimal_x = self.get_decimal_places(self.gap_x)
-                decimal_y = self.get_decimal_places(self.gap_y)
-
+                x_data = self.ax.get_xlim()
+                y_data = self.ax.get_ylim()
+                self.gap_x = np.abs(np.nanmax(x_data) - np.nanmin(x_data)) / 1000 if (len(x_data)>0) else 0.01
+                self.gap_y = np.abs(np.nanmax(y_data) - np.nanmin(y_data)) / 1000 if (len(y_data)>0) else 0.01
+                decimal_x = 0 if -int(np.ceil(np.log10(self.gap_x)))<0 else -int(np.ceil(np.log10(self.gap_x)))
+                decimal_y = 0 if -int(np.ceil(np.log10(self.gap_y)))<0 else -int(np.ceil(np.log10(self.gap_y)))
                 format_str = f'{{:.{decimal_x}f}}, {{:.{decimal_y}f}}'
         
                 x, y = event.xdata, event.ydata
@@ -1198,24 +1174,6 @@ class CrossSelector():
             self.point = None
             self.wavelength = None
             self.xy = None
-    
-    def get_decimal_places(self, value):
-        non_zero = {'1', '2', '3', '4', '5', '6', '7', '8', '9'}
-        value_str = str(Decimal(value))
-
-        if '.' in value_str:
-            int_str, float_str = value_str.split('.')
-
-            if any(num in non_zero for num in int_str):
-                return 0
-
-            decimal = 0
-            for num_str in float_str:
-                decimal += 1
-                if num_str in non_zero:
-                    return decimal
-        else:
-            return 0
         
     def set_active(self, active):
         if not active:
@@ -1581,7 +1539,7 @@ class DataFigure():
         formatted_popt = [f'{x:.5f}'.rstrip('0') for x in _popt]
         result_list = [f'{name} = {value}' for name, value in zip(popt_str, formatted_popt)]
         formatted_popt_str = '\n'.join(result_list)
-        result = f'{formatted_popt_str}'
+        result = f"{self.formula_str}\n{formatted_popt_str}"
         self.log_info = result
         # format popt to display as text
                     
@@ -1589,21 +1547,21 @@ class DataFigure():
             if popt_pos=='upper left':
                 self.text = self.fig.axes[0].text(0.025, 1-0.025, 
                                                   result, transform=self.fig.axes[0].transAxes, 
-                                                  color='red', ha='left', va='top')
+                                                  color='red', ha='left', va='top', fontsize=10)
             elif popt_pos == 'upper right':
                 self.text = self.fig.axes[0].text(1-0.025, 1-0.025, 
                                                   result, transform=self.fig.axes[0].transAxes, 
-                                                  color='red', ha='right', va='top')
+                                                  color='red', ha='right', va='top', fontsize=10)
 
             elif popt_pos == 'lower left':
                 self.text = self.fig.axes[0].text(0.025, 0.025, 
                                                   result, transform=self.fig.axes[0].transAxes, 
-                                                  color='red', ha='left', va='bottom')
+                                                  color='red', ha='left', va='bottom', fontsize=10)
 
             elif popt_pos == 'lower right':
                 self.text = self.fig.axes[0].text(1-0.025, 0.025, 
                                                   result, transform=self.fig.axes[0].transAxes, 
-                                                  color='red', ha='right', va='bottom')
+                                                  color='red', ha='right', va='bottom', fontsize=10)
 
         else:
             self.text.set_text(result)
@@ -1638,7 +1596,7 @@ class DataFigure():
         self.data_x_p, self.data_y_p = self._select_fit(min_num=4)
         # use the area selector results for fitting , min_num should at least be number of fitting parameters
         spl = 299792458
-        
+        self.formula_str = '$f(x) = H\\frac{(FWHM/2)^2}{(x - x_0)^2 + (FWHM/2)^2} + B$'
         def _lorent(x, center, full_width, height, bg):
             return height*((full_width/2)**2)/((x - center)**2 + (full_width/2)**2) + bg
         
@@ -1700,7 +1658,7 @@ class DataFigure():
             self.fit[0].set_ydata(_lorent(self.data_x, *popt))
         self.fig.canvas.draw()
         
-        popt_str = ['center', 'FWHM', 'height', 'bg']
+        popt_str = ['$x_0$', 'FWHM', 'H', 'B']
         if is_display:
             if popt[2] > 0:
                 self._display_popt(popt, popt_str, 'upper right')
@@ -1803,7 +1761,8 @@ class DataFigure():
         if self.plot_type == '2D':
             return 
         self.data_x_p, self.data_y_p = self._select_fit(min_num=5)
-        
+
+        self.formula_str = '$f(x) = A\\sin(2{\\pi}fx+\\varphi)e^{-x/\\tau} + B$'
         def _rabi(x, amplitude, offset, omega, decay, phi):
             return amplitude*np.sin(2*np.pi*omega*x + phi)*np.exp(-x/decay) + offset
         
@@ -1843,7 +1802,7 @@ class DataFigure():
             self.fit[0].set_ydata(_rabi(self.data_x, *popt))
         self.fig.canvas.draw()
         
-        popt_str = ['amplitude', 'offset', 'omega', 'decay', 'phi']
+        popt_str = ['A', 'B', 'f', '$\\tau$', '$\\varphi$']
         if is_display:
             self._display_popt(popt, popt_str, 'upper right')
             
@@ -1855,7 +1814,7 @@ class DataFigure():
         if self.plot_type == '2D':
             return 
         self.data_x_p, self.data_y_p = self._select_fit(min_num=3)
-        
+        self.formula_str = '$f(x) = Ae^{-x/\\tau} + B$'
         def _exp_decay(x, amplitude, offset, decay):
             return amplitude*np.exp(-x/decay) + offset
         
@@ -1909,7 +1868,7 @@ class DataFigure():
             self.fit[0].set_ydata(_exp_decay(self.data_x, *popt))
         self.fig.canvas.draw()
         
-        popt_str = ['amplitude', 'offset','decay']
+        popt_str = ['A', 'B','$\\tau$']
         if is_display:
             if popt[0] > 0:
                 self._display_popt(popt, popt_str, 'upper right')
