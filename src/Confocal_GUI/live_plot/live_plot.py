@@ -1808,7 +1808,19 @@ class DataFigure():
         if p0 is None:# no input
             guess_amplitude = np.abs(np.max(self.data_y_p) - np.min(self.data_y_p))/2
             guess_offset = np.mean(self.data_y_p)
-            guess_omega = 0.5/np.abs(self.data_x_p[np.argmin(self.data_y_p)] - self.data_x_p[np.argmax(self.data_y_p)])
+
+
+            N = len(self.data_y_p)
+            delta_x = self.data_x_p[1] - self.data_x_p[0]
+            y_detrended = self.data_y_p - np.mean(self.data_y_p)
+            fft_vals = np.fft.fft(y_detrended)
+            fft_freq = np.fft.fftfreq(N, d=delta_x)
+            mask = fft_freq > 0
+            fft_vals = fft_vals[mask]
+            fft_freq = fft_freq[mask]
+            idx_peak = np.argmax(np.abs(fft_vals))
+            guess_omega = fft_freq[idx_peak]
+
             guess_decay = np.abs(1/((1 - (np.abs(np.min(self.data_y_p) - guess_offset)/np.abs(np.max(self.data_y_p) - guess_offset)))*2*guess_omega))
             guess_phi = np.pi/2
 
@@ -1827,8 +1839,8 @@ class DataFigure():
 
             data_y_range = np.max(self.data_y_p) - np.min(self.data_y_p)
 
-        self.bounds = ([guess_amplitude/3, guess_offset - data_y_range, guess_omega*0.5, guess_decay/5, guess_phi - np.pi/10], \
-            [guess_amplitude*3, guess_offset + data_y_range, guess_omega*1.1, guess_decay*5, guess_phi + np.pi/10])
+        self.bounds = ([guess_amplitude/5, np.nanmin(self.data_y_p), guess_omega/5, guess_decay/5, guess_phi - np.pi/20], \
+            [guess_amplitude*5, np.nanmax(self.data_y_p), guess_omega*5, guess_decay*5, guess_phi + np.pi/20])
         
         self.popt_str = ['A', 'B', 'f', '$\\tau$', '$\\varphi$']
         popt, pcov = self._fit_and_draw(is_fit, is_display)            
