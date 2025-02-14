@@ -1820,8 +1820,13 @@ class DataFigure():
             fft_freq = fft_freq[mask]
             idx_peak = np.argmax(np.abs(fft_vals))
             guess_omega = fft_freq[idx_peak]
+            # fft data to get frequency 
 
-            guess_decay = np.abs(1/((1 - (np.abs(np.min(self.data_y_p) - guess_offset)/np.abs(np.max(self.data_y_p) - guess_offset)))*2*guess_omega))
+            delta_x_min_max = np.abs(self.data_x_p[np.argmin(self.data_y_p)] - self.data_x_p[np.argmax(self.data_y_p)])
+            ratio_min_max = (np.abs(np.min(self.data_y_p) - guess_offset)/np.abs(np.max(self.data_y_p) - guess_offset))
+            # amp_min = amp_max*exp(-delta_x_min_max/guess_decay)
+            # guess_decay = -delta_x_min_max/ln(ratio_min_max)
+            guess_decay = np.abs(-delta_x_min_max/np.log(ratio_min_max))
             guess_phi = np.pi/2
 
             data_y_range = np.max(self.data_y_p) - np.min(self.data_y_p)
