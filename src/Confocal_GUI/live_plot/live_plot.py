@@ -1537,97 +1537,215 @@ class DataFigure():
         """
         Given a list of candidate positions in normalized coordinates, each candidate being a tuple:
             (norm_x, norm_y, ha, va),
-        this function positions the text in the axes coordinate system (using ax.transAxes) for each candidate,
-        forces a draw (optionally hiding the text), and calculates how many of the line's data points fall within
-        the text's bounding box. The candidate with the fewest overlapping points is returned.
-        
+        this function positions the text (using ax.transAxes) for each candidate, forces a draw,
+        and calculates the fraction of the line's total length that overlaps with the text's bounding box.
+        For multi-line text (detected via '\n'), the function computes an overall bounding box
+        from the rendered sizes of the first line and the remaining lines.
+
+        The Liang-Barsky algorithm is used to compute the intersection length between each line segment
+        (formed by consecutive data points) and the candidate text bounding box.
+
+        The candidate whose overlapping fraction (overlap length / total line length) is minimal is chosen.
+
         Parameters:
             ax : matplotlib.axes.Axes
                 The axes that contain the line and text.
-            line : matplotlib.lines.Line2D
-                The line object whose data points are used to check for overlap with the text bbox.
             text : matplotlib.text.Text
                 The text object to be positioned.
             candidates : list of tuples
                 A list of candidate positions, each specified as 
-                (normalized_x, normalized_y, ha, va), where normalized_x and normalized_y are in [0, 1] (axes coordinates),
-                and ha, va are the horizontal and vertical alignment strings.
+                (normalized_x, normalized_y, ha, va), where normalized_x and normalized_y are in [0, 1]
+                (axes coordinates), and ha, va are the horizontal and vertical alignment strings.
         """
-        # Save the original text transform to restore later.
 
+        # Use default candidates if none provided.
         if candidates is None:
             candidates = [
-                            (0.025, 0.85, 'left', 'top'),
-                            (0.975, 0.85, 'right', 'top'),
-                            (0.025, 0.025, 'left', 'bottom'),
-                            (0.975, 0.025, 'right', 'bottom'),
-
-                            (0.025, 0.5, 'left', 'center'),
-                            (0.975, 0.5, 'right', 'center'),
-                            (0.5, 0.025, 'center', 'bottom'),
-                            (0.5, 0.85, 'center', 'top'),
-
-                            (0.5, 0.5, 'center', 'center'),
-                        ]
-                        # 0.8 to avoid overlap with crossselector and areaselector
+                (0.025, 0.85, 'left', 'top'),
+                (0.975, 0.85, 'right', 'top'),
+                (0.025, 0.025, 'left', 'bottom'),
+                (0.975, 0.025, 'right', 'bottom'),
+                (0.025, 0.5, 'left', 'center'),
+                (0.975, 0.5, 'right', 'center'),
+                (0.5, 0.025, 'center', 'bottom'),
+                (0.5, 0.85, 'center', 'top'),
+                (0.5, 0.5, 'center', 'center'),
+            ]
 
         canvas = ax.figure.canvas
+        # Hide text during processing.
         text.set_alpha(0)
+        orig_text = text.get_text()
         renderer = canvas.get_renderer()
-        
+
+        # ---------------------------------------------------------------------
+        # Precompute polyline points in display coordinates.
         pts = np.column_stack([self.data_x_p, self.data_y_p])
         pts_disp = ax.transData.transform(pts)
-
         pts_full = np.column_stack([self.data_x, self.data_y[:, 0]])
         pts_disp_full = ax.transData.transform(pts_full)
-        # calculate partial overlap and full data overlap, match partial minimum overlap first
 
-        
+        def total_length(pts_arr):
+            """Compute the total length of a polyline given its display coordinates."""
+            seg_lengths = np.hypot(np.diff(pts_arr[:, 0]), np.diff(pts_arr[:, 1]))
+            return np.sum(seg_lengths)
+
+        total_length_par = total_length(pts_disp)
+        total_length_full = total_length(pts_disp_full)
+
+        # ---------------------------------------------------------------------
+        # Precompute overall text bounding box dimensions.
+        # Render the text at the center (with center alignment) to obtain a consistent size.
+        text.set_ha('center')
+        text.set_va('center')
+        text.set_position((0.5, 0.5))
+        lines = orig_text.split("\n")
+
+        # Render the first line and get its bounding box.
+        text.set_text(lines[0])
+        canvas.draw()
+        first_bbox = text.get_window_extent(renderer)
+        first_width = first_bbox.width
+        first_height = first_bbox.height
+
+        # If multi-line text, render the remaining lines and get their bounding box.
+        if len(lines) > 1:
+            text.set_text("\n".join(lines[1:]))
+            canvas.draw()
+            rest_bbox = text.get_window_extent(renderer)
+            rest_width = rest_bbox.width
+            rest_height = rest_bbox.height
+        else:
+            rest_bbox = None
+            rest_width = 0
+            rest_height = 0
+
+        overall_width = first_width if rest_bbox is None else max(first_width, rest_width)
+        overall_height = first_height if rest_bbox is None else (first_height + rest_height)
+
+        # ---------------------------------------------------------------------
+        # Helper: Compute candidate bounding box in display coordinates.
+        def candidate_bbox(norm_x, norm_y, ha, va):
+            """
+            Compute the candidate text bounding box (xmin, ymin, xmax, ymax) in display coordinates,
+            given normalized coordinates and alignment.
+            """
+            anchor_disp = ax.transAxes.transform((norm_x, norm_y))
+            # Horizontal alignment.
+            if ha == 'left':
+                bbox_x0 = anchor_disp[0]
+            elif ha == 'center':
+                bbox_x0 = anchor_disp[0] - overall_width / 2
+            elif ha == 'right':
+                bbox_x0 = anchor_disp[0] - overall_width
+            else:
+                bbox_x0 = anchor_disp[0]
+
+            # Vertical alignment.
+            if va == 'top':
+                bbox_y1 = anchor_disp[1]
+                bbox_y0 = bbox_y1 - overall_height
+            elif va == 'center':
+                bbox_y0 = anchor_disp[1] - overall_height / 2
+                bbox_y1 = anchor_disp[1] + overall_height / 2
+            elif va == 'bottom':
+                bbox_y0 = anchor_disp[1]
+                bbox_y1 = bbox_y0 + overall_height
+            else:
+                bbox_y0 = anchor_disp[1] - overall_height / 2
+                bbox_y1 = anchor_disp[1] + overall_height / 2
+
+            return (bbox_x0, bbox_y0, bbox_x0 + overall_width, bbox_y0 + overall_height)
+
+        # ---------------------------------------------------------------------
+        # Liang-Barsky algorithm to compute overlapping length.
+        def liang_barsky_clip_length(x0, y0, x1, y1, xmin, xmax, ymin, ymax):
+            """
+            Compute the length of the portion of the line segment from (x0,y0) to (x1,y1)
+            that lies within the rectangle [xmin, xmax] x [ymin, ymax] using the Liang-Barsky algorithm.
+            """
+            dx = x1 - x0
+            dy = y1 - y0
+            p = [-dx, dx, -dy, dy]
+            q = [x0 - xmin, xmax - x0, y0 - ymin, ymax - y0]
+            u1, u2 = 0.0, 1.0
+
+            for pi, qi in zip(p, q):
+                if pi == 0:
+                    if qi < 0:
+                        return 0.0  # Line is parallel and outside the boundary.
+                else:
+                    t = qi / float(pi)
+                    if pi < 0:
+                        u1 = max(u1, t)
+                    else:
+                        u2 = min(u2, t)
+            if u1 > u2:
+                return 0.0  # No valid intersection.
+            seg_length = np.hypot(dx, dy)
+            return (u2 - u1) * seg_length
+
+        def compute_overlap_length(pts_arr, rect):
+            """
+            Compute the total overlapping length of the polyline (represented by pts_arr)
+            with the given rectangular region.
+            """
+            xmin, ymin, xmax, ymax = rect
+            overlap = 0.0
+            for i in range(len(pts_arr) - 1):
+                x0, y0 = pts_arr[i]
+                x1, y1 = pts_arr[i+1]
+                overlap += liang_barsky_clip_length(x0, y0, x1, y1, xmin, xmax, ymin, ymax)
+            return overlap
+
+        # ---------------------------------------------------------------------
+        # Iterate over candidate positions and compute overlapping fractions.
         best_candidate_par = None
-        min_points_inside_par = np.inf
+        min_fraction_par = np.inf
         best_candidate_full = None
-        min_points_inside_full = np.inf
-        
-        # Iterate through all candidate positions.
+        min_fraction_full = np.inf
+        overlap_fraction_par_for_full_candidate = None
+
         for candidate in candidates:
             norm_x, norm_y, ha, va = candidate
-            
-            # Set the text's alignment and position (in axes coordinates).
+            rect = candidate_bbox(norm_x, norm_y, ha, va)
+
+            # (Optional) Update text properties for visualization.
             text.set_ha(ha)
             text.set_va(va)
             text.set_position((norm_x, norm_y))
-            
-            # Force a draw to update the text's bounding box.
-            canvas.draw()
-            bbox = text.get_window_extent(renderer)
+            text.set_text(orig_text)
+            canvas.draw()  # This draw() may be removed if not strictly necessary.
 
+            overlap_par = compute_overlap_length(pts_disp, rect)
+            overlap_full = compute_overlap_length(pts_disp_full, rect)
 
-            inside = ((pts_disp[:, 0] >= bbox.x0) & (pts_disp[:, 0] <= bbox.x1) &
-                      (pts_disp[:, 1] >= bbox.y0) & (pts_disp[:, 1] <= bbox.y1))
-            count_inside = np.count_nonzero(inside)
-            
-            if count_inside < min_points_inside_par:
-                min_points_inside_par = count_inside
+            fraction_par = overlap_par / total_length_par if total_length_par > 0 else 0
+            fraction_full = overlap_full / total_length_full if total_length_full > 0 else 0
+
+            if fraction_par < min_fraction_par:
+                min_fraction_par = fraction_par
                 best_candidate_par = candidate
 
-            inside = ((pts_disp_full[:, 0] >= bbox.x0) & (pts_disp_full[:, 0] <= bbox.x1) &
-                      (pts_disp_full[:, 1] >= bbox.y0) & (pts_disp_full[:, 1] <= bbox.y1))
-            count_inside = np.count_nonzero(inside)
-            
-            if count_inside < min_points_inside_full:
-                min_points_inside_full = count_inside
+            if fraction_full < min_fraction_full:
+                min_fraction_full = fraction_full
                 best_candidate_full = candidate
-                points_inside_par_at_full = count_inside
+                overlap_fraction_par_for_full_candidate = fraction_par
 
-        best_candidate = best_candidate_full if points_inside_par_at_full==0 else best_candidate_par
+        # Choose best candidate: if candidate from "full" set yields zero overlap in "par", prefer it.
+        best_candidate = best_candidate_full if overlap_fraction_par_for_full_candidate == 0 else best_candidate_par
 
-        text.set_alpha(1)
-
+        # ---------------------------------------------------------------------
+        # Update text object with the best candidate and make it visible.
         norm_x, norm_y, ha, va = best_candidate
         text.set_ha(ha)
         text.set_va(va)
         text.set_position((norm_x, norm_y))
+        text.set_text(orig_text)
+        text.set_alpha(1)
         canvas.draw()
+
+
 
     def _display_popt(self, popt, popt_str):
         # popt_str = ['amplitude', 'offset', 'omega', 'decay', 'phi'], popt_pos = 'lower left' etc
@@ -1643,12 +1761,16 @@ class DataFigure():
         if self.text is None:
             self.text = self.fig.axes[0].text(0.5, 0.5, 
                                               result, transform=self.fig.axes[0].transAxes, 
-                                              color='red', ha='center', va='center', fontsize=10)
+                                              color='blue', ha='center', va='center', fontsize=10)
 
         else:
             self.text.set_text(result)
 
         self._min_overlap(self.fig.axes[0], self.text)
+
+        for line in self.live_plot.lines:
+            line.set_alpha(0.5)
+
         self.fig.canvas.draw()
 
     def _select_fit(self, min_num=2):
@@ -1696,6 +1818,7 @@ class DataFigure():
             self.fit = self.fig.axes[0].plot(self.data_x, self._fit_func(self.data_x, *popt), color='orange', linestyle='--')
         else:
             self.fit[0].set_ydata(self._fit_func(self.data_x, *popt))
+
         self.fig.canvas.draw()
         
         if is_display:
@@ -1900,6 +2023,8 @@ class DataFigure():
             self.text.remove()
         if self.fit is not None:
             self.fit[0].remove()
+        for line in self.live_plot.lines:
+            line.set_alpha(1)
         self.fig.canvas.draw()
         self.fit = None
         self.text = None
