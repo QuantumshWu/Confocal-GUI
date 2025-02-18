@@ -787,6 +787,8 @@ class MainWindow(QMainWindow):
 
 
     def step_PLE_in_MHz(self):
+        if (not hasattr(self, 'measurement_PLE')) or (self.measurement_PLE is None):
+            return
         if self.measurement_PLE.x_unit == 'nm':
             step_in_MHz = 1000*np.abs(self.spl/((self.wl + self.wu)/2) - self.spl/((self.wl + self.wu)/2 + self.step_PLE))
             self.lineEdit_step_PLE.setText(f'{step_in_MHz:.2f}MHz')
