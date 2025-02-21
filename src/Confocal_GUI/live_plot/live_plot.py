@@ -1852,6 +1852,7 @@ class DataFigure():
             guess_full_width = np.abs(self.data_x_p[0]-self.data_x_p[-1])/4
             self.p0_list.append([guess_center, guess_full_width, guess_height, guess_bg])
 
+
         else:
             self.p0_list = [p0, ]
             guess_center = self.p0[0]
@@ -1861,8 +1862,8 @@ class DataFigure():
 
         data_x_range = np.abs(self.data_x_p[-1] - self.data_x_p[0])
         data_y_range = np.abs(np.max(self.data_y_p) - np.min(self.data_y_p))
-        self.bounds = ([np.nanmin(self.data_x_p), guess_full_width/10, -10*data_y_range, -10*data_y_range], \
-        [np.nanmax(self.data_x_p), guess_full_width*10, 10*data_y_range, 10*data_y_range])
+        self.bounds = ([np.nanmin(self.data_x_p), guess_full_width/10, -10*data_y_range, np.nanmin(self.data_y_p)-10*data_y_range], \
+        [np.nanmax(self.data_x_p), guess_full_width*10, 10*data_y_range, np.nanmax(self.data_y_p)+10*data_y_range])
         
         self.popt_str = ['$x_0$', 'FWHM', 'H', 'B']
         popt, pcov = self._fit_and_draw(is_fit, is_display)
@@ -1910,8 +1911,8 @@ class DataFigure():
 
         data_x_range = np.abs(self.data_x_p[-1] - self.data_x_p[0])
         data_y_range = np.abs(np.max(self.data_y_p) - np.min(self.data_y_p))
-        self.bounds = ([np.nanmin(self.data_x_p), guess_full_width/10, -10*data_y_range, -10*data_y_range, 0], \
-        [np.nanmax(self.data_x_p), guess_full_width*10, 10*data_y_range, 10*data_y_range, 2*data_x_range])
+        self.bounds = ([np.nanmin(self.data_x_p), guess_full_width/10, -10*data_y_range, np.nanmin(self.data_y_p)-10*data_y_range, 0], \
+        [np.nanmax(self.data_x_p), guess_full_width*10, 10*data_y_range, np.nanmax(self.data_y_p)+10*data_y_range, 2*data_x_range])
         
         self.popt_str = ['$x_0$', 'FWHM', 'H', 'B', '$\\delta$']
         popt, pcov = self._fit_and_draw(is_fit, is_display)

@@ -839,7 +839,7 @@ class VirtualCounter(BaseCounter):
             frequency = rf.frequency
 
             if counter_mode == 'analog':
-                lambda_counts = exposure*odmr_dict['odmr_height']*(1-(odmr_dict['odmr_width']/2)**2\
+                lambda_counts = exposure*odmr_dict['odmr_height']*(1-0.01*(odmr_dict['odmr_width']/2)**2\
                                          /((frequency-odmr_dict['odmr_center'])**2 + (odmr_dict['odmr_width']/2)**2))
                 lambda_counts_ref = 0.995*exposure*odmr_dict['odmr_height']
                 if self.data_mode == 'single':
