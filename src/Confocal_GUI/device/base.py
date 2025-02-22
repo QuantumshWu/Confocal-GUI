@@ -86,28 +86,36 @@ def initialize_classes(config, lookup_dict, namespace):
     print('\nNow you can call devices using e.g. config_instances["rf"].gui() or rf.gui()')
     return instances
 
+def simple_hashable_value(v):
+    # if dict, converted to a tuple
+    if isinstance(v, dict):
+        return tuple(sorted(v.items()))
+    return v
 
 class SingletonAndCloseMeta(ABCMeta):
     # make sure all devices only have one instance
     # mutiple initialization will get the same instance if params for initilization are not changed
     # and also register close() to atexit
 
-    # Dictionary mapping each unique device (identified by (cls, device_key)) to its (init_key, instance)
+    # Dictionary to store the instance and its initialization key for each class
     _instance_map = {}
 
     def __call__(cls, *args, **kwargs):
-        #use the entire parameters as a unique key
-        device_key = (args, frozenset(kwargs.items()))
-        # Create the composite key for the mapping
+        # Convert args: if any arg is a dict, convert it to a sorted tuple of items
+        hashable_args = tuple(simple_hashable_value(x) for x in args)
+        # For kwargs, sort the items and convert dict values if needed
+        hashable_kwargs = tuple(sorted((k, simple_hashable_value(v)) for k, v in kwargs.items()))
+        # Use these to form a unique key
+        device_key = (hashable_args, hashable_kwargs)
         map_key = (cls, device_key)
         
         if map_key in cls._instance_map:
-            old_init_key, old_instance = cls._instance_map[map_key]
-            if old_init_key == device_key:
+            old_key, old_instance = cls._instance_map[map_key]
+            if old_key == device_key:
                 # If the initialization parameters match, return the existing instance
                 return old_instance
             else:
-                # If the parameters differ, close the previous instance
+                # If the parameters differ, close the existing instance
                 old_instance.close()
         
         # Create a new instance and register its close() method for program exit
