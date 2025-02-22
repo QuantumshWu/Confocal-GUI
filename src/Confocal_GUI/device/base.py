@@ -87,18 +87,35 @@ def initialize_classes(config, lookup_dict, namespace):
     return instances
 
 
-
 class SingletonAndCloseMeta(ABCMeta):
     # make sure all devices only have one instance
-    # mutiple initialization will get the same instance
+    # mutiple initialization will get the same instance if params for initilization are not changed
     # and also register close() to atexit
+
+    # Dictionary to hold the instance and its initialization key for each class
     _instance_map = {}
+
     def __call__(cls, *args, **kwargs):
-        if cls not in cls._instance_map:
-            instance = super().__call__(*args, **kwargs)
-            atexit.register(instance.close)
-            cls._instance_map[cls] = instance
-        return cls._instance_map[cls]
+        # Create a hashable key from the initialization parameters
+        key = (args, frozenset(kwargs.items()))
+        
+        # Check if an instance already exists for the class
+        if cls in cls._instance_map:
+            old_key, old_instance = cls._instance_map[cls]
+            # If the initialization parameters are the same, return the existing instance
+            if old_key == key:
+                return old_instance
+            else:
+                # If the parameters differ, close the previous instance
+                old_instance.close()
+        
+        # Create a new instance using the superclass __call__ method
+        instance = super().__call__(*args, **kwargs)
+        # Register the instance's close() method to be called at exit
+        atexit.register(instance.close)
+        # Save the new instance along with its initialization key
+        cls._instance_map[cls] = (key, instance)
+        return instance
       
 
 class BaseLaser(ABC):

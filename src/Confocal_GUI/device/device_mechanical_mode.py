@@ -429,7 +429,7 @@ class AFG31152(BaseScanner):
         Use self.gui_property and self.gui_property_type to determine how to display configurable parameters
         """
         self.gui_property = ['x', 'y']
-        self.gui_property_type = ['x', 'y']
+        self.gui_property_type = ['float', 'float']
         GUI_Device(self)
     
     @property
