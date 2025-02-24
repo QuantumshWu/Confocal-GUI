@@ -303,7 +303,7 @@ class USB2120(BaseCounter, metaclass=SingletonAndCloseMeta):
 
     def _callback_read(self, task, task_handle, event_type, number_of_samples, callback_data):
         if self.read_start:
-            if self.read_n >= 10:
+            if self.read_n >= 11:
                 self.counts_main_array = self.task_counter_ctr.read(number_of_samples_per_channel = -1)
                 self.counts_ref_array = self.task_counter_ctr_ref.read(number_of_samples_per_channel = -1)
                 self.read_n = 0
