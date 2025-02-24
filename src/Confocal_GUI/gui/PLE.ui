@@ -1063,7 +1063,7 @@ unit</string>
     <property name="font">
      <font>
       <family>Arial</family>
-      <pointsize>12</pointsize>
+      <pointsize>9</pointsize>
      </font>
     </property>
    </widget>

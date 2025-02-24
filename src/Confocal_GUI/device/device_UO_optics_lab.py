@@ -70,7 +70,7 @@ class TimeTaggerCounter(BaseCounter):
 
 
 
-class USB6346(BaseCounter, BaseScanner, metaclass=SingletonAndCloseMeta):
+class _USB6346(BaseCounter, BaseScanner, metaclass=SingletonAndCloseMeta):
     """
     Class for NI DAQ USB-6346
     will be used for scanner: ao0, ao1 for X and Y of Galvo
@@ -291,6 +291,275 @@ class USB6346(BaseCounter, BaseScanner, metaclass=SingletonAndCloseMeta):
             counts_ref_array = self.task_counter_ctr_ref.read(number_of_samples_per_channel = self.sample_num)
             data_main = float(counts_main_array[-1] - counts_main_array[0])
             data_ref = float(counts_ref_array[-1] - counts_ref_array[0])
+
+
+        else:
+            print(f'can only be one of the {self.valid_counter_mode}')
+
+
+        if self.data_mode == 'single':
+
+            return [data_main,]
+
+        elif self.data_mode == 'ref_div':
+
+            if data_main==0 or data_ref==0:
+                return [0,]
+            else:
+                return [data_main/data_ref,]
+
+        elif self.data_mode == 'ref_sub':
+            return [(data_main - data_ref),]
+
+        elif self.data_mode == 'dual':
+            return [data_main, data_ref]
+
+        else:
+            print(f'can only be one of the {self.valid_data_mode}')
+
+
+class USB6346(BaseCounter, BaseScanner, metaclass=SingletonAndCloseMeta):
+    """
+    Class for NI DAQ USB-6346
+    will be used for scanner: ao0, ao1 for X and Y of Galvo
+    and for counter, 
+    CTR1 uses PFI3, PFI4 for src and gate, 
+    CTR2 (ref) uses PFI3, PFI5 for src and gate
+    exit_handler method defines how to close task when exit
+    """
+    
+    def __init__(self, exposure=1, port_config=None):
+
+        import nidaqmx
+        from nidaqmx.constants import AcquisitionType
+        from nidaqmx.constants import TerminalConfiguration
+        from nidaqmx.stream_readers import AnalogMultiChannelReader
+        import warnings 
+
+        if port_config is None:
+            port_config = {'analog_signal':'ai0', 'analog_gate':'ai1', 'analog_gate_ref':'ai2',\
+                           'apd_signal':'PFI3', 'apd_gate':'PFI4', 'apd_gate_ref':'PFI5'}
+        self.port_config = port_config
+        self.nidaqmx = nidaqmx
+
+        self.task = nidaqmx.Task()
+        self.nidaqmx = nidaqmx
+        self.task.ao_channels.add_ao_voltage_chan('Dev1/ao0', min_val=-5, max_val=5)
+        self.task.ao_channels.add_ao_voltage_chan('Dev1/ao1', min_val=-5, max_val=5)
+        self.task.start()
+
+        self.counter_mode = None
+        # analog, apd
+        self.data_mode = None
+        # single, ref_div, ref_sub, dual
+
+        self.exposure = None
+        self.clock = None
+        self.tasks_to_close = [] # tasks need to be closed after swicthing counter mode  
+        self.data_buffer = None
+        self.reader = None
+        # data_buffer for faster read
+
+        self._x = 0
+        self._y = 0
+        self.x_lb = -5000
+        self.x_ub = 5000
+        self.y_lb = -5000
+        self.y_ub = 5000
+
+        self.read_n = 0
+        self.read_start = False
+        self.data_ready_event = threading.Event()
+
+    def gui(self):
+        """
+        Use self.gui_property and self.gui_property_type to determine how to display configurable parameters
+        """
+        self.gui_property = ['x', 'y']
+        self.gui_property_type = ['float', 'float']
+        GUI_Device(self)
+
+    @property
+    def valid_counter_mode(self):
+        return ['analog', 'apd']
+
+    @property
+    def valid_data_mode(self):
+        return ['single', 'ref_div', 'ref_sub', 'dual']
+
+        
+    @property
+    def x(self):
+        return self._x
+    
+    @x.setter
+    def x(self, value):
+        self._x = int(value) # in mV 
+        self.task.write([self._x/1000, self._y/1000], auto_start=True) # in V
+        self.task.stop()
+        
+    @property
+    def y(self):
+        return self._y
+    
+    @y.setter
+    def y(self, value):
+        self._y = int(value) # in mV 
+        self.task.write([self._x/1000, self._y/1000], auto_start=True) # in V
+        self.task.stop()
+
+    def _callback_read(self, task, task_handle, event_type, number_of_samples, callback_data):
+        if self.read_start:
+            if self.read_n >= 9:
+                self.counts_main_array = self.task_counter_ctr.read(number_of_samples_per_channel = -1)
+                self.counts_ref_array = self.task_counter_ctr_ref.read(number_of_samples_per_channel = -1)
+                self.read_n = 0
+                self.read_start = False
+                self.data_ready_event.set()
+            else:
+                self.read_n += 1
+        else:
+            _ = self.task_counter_ctr.read(number_of_samples_per_channel = -1)
+            _ = self.task_counter_ctr_ref.read(number_of_samples_per_channel = -1)
+
+        return 0
+
+
+    def set_timing(self, exposure):
+
+        # change match case to if elif to fit python before 3.10
+
+        if self.counter_mode == 'apd':
+            self.clock = 1e3 # sampling rate for edge counting, defines when transfer counts from DAQ to PC, should be not too large to accomdate long exposure
+            self.sample_num_div_10 = int(round(self.clock*exposure/10))
+            self.sample_num = 10*self.sample_num_div_10
+            self.task_counter_ctr.stop()
+            self.task_counter_ctr_ref.stop()
+            self.task_counter_ctr.timing.cfg_samp_clk_timing(self.clock, source = '/Dev1/Ctr3InternalOutput', \
+                sample_mode=self.nidaqmx.constants.AcquisitionType.CONTINUOUS, samps_per_chan=self.sample_num)
+            self.task_counter_ctr_ref.timing.cfg_samp_clk_timing(self.clock, source = '/Dev1/Ctr3InternalOutput', \
+                sample_mode=self.nidaqmx.constants.AcquisitionType.CONTINUOUS, samps_per_chan=self.sample_num)
+            self.exposure = exposure
+
+            self.task_counter_ctr.start()
+            self.task_counter_ctr_ref.start()
+
+        elif self.counter_mode == 'analog':
+            self.clock = 500e3 # sampling rate for analog input, should be fast enough to capture gate signal for postprocessing
+            self.sample_num = int(np.ceil(self.clock*exposure))
+            self.task_counter_ai.stop()
+            self.task_counter_ai.timing.cfg_samp_clk_timing(self.clock, sample_mode=self.nidaqmx.constants.AcquisitionType.FINITE, samps_per_chan=self.sample_num)
+            self.exposure = exposure
+            self.data_buffer = np.zeros((3, self.sample_num), dtype=np.float64)
+
+        else:
+            print(f'can only be one of the {self.valid_counter_mode}')
+
+    def close_old_tasks(self):
+        for task in self.tasks_to_close:
+            task.stop()
+            task.close()
+
+        self.tasks_to_close = []
+
+    def close(self):
+        self.close_old_tasks()
+
+    def set_counter(self, counter_mode = 'apd'):
+        if counter_mode == 'apd':
+
+            self.close_old_tasks()
+
+            self.task_counter_ctr = self.nidaqmx.Task()
+            self.task_counter_ctr.ci_channels.add_ci_count_edges_chan("Dev1/ctr1")
+            # ctr1 source PFI3, gate PFI4
+            self.task_counter_ctr.triggers.pause_trigger.dig_lvl_src = '/Dev1/'+self.port_config['apd_gate']
+            self.task_counter_ctr.ci_channels.all.ci_count_edges_term = '/Dev1/'+self.port_config['apd_signal']
+            self.task_counter_ctr.triggers.pause_trigger.trig_type = self.nidaqmx.constants.TriggerType.DIGITAL_LEVEL
+            self.task_counter_ctr.triggers.pause_trigger.dig_lvl_when = self.nidaqmx.constants.Level.LOW
+
+            self.task_counter_ctr_ref = self.nidaqmx.Task()
+            self.task_counter_ctr_ref.ci_channels.add_ci_count_edges_chan("Dev1/ctr2")
+            # ctr1 source PFI3, gate PFI5
+            self.task_counter_ctr_ref.triggers.pause_trigger.dig_lvl_src = '/Dev1/'+self.port_config['apd_gate_ref']
+            self.task_counter_ctr_ref.ci_channels.all.ci_count_edges_term = '/Dev1/'+self.port_config['apd_signal']
+            self.task_counter_ctr_ref.triggers.pause_trigger.trig_type = self.nidaqmx.constants.TriggerType.DIGITAL_LEVEL
+            self.task_counter_ctr_ref.triggers.pause_trigger.dig_lvl_when = self.nidaqmx.constants.Level.LOW
+
+            self.task_counter_clock = self.nidaqmx.Task()
+            self.task_counter_clock.co_channels.add_co_pulse_chan_freq(counter="Dev1/ctr3", freq=1e3, duty_cycle=0.5)
+            # ctr3 clock for buffered edge counting ctr1 and ctr2
+            self.task_counter_clock.timing.cfg_implicit_timing(sample_mode=self.nidaqmx.constants.AcquisitionType.CONTINUOUS)
+
+            self.task_counter_ctr.register_every_n_samples_acquired_into_buffer_event(self.sample_num_div_10, \
+                functools.partial(self._callback_read, self.task_counter_ctr))
+            # register call back for one of counter, only one
+
+            self.task_counter_clock.start()
+            self.task_counter_ctr.start()
+            self.task_counter_ctr_ref.start()
+
+            self.counter_mode = counter_mode
+            self.tasks_to_close = [self.task_counter_ctr, self.task_counter_ctr_ref, self.task_counter_clock]
+
+        elif counter_mode == 'analog':
+
+            self.close_old_tasks()
+
+            self.task_counter_ai = self.nidaqmx.Task()
+            self.task_counter_ai.ai_channels.add_ai_voltage_chan('Dev1/'+self.port_config['analog_signal'])
+            self.task_counter_ai.ai_channels.add_ai_voltage_chan('Dev1/'+self.port_config['analog_gate'])
+            self.task_counter_ai.ai_channels.add_ai_voltage_chan('Dev1/'+self.port_config['analog_gate_ref'])
+            # for analog counter
+            self.task_counter_ai.start()
+            self.counter_mode = counter_mode
+            self.tasks_to_close = [self.task_counter_ai]
+            self.reader = self.nidaqmx.stream_readers.AnalogMultiChannelReader(self.task_counter_ai.in_stream)
+
+        else:
+            print(f'can only be one of the {self.valid_counter_mode}')
+
+
+    def read_counts(self, exposure, counter_mode = 'apd', data_mode='single',**kwargs):
+
+        self.data_mode = data_mode
+        if (counter_mode != self.counter_mode):
+            self.set_counter(counter_mode)
+            self.set_timing(exposure)
+        elif (exposure != self.exposure):
+            self.set_timing(exposure)
+
+
+        if self.counter_mode == 'analog':
+
+            self.task_counter_ai.stop()
+            self.task_counter_ai.start()
+            time.sleep(exposure)
+            self.reader.read_many_sample(self.data_buffer, number_of_samples_per_channel = self.sample_num)
+
+            data = self.data_buffer[0, :]
+            gate1 = self.data_buffer[1, :]
+            gate2 = self.data_buffer[2, :]
+            threshold = 2.7
+
+            gate1_index = np.where(gate1 > threshold)[0]
+            gate2_index = np.where(gate2 > threshold)[0]
+
+            data_main = float(np.mean(data[gate1_index])) if len(gate1_index)!=0 else 0
+            data_ref = float(np.mean(data[gate2_index])) if len(gate2_index)!=0 else 0
+
+            # seems better than np.sum()/np.sum(), don't know why?
+            # may due to finite sampling rate than they have different array length
+
+
+        elif self.counter_mode == 'apd':
+            self.read_n = 0
+            self.data_ready_event.clear()
+            self.read_start = True
+
+            if self.data_ready_event.wait(timeout=self.exposure*10):
+                data_main = float(self.counts_main_array[-1] - self.counts_main_array[-self.sample_num])
+                data_ref = float(self.counts_ref_array[-1] - self.counts_ref_array[-self.sample_num])
 
 
         else:

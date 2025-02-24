@@ -284,6 +284,10 @@ class USB2120(BaseCounter, metaclass=SingletonAndCloseMeta):
 
         self.exposure = None
         self.clock = None
+        self.read_n = 0
+        self.read_start = False
+        self.data_ready_event = threading.Event()
+
 
     @property
     def valid_counter_mode(self):
@@ -293,6 +297,22 @@ class USB2120(BaseCounter, metaclass=SingletonAndCloseMeta):
     def valid_data_mode(self):
         return ['single', 'ref_div', 'ref_sub', 'dual']
 
+    def _callback_read(self, task, task_handle, event_type, number_of_samples, callback_data):
+        if self.read_start:
+            if self.read_n >= 9:
+                self.counts_main_array = self.task_counter_ctr.read(number_of_samples_per_channel = -1)
+                self.counts_ref_array = self.task_counter_ctr_ref.read(number_of_samples_per_channel = -1)
+                self.read_n = 0
+                self.read_start = False
+                self.data_ready_event.set()
+            else:
+                self.read_n += 1
+        else:
+            _ = self.task_counter_ctr.read(number_of_samples_per_channel = -1)
+            _ = self.task_counter_ctr_ref.read(number_of_samples_per_channel = -1)
+
+        return 0
+
 
     def set_timing(self, exposure):
 
@@ -300,27 +320,38 @@ class USB2120(BaseCounter, metaclass=SingletonAndCloseMeta):
 
         if self.counter_mode == 'apd':
             self.clock = 1e3 # sampling rate for edge counting, defines when transfer counts from DAQ to PC, should be not too large to accomdate long exposure
-            self.sample_num = int(round(self.clock*exposure))
+            self.sample_num_div_10 = int(round(self.clock*exposure/10))
+            self.sample_num = 10*self.sample_num_div_10
             self.task_counter_ctr.stop()
             self.task_counter_ctr_ref.stop()
             self.task_counter_ctr.timing.cfg_samp_clk_timing(self.clock, source = '/Dev2/Ctr0InternalOutput', \
-                sample_mode=self.nidaqmx.constants.AcquisitionType.FINITE, samps_per_chan=self.sample_num)
+                sample_mode=self.nidaqmx.constants.AcquisitionType.CONTINUOUS, samps_per_chan=self.sample_num)
             self.task_counter_ctr_ref.timing.cfg_samp_clk_timing(self.clock, source = '/Dev2/Ctr0InternalOutput', \
-                sample_mode=self.nidaqmx.constants.AcquisitionType.FINITE, samps_per_chan=self.sample_num)
+                sample_mode=self.nidaqmx.constants.AcquisitionType.CONTINUOUS, samps_per_chan=self.sample_num)
 
             self.exposure = exposure
+
+            self.task_counter_ctr.start()
+            self.task_counter_ctr_ref.start()
 
         else:
             print(f'can only be one of the {self.valid_counter_mode}')
 
 
 
+    def close_old_tasks(self):
+        for task in self.tasks_to_close:
+            task.stop()
+            task.close()
+
+        self.tasks_to_close = []
+
     def close(self):
-        pass
+        self.close_old_tasks()
 
     def set_counter(self, counter_mode = 'apd'):
         if counter_mode == 'apd':
-
+            self.close_old_tasks()
 
             self.task_counter_ctr = self.nidaqmx.Task()
             self.task_counter_ctr.ci_channels.add_ci_count_edges_chan('/Dev2/ctr1')
@@ -343,11 +374,17 @@ class USB2120(BaseCounter, metaclass=SingletonAndCloseMeta):
             self.task_counter_clock.co_channels.add_co_pulse_chan_freq(counter="Dev2/ctr0", freq=1e3, duty_cycle=0.5)
             # ctr3 clock for buffered edge counting ctr1 and ctr2
             self.task_counter_clock.timing.cfg_implicit_timing(sample_mode=self.nidaqmx.constants.AcquisitionType.CONTINUOUS)
+
+            self.task_counter_ctr.register_every_n_samples_acquired_into_buffer_event(self.sample_num_div_10, \
+                functools.partial(self._callback_read, self.task_counter_ctr))
+            # register call back for one of counter, only one
+
             self.task_counter_clock.start()
             self.task_counter_ctr.start()
             self.task_counter_ctr_ref.start()
 
             self.counter_mode = counter_mode
+            self.tasks_to_close = [self.task_counter_ctr, self.task_counter_ctr_ref, self.task_counter_clock]
 
         else:
             print(f'can only be one of the {self.valid_counter_mode}')
@@ -364,20 +401,13 @@ class USB2120(BaseCounter, metaclass=SingletonAndCloseMeta):
 
 
         if self.counter_mode == 'apd':
+            self.read_n = 0
+            self.data_ready_event.clear()
+            self.read_start = True
 
-            self.task_counter_clock.stop()
-            self.task_counter_ctr.stop()
-            self.task_counter_ctr_ref.stop()
-            self.task_counter_ctr.start()
-            self.task_counter_ctr_ref.start()
-            self.task_counter_clock.start()
-
-            time.sleep(exposure)
-
-            counts_main_array = self.task_counter_ctr.read(number_of_samples_per_channel = self.sample_num)
-            counts_ref_array = self.task_counter_ctr_ref.read(number_of_samples_per_channel = self.sample_num)
-            data_main = float(counts_main_array[-1] - counts_main_array[0])
-            data_ref = float(counts_ref_array[-1] - counts_ref_array[0])
+            if self.data_ready_event.wait(timeout=self.exposure*10):
+                data_main = float(self.counts_main_array[-1] - self.counts_main_array[-self.sample_num])
+                data_ref = float(self.counts_ref_array[-1] - self.counts_ref_array[-self.sample_num])
 
 
         else:

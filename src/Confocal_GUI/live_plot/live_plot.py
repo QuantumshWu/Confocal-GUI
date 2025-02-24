@@ -332,7 +332,7 @@ class LivePlotGUI(ABC):
         self.ylabel = labels[1]
         self.data_x = data[0]
         self.data_y = data[1]
-        self.points_total = len(self.data_x.flatten())
+        self.points_total = len(self.data_x)
         
         self.update_time = update_time
         self.data_generator = data_generator

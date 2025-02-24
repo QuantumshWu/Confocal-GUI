@@ -113,6 +113,8 @@ class MainWindow(QMainWindow):
         self.measurement_PLE = measurement_PLE
         self.measurement_Live = measurement_Live
         self.ui = ui
+        self.overhead_PL = 0.01 # estimated 10ms overhead for single data point
+        self.overhead_PLE = 0.5 # estimated 500ms overhead for single data point PLE
         ui_path = os.path.join(os.path.dirname(__file__), self.ui)
         uic.loadUi(ui_path, self)
 
@@ -665,14 +667,17 @@ class MainWindow(QMainWindow):
             points_total = self.live_plot_PL.points_total
             points_done = self.live_plot_PL.points_done
             ratio = points_done/points_total
-            self.lineEdit_time_PL.setText(f'PL finishes in {(ratio*self.time_PL):.2f}s / {self.time_PL:.2f}s, {ratio*100:.2f}%')
+            time_done = time.time()-self.time_PL_start
+            self.overhead_PL = time_done/points_done - self.exposure_PL
+            self.lineEdit_time_PL.setText(f'PL finishes in {time_done:.2f}s / {time_done/ratio:.2f}s'
+                f', {ratio*100:.2f}%, {self.overhead_PL+self.exposure_PL:.2f}s/point')
 
         else:
             self.read_data_PL()
-            overhead = 0.01 # estimated 10ms overhead for single data point
-            time = (self.exposure_PL+overhead) * len(np.arange(self.xl, self.xu, self.step_PL)) * len(np.arange(self.yl, self.yu, self.step_PL))
-            self.lineEdit_time_PL.setText(f'new PL finishes in {time:.2f}s')
-            self.time_PL = time
+            self.PL_points = len(np.arange(self.xl, self.xu, self.step_PL)) * len(np.arange(self.yl, self.yu, self.step_PL))
+            time_est = (self.exposure_PL+self.overhead_PL) * self.PL_points
+            self.lineEdit_time_PL.setText(f'new PL finishes in {time_est:.2f}s')
+            self.time_PL_start = time.time()
 
 
 
@@ -810,16 +815,19 @@ class MainWindow(QMainWindow):
             points_total = self.live_plot_PLE.points_total
             points_done = self.live_plot_PLE.points_done
             ratio = points_done/points_total
-            self.lineEdit_time_PLE.setText(f'{self.measurement_PLE.measurement_name} \
-                finishes in {(ratio*self.time_PLE):.2f}s / {self.time_PLE:.2f}s, {ratio*100:.2f}%')
+            time_done = time.time() - self.time_PLE_start
+            self.overhead_PLE = time_done/points_done - self.exposure_PLE
+            self.lineEdit_time_PLE.setText(f'{self.measurement_PLE.measurement_name}'\
+                f'finishes in {time_done:.2f}s / {time_done/ratio:.2f}s'
+                f', {ratio*100:.2f}%, {self.overhead_PLE+self.exposure_PLE:.2f}s/point')
 
         else:
             self.read_data_PLE()
-            overhead = 0.05 # estimated 50ms overhead 
-            time = (self.exposure_PLE + overhead)* len(np.arange(self.wl, self.wu, self.step_PLE)) 
+            self.PLE_points = len(np.arange(self.wl, self.wu, self.step_PLE)) 
+            time_est = (self.exposure_PLE + self.overhead_PLE)* self.PLE_points
             # considering the overhead of stabilizing laser frequency
-            self.lineEdit_time_PLE.setText(f'new {self.measurement_PLE.measurement_name} finishes in {time:.2f}s')
-            self.time_PLE = time
+            self.lineEdit_time_PLE.setText(f'new {self.measurement_PLE.measurement_name} finishes in {time_est:.2f}s')
+            self.time_PLE_start = time.time()
 
 
     def read_wavelength(self):
