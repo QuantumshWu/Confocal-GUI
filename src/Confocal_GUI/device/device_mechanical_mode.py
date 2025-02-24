@@ -5,6 +5,7 @@ current_directory = os.path.dirname(os.path.abspath(__file__))
 # location of new focus laser driver file
 sys.path.append(current_directory)
 import numpy as np
+import functools
 import threading
 from .base import *
 from Confocal_GUI.gui import *
