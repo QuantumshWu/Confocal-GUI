@@ -324,6 +324,7 @@ class USB2120(BaseCounter, metaclass=SingletonAndCloseMeta):
             self.clock = 1e3 # sampling rate for edge counting, defines when transfer counts from DAQ to PC, should be not too large to accomdate long exposure
             self.sample_num_div_10 = int(round(self.clock*exposure/10))
             self.sample_num = 10*self.sample_num_div_10
+            self.task_counter_clock.stop()
             self.task_counter_ctr.stop()
             self.task_counter_ctr_ref.stop()
             self.task_counter_ctr.timing.cfg_samp_clk_timing(self.clock, source = '/Dev2/Ctr0InternalOutput', \
@@ -333,6 +334,11 @@ class USB2120(BaseCounter, metaclass=SingletonAndCloseMeta):
 
             self.exposure = exposure
 
+            self.task_counter_ctr.register_every_n_samples_acquired_into_buffer_event(self.sample_num_div_10, \
+                functools.partial(self._callback_read, self.task_counter_ctr))
+            # register call back for one of counter, only one
+
+            self.task_counter_clock.start()
             self.task_counter_ctr.start()
             self.task_counter_ctr_ref.start()
 
@@ -376,14 +382,6 @@ class USB2120(BaseCounter, metaclass=SingletonAndCloseMeta):
             self.task_counter_clock.co_channels.add_co_pulse_chan_freq(counter="Dev2/ctr0", freq=1e3, duty_cycle=0.5)
             # ctr3 clock for buffered edge counting ctr1 and ctr2
             self.task_counter_clock.timing.cfg_implicit_timing(sample_mode=self.nidaqmx.constants.AcquisitionType.CONTINUOUS)
-
-            self.task_counter_ctr.register_every_n_samples_acquired_into_buffer_event(self.sample_num_div_10, \
-                functools.partial(self._callback_read, self.task_counter_ctr))
-            # register call back for one of counter, only one
-
-            self.task_counter_clock.start()
-            self.task_counter_ctr.start()
-            self.task_counter_ctr_ref.start()
 
             self.counter_mode = counter_mode
             self.tasks_to_close = [self.task_counter_ctr, self.task_counter_ctr_ref, self.task_counter_clock]
