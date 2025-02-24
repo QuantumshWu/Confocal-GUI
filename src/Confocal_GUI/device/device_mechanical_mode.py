@@ -284,7 +284,7 @@ class USB2120(BaseCounter, metaclass=SingletonAndCloseMeta):
         # single, ref_div, ref_sub, dual
 
         self.exposure = None
-        self.clock = None
+        self.clock = 1e3 # sampling rate for edge counting, defines when transfer counts from DAQ to PC, should be not too large to accomdate long exposure
         self.read_n = 0
         self.read_start = False
         self.data_ready_event = threading.Event()
@@ -302,7 +302,7 @@ class USB2120(BaseCounter, metaclass=SingletonAndCloseMeta):
 
     def _callback_read(self, task, task_handle, event_type, number_of_samples, callback_data):
         if self.read_start:
-            if self.read_n >= 9:
+            if self.read_n >= 10:
                 self.counts_main_array = self.task_counter_ctr.read(number_of_samples_per_channel = -1)
                 self.counts_ref_array = self.task_counter_ctr_ref.read(number_of_samples_per_channel = -1)
                 self.read_n = 0
@@ -322,7 +322,6 @@ class USB2120(BaseCounter, metaclass=SingletonAndCloseMeta):
         # change match case to if elif to fit python before 3.10
 
         if self.counter_mode == 'apd':
-            self.clock = 1e3 # sampling rate for edge counting, defines when transfer counts from DAQ to PC, should be not too large to accomdate long exposure
             self.sample_num_div_10 = int(round(self.clock*exposure/10))
             self.sample_num = 10*self.sample_num_div_10
             self.task_counter_clock.stop()
@@ -392,6 +391,9 @@ class USB2120(BaseCounter, metaclass=SingletonAndCloseMeta):
 
 
     def read_counts(self, exposure, counter_mode = 'apd', data_mode='single',**kwargs):
+        if exposure<10/self.clock:
+            print('Exposure too short, change clock rate accordingly.')
+            exposure = 10/self.clock
 
         self.data_mode = data_mode
         if (counter_mode != self.counter_mode):
@@ -407,8 +409,8 @@ class USB2120(BaseCounter, metaclass=SingletonAndCloseMeta):
             self.read_start = True
 
             if self.data_ready_event.wait(timeout=self.exposure*10):
-                data_main = float(self.counts_main_array[-1] - self.counts_main_array[-self.sample_num])
-                data_ref = float(self.counts_ref_array[-1] - self.counts_ref_array[-self.sample_num])
+                data_main = float(self.counts_main_array[-1] - self.counts_main_array[-self.sample_num-1])
+                data_ref = float(self.counts_ref_array[-1] - self.counts_ref_array[-self.sample_num-1])
 
 
         else:
