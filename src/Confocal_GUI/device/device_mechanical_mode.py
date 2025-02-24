@@ -336,7 +336,8 @@ class USB2120(BaseCounter, metaclass=SingletonAndCloseMeta):
             self.exposure = exposure
 
             if self.callback_func is not None:
-                self.task_counter_ctr.unregister_every_n_samples_acquired_into_buffer_event(self.callback_func)
+                self.task_counter_ctr.unregister_every_n_samples_acquired_into_buffer_event(self.sample_num_div_10, \
+                    None)
             self.callback_func = functools.partial(self._callback_read, self.task_counter_ctr)
             self.task_counter_ctr.register_every_n_samples_acquired_into_buffer_event(self.sample_num_div_10, \
                 self.callback_func)
