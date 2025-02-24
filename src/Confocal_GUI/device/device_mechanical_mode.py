@@ -287,6 +287,8 @@ class USB2120(BaseCounter, metaclass=SingletonAndCloseMeta):
         self.read_n = 0
         self.read_start = False
         self.data_ready_event = threading.Event()
+        self.tasks_to_close = [] # tasks need to be closed after swicthing counter mode  
+
 
 
     @property
