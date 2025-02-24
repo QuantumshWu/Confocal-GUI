@@ -288,6 +288,7 @@ class USB2120(BaseCounter, metaclass=SingletonAndCloseMeta):
         self.read_n = 0
         self.read_start = False
         self.data_ready_event = threading.Event()
+        self.callback_func = None
         self.tasks_to_close = [] # tasks need to be closed after swicthing counter mode  
 
 
@@ -334,8 +335,11 @@ class USB2120(BaseCounter, metaclass=SingletonAndCloseMeta):
 
             self.exposure = exposure
 
+            if self.callback_func is not None:
+                self.task_counter_ctr.unregister_every_n_samples_acquired_into_buffer_event(self.callback_func)
+            self.callback_func = functools.partial(self._callback_read, self.task_counter_ctr)
             self.task_counter_ctr.register_every_n_samples_acquired_into_buffer_event(self.sample_num_div_10, \
-                functools.partial(self._callback_read, self.task_counter_ctr))
+                self.callback_func)
             # register call back for one of counter, only one
 
             self.task_counter_clock.start()
