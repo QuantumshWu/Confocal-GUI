@@ -341,7 +341,8 @@ class USB2120(BaseCounter, metaclass=SingletonAndCloseMeta):
             self.task_counter_ctr.register_every_n_samples_acquired_into_buffer_event(self.sample_num_div_10, \
                 self._callback_read)
             # register call back for one of counter, only one
-
+            self.tasks_with_callback = [self.task_counter_ctr,]
+            
             self.task_counter_ctr.start()
             self.task_counter_ctr_ref.start()
             # start clock after counter tasks
