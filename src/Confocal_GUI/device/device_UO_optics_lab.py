@@ -441,9 +441,9 @@ class USB6346(BaseCounter, BaseScanner, metaclass=SingletonAndCloseMeta):
             self.task_counter_clock.stop()
             self.task_counter_ctr.stop()
             self.task_counter_ctr_ref.stop()
-            self.task_counter_ctr.timing.cfg_samp_clk_timing(self.clock, source = '/Dev2/Ctr0InternalOutput', \
+            self.task_counter_ctr.timing.cfg_samp_clk_timing(self.clock, source = '/Dev1/Ctr3InternalOutput', \
                 sample_mode=self.nidaqmx.constants.AcquisitionType.CONTINUOUS, samps_per_chan=self.sample_num)
-            self.task_counter_ctr_ref.timing.cfg_samp_clk_timing(self.clock, source = '/Dev2/Ctr0InternalOutput', \
+            self.task_counter_ctr_ref.timing.cfg_samp_clk_timing(self.clock, source = '/Dev1/Ctr3InternalOutput', \
                 sample_mode=self.nidaqmx.constants.AcquisitionType.CONTINUOUS, samps_per_chan=self.sample_num)
 
             self.exposure = exposure
