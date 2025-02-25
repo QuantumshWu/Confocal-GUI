@@ -352,9 +352,13 @@ class MainWindow(QMainWindow):
             self.comboBox_data_mode.setCurrentText(self.measurement_PLE.data_mode)
             self.comboBox_device_gui.addItems(list(self.config_instances.keys()))
             # display all available device instances
-        else:
+        elif self.findChild(QComboBox, 'comboBox_relim_PL') is not None:
             self.comboBox_counter_mode.setCurrentText(self.measurement_PL.counter_mode)
             self.comboBox_data_mode.setCurrentText(self.measurement_PL.data_mode)
+            self.comboBox_device_gui.addItems(list(self.config_instances.keys()))
+        else:
+            self.comboBox_counter_mode.setCurrentText(self.measurement_Live.counter_mode)
+            self.comboBox_data_mode.setCurrentText(self.measurement_Live.data_mode)
             self.comboBox_device_gui.addItems(list(self.config_instances.keys()))
 
         if 'pulse' in list(self.config_instances.keys()):
@@ -542,12 +546,16 @@ class MainWindow(QMainWindow):
  
 
     def read_data_Live(self):
-        for attr in ['exposure_Live', 'many']:
+        for attr in ['exposure_Live', 'many', 'repeat']:
             value = getattr(self, f'doubleSpinBox_{attr}').value()
             setattr(self, attr, value)
 
         for attr in ['relim_Live', 'counter_mode', 'data_mode']: # Read from GUI panel
             value = getattr(self, f'comboBox_{attr}').currentText()
+            setattr(self, attr, value)
+
+        for attr in ['is_finite']:
+            value = getattr(self, f'checkBox_{attr}').isChecked()
             setattr(self, attr, value)
             
             
@@ -566,6 +574,7 @@ class MainWindow(QMainWindow):
         data_x = np.arange(self.many)
 
         self.measurement_Live.load_params(data_x=data_x, exposure=self.exposure_Live, repeat=self.repeat,\
+            is_finite=self.is_finite,\
             counter_mode=self.counter_mode, data_mode=self.data_mode, relim_mode=self.relim_Live)
         data_y = self.measurement_Live.data_y
         self.live_plot_Live = LiveAndDisLive(labels=['Data', f'Counts/{self.exposure_Live:.2f}s'], \
@@ -719,14 +728,13 @@ class MainWindow(QMainWindow):
         
         
     def read_range_PL(self):
-        if self.data_figure_PL.selector == []:
-            self.print_log(f'no area to read range')
-            return
-        xl, xh, yl, yh = self.data_figure_PL.selector[0].range
-        
-        if xl is None:
-            self.print_log(f'no area to read range')
-            return
+        if self.data_figure_PL.selector[0].range[0] is None:
+            xlim = self.data_figure_PL.fig.axes[0].get_xlim()
+            ylim = self.data_figure_PL.fig.axes[0].get_ylim()
+            xl, xh, yl, yh = np.min(xlim), np.max(xlim), np.min(ylim), np.max(ylim)
+        else:
+            xl, xh, yl, yh = self.data_figure_PL.selector[0].range
+
         
         self.doubleSpinBox_xl.setValue(xl)
         self.doubleSpinBox_xu.setValue(xh)
@@ -886,14 +894,13 @@ class MainWindow(QMainWindow):
         
         
     def read_range_PLE(self):
-        if self.data_figure_PLE.selector == []:
-            self.print_log(f'no area to read range')
-            return
-        xl, xh, yl, yh = self.data_figure_PLE.selector[0].range
+        if self.data_figure_PLE.selector[0].range[0] is None:
+            xlim = self.data_figure_PLE.fig.axes[0].get_xlim()
+            ylim = self.data_figure_PLE.fig.axes[0].get_ylim()
+            xl, xh, yl, yh = np.min(xlim), np.max(xlim), np.min(ylim), np.max(ylim)
+        else:
+            xl, xh, yl, yh = self.data_figure_PLE.selector[0].range
         
-        if xl is None:
-            self.print_log(f'no area to read range')
-            return
         
         new_xl, new_xh = np.sort([self.data_figure_PLE.transform_back(xl), self.data_figure_PLE.transform_back(xh)])
 
@@ -1011,6 +1018,9 @@ def GUI_(config_instances, measurement_PLE=None, measurement_PL=None, measuremen
     elif mode == 'PL_and_Live':
         w = MainWindow(config_instances, measurement_PLE=measurement_PLE, measurement_PL=measurement_PL\
             , measurement_Live=measurement_Live, ui='PL.ui')
+    elif mode == 'Live':
+        w = MainWindow(config_instances, measurement_PLE=measurement_PLE, measurement_PL=measurement_PL\
+            , measurement_Live=measurement_Live, ui='Live.ui')
 
     app.setStyle('Windows')
     try:
@@ -1042,6 +1052,15 @@ def GUI_PL(config_instances, measurement_PL, measurement_Live):
 
     GUI_(config_instances = config_instances, measurement_PL=measurement_PL, \
         measurement_PLE=None, measurement_Live=measurement_Live, mode='PL_and_Live')
+
+def GUI_Live(config_instances, measurement_Live):
+    """
+    GUI for Live type measurement
+
+    """
+
+    GUI_(config_instances = config_instances, measurement_PL=None, \
+        measurement_PLE=None, measurement_Live=measurement_Live, mode='Live')
 
 
 class DeviceGUI(QDialog):

@@ -1131,7 +1131,7 @@ class CrossSelector():
         if event.inaxes == self.ax:                
             if event.button == 3:  # mouse right key
                 current_time = time.time()
-                if (self.last_click_time is None) or (current_time - self.last_click_time) > 0.3:
+                if self.last_click_time is None or (current_time - self.last_click_time) > 0.3:
                     self.last_click_time = current_time
                 else:
                     self.last_click_time = None
@@ -1184,25 +1184,36 @@ class ZoomPan():
     def __init__(self, ax):
         self.ax = ax
         self.cid_scroll = self.ax.figure.canvas.mpl_connect('scroll_event', self.on_scroll)
+
+        self.cid_press = self.ax.figure.canvas.mpl_connect('button_press_event', self.on_press)
+        self.cid_motion = self.ax.figure.canvas.mpl_connect('motion_notify_event', self.on_motion)
+        self.cid_release = self.ax.figure.canvas.mpl_connect('button_release_event', self.on_release)
+
         artist = ax.get_children()[0]
         if isinstance(artist, matplotlib.image.AxesImage):
-            self.image_type = 'imshow'
+            self.image_type = '2D'
             cmap = ax.images[0].colorbar.mappable.get_cmap()
             self.color = cmap(0)
             self.ax.set_facecolor(self.color)
+            self.extents = artist.get_extent()
+
         else:
-            self.image_type = 'plot'
+            self.image_type = '1D'
             
-        xlim = self.ax.get_xlim()
-        ylim = self.ax.get_ylim()
-        self.x_center = (xlim[0] + xlim[1])/2
-        self.y_center = (ylim[0] + ylim[1])/2
+        self.dragging = False
+        self.center_line = None
 
 
     def on_scroll(self, event):
         if event.inaxes == self.ax:
-            xlim_min = self.ax.get_xlim()[0]
-            ylim_min = self.ax.get_ylim()[0]
+
+            xlim = self.ax.get_xlim()
+            ylim = self.ax.get_ylim()
+            self.x_center = (xlim[0] + xlim[1])/2
+            self.y_center = (ylim[0] + ylim[1])/2
+
+            xlim_min = xlim[0]
+            ylim_min = ylim[0]
 
             scale_factor = 1.1 if event.button == 'up' else (1/1.1)
 
@@ -1211,16 +1222,108 @@ class ZoomPan():
             ylim = [scale_factor*(ylim_min - self.y_center) + self.y_center\
                     , self.y_center - scale_factor*(ylim_min - self.y_center)]
             
-            if self.image_type == 'imshow':
+            if self.image_type == '2D':
                 self.ax.set_xlim(xlim)
                 self.ax.set_ylim(ylim)
             else:
                 self.ax.set_xlim(xlim)
             self.ax.figure.canvas.draw()
+
+    def on_press(self, event):
+        if event.inaxes != self.ax:
+            return
+        if event.button == 2:
+            if self.image_type == '1D':
+                if event.dblclick:
+                    if self.data_figure.selector[0].range[0] is not None:
+                        # range of area_selector, self.data_figure is given in DataFigure
+                        new_x_min = self.data_figure.selector[0].range[0]
+                        new_x_max = self.data_figure.selector[0].range[1]
+                        new_xlim = (new_x_min, new_x_max) if self.data_figure.data_x[0]<=self.data_figure.data_x[-1] else (new_x_max, new_x_min)
+                        self.ax.set_xlim(new_xlim[0], new_xlim[1])
+                        self.ax.figure.canvas.draw()
+                    else:
+                        self.ax.set_xlim(self.data_figure.data_x[0], self.data_figure.data_x[-1])
+                        self.ax.figure.canvas.draw()
+                    return
+
+                self.dragging = True
+                self.press_x_pixel = event.x
+                self.xlim0 = self.ax.get_xlim()
+                self.center_line = self.ax.axvline(np.mean(self.ax.get_xlim()),
+                                                   color='red', linestyle='--', alpha=0.3)
+                self.ax.figure.canvas.draw()
+            else:
+                if event.dblclick:
+                    if self.data_figure.selector[0].range[0] is not None:
+                        # range of area_selector, self.data_figure is given in DataFigure
+                        range_array = self.data_figure.selector[0].range
+                        self.ax.set_xlim(range_array[0], range_array[1])
+                        self.ax.set_ylim(range_array[3], range_array[2])
+                        self.ax.figure.canvas.draw()
+                    else:
+
+                        self.ax.set_xlim((self.extents[0], self.extents[1]))
+                        self.ax.set_ylim((self.extents[2], self.extents[3]))
+                        self.ax.figure.canvas.draw()
+                    return
+
+                self.dragging = True
+                self.press_x_pixel = event.x
+                self.press_y_pixel = event.y
+                self.xlim0 = self.ax.get_xlim()
+                self.ylim0 = self.ax.get_ylim()
+                self.center_line = self.ax.scatter(np.mean(self.ax.get_xlim()), np.mean(self.ax.get_ylim()),
+                                                   color='red', s=30, alpha=0.3)
+                self.ax.figure.canvas.draw()
+
+    def on_motion(self, event):
+        if not self.dragging or event.inaxes != self.ax:
+            return
+        if self.image_type == '1D':
+            dx_pixels = event.x - self.press_x_pixel
+            bbox = self.ax.get_window_extent()
+            pixel_width = bbox.width
+            data_width = self.xlim0[1] - self.xlim0[0]
+            dx_data = dx_pixels * data_width / pixel_width
+            new_xlim = (self.xlim0[0] - dx_data, self.xlim0[1] - dx_data)
+            self.ax.set_xlim(new_xlim)
+            mid = np.mean(new_xlim)
+            self.center_line.set_xdata([mid, mid])
+            self.ax.figure.canvas.draw_idle()
+        else:
+            dx_pixels = event.x - self.press_x_pixel
+            dy_pixels = event.y - self.press_y_pixel
+            bbox = self.ax.get_window_extent()
+            pixel_width = bbox.width
+            pixel_height = bbox.height
+            data_width_x = self.xlim0[1] - self.xlim0[0]
+            data_width_y = self.ylim0[1] - self.ylim0[0]
+            dx_data = dx_pixels * data_width_x / pixel_width
+            dy_data = dy_pixels * data_width_y / pixel_height
+            new_xlim = (self.xlim0[0] - dx_data, self.xlim0[1] - dx_data)
+            new_ylim = (self.ylim0[0] - dy_data, self.ylim0[1] - dy_data)
+            self.ax.set_xlim(new_xlim)
+            self.ax.set_ylim(new_ylim)
+            mid_x, mid_y = np.mean(new_xlim), np.mean(new_ylim)
+            self.center_line.set_offsets([[mid_x, mid_y]])
+            self.ax.figure.canvas.draw_idle()
+
+    def on_release(self, event):
+        if event.button == 2 and self.dragging:
+            self.dragging = False
+            if self.center_line is not None:
+                self.center_line.remove()
+                self.center_line = None
+            self.ax.figure.canvas.draw()
+
             
     def set_active(self, active):
         if not active:
             self.ax.figure.canvas.mpl_disconnect(self.cid_scroll)
+            self.ax.figure.canvas.mpl_disconnect(self.cid_press)
+            self.ax.figure.canvas.mpl_disconnect(self.cid_motion)
+            self.ax.figure.canvas.mpl_disconnect(self.cid_release)
     
             
 class DragVLine():
@@ -1319,7 +1422,6 @@ def dummy_cross(ax, x, y):
                          button=3)  
     press_event.inaxes = ax  
     ax.figure.canvas.callbacks.process('button_press_event', press_event)
-
     time.sleep(0.31)
 
     ax.figure.canvas.callbacks.process('button_press_event', press_event)
@@ -1418,8 +1520,10 @@ class DataFigure():
             self.measurement_name = data_generator.measurement_name
             self.plot_type = data_generator.plot_type
             if self.plot_type == '1D':
-                self.data_x = data_generator.data_x
-                self.data_y = data_generator.data_y
+                self.data_x = data_generator.data_x 
+                self.data_y = data_generator.data_y if len(data_generator.data_y.shape)==2 \
+                    else data_generator.data_y.reshape(data_generator.data_y.shape[0], 1)
+                # to read old data
                 x_label = data_generator.info.get('x_label', 'Data (1)')
                 y_label = data_generator.info.get('y_label', f'Counts/{exposure}s x1')
 
@@ -1450,6 +1554,7 @@ class DataFigure():
         self.fit_func = None
         self.text = None
         self.log_info = '' # information for log output
+        self.selector[2].data_figure = self # give zoompan the handle to live_plot
         self._load_unit(True if (address is not None) else False)
         warnings.filterwarnings("ignore", category=OptimizeWarning)
 
@@ -2049,7 +2154,6 @@ class DataFigure():
             pass
         else:
             zoom_pan_handle = self.selector[2]
-            zoom_pan_handle.x_center = transform(zoom_pan_handle.x_center)
             
             area_handle = self.selector[0]
             if area_handle.range[0] is not None:

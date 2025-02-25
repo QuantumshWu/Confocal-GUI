@@ -282,7 +282,7 @@ class LiveMeasurement(BaseMeasurement):
         if is_finite==False:
             self.repeat = int(1e6)
         else:
-            self.repeat = repeat
+            self.repeat = int(repeat)
         # large enough and in practical infinite
         if data_x is None:
             data_x = np.arange(100)
@@ -303,6 +303,7 @@ class LiveMeasurement(BaseMeasurement):
             return self
 
         if self.is_GUI:
+            GUI_Live(config_instances = self.config_instances, measurement_Live=self)
             return None, None
         else:
             data_x = self.data_x
