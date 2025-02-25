@@ -262,6 +262,10 @@ class USB6346(BaseCounter, BaseScanner, metaclass=SingletonAndCloseMeta):
             print('Exposure too long, change buffer size accordingly.')
             exposure = 0.5*(self.buffer_size/self.clock)
 
+        if exposure<0.03:
+            print('Exposure too short, this PC is slow, exposure can only larger than 0.03s.')
+            exposure = 0.03
+
         self.data_mode = data_mode
         if (counter_mode != self.counter_mode) or (exposure != self.exposure):
             self.set_counter(counter_mode)
