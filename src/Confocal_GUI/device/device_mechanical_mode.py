@@ -339,7 +339,7 @@ class USB2120(BaseCounter, metaclass=SingletonAndCloseMeta):
             self.exposure = exposure
 
             self.task_counter_ctr.register_every_n_samples_acquired_into_buffer_event(self.sample_num_div_10, \
-                self.callback_func)
+                self._callback_read)
             # register call back for one of counter, only one
 
             self.task_counter_ctr.start()
