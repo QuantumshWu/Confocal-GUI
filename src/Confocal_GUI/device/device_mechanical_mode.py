@@ -342,7 +342,7 @@ class USB2120(BaseCounter, metaclass=SingletonAndCloseMeta):
                 self._callback_read)
             # register call back for one of counter, only one
             self.tasks_with_callback = [self.task_counter_ctr,]
-            
+
             self.task_counter_ctr.start()
             self.task_counter_ctr_ref.start()
             # start clock after counter tasks
@@ -410,10 +410,8 @@ class USB2120(BaseCounter, metaclass=SingletonAndCloseMeta):
             exposure = 10/self.clock
 
         self.data_mode = data_mode
-        if (counter_mode != self.counter_mode):
+        if (counter_mode != self.counter_mode) or (exposure != self.exposure):
             self.set_counter(counter_mode)
-            self.set_timing(exposure)
-        elif (exposure != self.exposure):
             self.set_timing(exposure)
 
 
