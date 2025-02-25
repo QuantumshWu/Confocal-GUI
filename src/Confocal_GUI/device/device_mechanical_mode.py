@@ -273,9 +273,8 @@ class USB2120(BaseCounter, metaclass=SingletonAndCloseMeta):
         if port_config is None:
             port_config = {'apd_signal':'/Dev2/PFI3', 'apd_gate':'/Dev2/PFI4', 'apd_gate_ref':'/Dev2/PFI1'}
         self.port_config = port_config
-        self.nidaqmx = nidaqmx
 
-        self.task = nidaqmx.Task()
+
         self.nidaqmx = nidaqmx
 
         self.counter_mode = None
@@ -284,14 +283,9 @@ class USB2120(BaseCounter, metaclass=SingletonAndCloseMeta):
         # single, ref_div, ref_sub, dual
 
         self.exposure = None
-        self.clock = 1e3 # sampling rate for edge counting, defines when transfer counts from DAQ to PC, should be not too large to accomdate long exposure
-        self.read_n = 0
-        self.read_start = False # tells callback_read when to start read data
-        self.stop_callback = False # tells callback_read to prepare for stop
-        self.data_ready_event = threading.Event()
+        self.clock = 1e4 # sampling rate for edge counting, defines when transfer counts from DAQ to PC, should be not too large to accomdate long exposure
+        self.buffer_size = int(1e6)
         self.tasks_to_close = [] # tasks need to be closed after swicthing counter mode 
-        self.tasks_with_callback = [] 
-
 
 
     @property
@@ -302,46 +296,24 @@ class USB2120(BaseCounter, metaclass=SingletonAndCloseMeta):
     def valid_data_mode(self):
         return ['single', 'ref_div', 'ref_sub', 'dual']
 
-    def _callback_read(self, task_handle, event_type, number_of_samples, callback_data):
-        if self.read_start:
-            if self.read_n >= 10:
-                self.counts_main_array = self.task_counter_ctr.read(number_of_samples_per_channel = number_of_samples*(self.read_n+1))
-                self.counts_ref_array = self.task_counter_ctr_ref.read(number_of_samples_per_channel = number_of_samples*(self.read_n+1))
-                self.read_n = 0
-                self.read_start = False
-                self.data_ready_event.set()
-            else:
-                self.read_n += 1
-        else:
-            if not self.stop_callback:
-                # avoid accessing stopped task
-                _ = self.task_counter_ctr.read(number_of_samples_per_channel = number_of_samples)
-                _ = self.task_counter_ctr_ref.read(number_of_samples_per_channel = number_of_samples)
-
-        return 0
-
 
     def set_timing(self, exposure):
 
         # change match case to if elif to fit python before 3.10
 
         if self.counter_mode == 'apd':
-            self.sample_num_div_10 = int(round(self.clock*exposure/10))
-            self.sample_num = 10*self.sample_num_div_10
-            self.task_counter_clock.stop()
-            self.task_counter_ctr.stop()
-            self.task_counter_ctr_ref.stop()
+            self.sample_num = int(round(self.clock*exposure))
             self.task_counter_ctr.timing.cfg_samp_clk_timing(self.clock, source = '/Dev2/Ctr0InternalOutput', \
-                sample_mode=self.nidaqmx.constants.AcquisitionType.CONTINUOUS, samps_per_chan=self.sample_num)
+                sample_mode=self.nidaqmx.constants.AcquisitionType.CONTINUOUS, samps_per_chan=self.buffer_size)
             self.task_counter_ctr_ref.timing.cfg_samp_clk_timing(self.clock, source = '/Dev2/Ctr0InternalOutput', \
-                sample_mode=self.nidaqmx.constants.AcquisitionType.CONTINUOUS, samps_per_chan=self.sample_num)
+                sample_mode=self.nidaqmx.constants.AcquisitionType.CONTINUOUS, samps_per_chan=self.buffer_size)
 
             self.exposure = exposure
 
-            self.task_counter_ctr.register_every_n_samples_acquired_into_buffer_event(self.sample_num_div_10, \
-                self._callback_read)
-            # register call back for one of counter, only one
-            self.tasks_with_callback = [self.task_counter_ctr,]
+            self.counts_main_array = np.zeros(self.sample_num+1, dtype=np.uint32)
+            self.counts_ref_array = np.zeros(self.sample_num+1, dtype=np.uint32)
+            self.reader_ctr = self.nidaqmx.stream_readers.CounterReader(self.task_counter_ctr.in_stream)
+            self.reader_ctr_ref = self.nidaqmx.stream_readers.CounterReader(self.task_counter_ctr_ref.in_stream)
 
             self.task_counter_ctr.start()
             self.task_counter_ctr_ref.start()
@@ -354,19 +326,10 @@ class USB2120(BaseCounter, metaclass=SingletonAndCloseMeta):
 
 
     def close_old_tasks(self):
-        for task in self.tasks_with_callback:
-            self.stop_callback = True 
-            time.sleep(self.exposure/10)
-            # wait for callback_read to the next cycle
-            task.stop()
-            task.register_every_n_samples_acquired_into_buffer_event(10, None)
-        self.tasks_with_callback = []
-
         for task in self.tasks_to_close:
             task.stop()
             task.close()
         self.tasks_to_close = []
-        self.stop_callback = False
 
     def close(self):
         self.close_old_tasks()
@@ -391,9 +354,12 @@ class USB2120(BaseCounter, metaclass=SingletonAndCloseMeta):
             self.task_counter_ctr_ref.triggers.pause_trigger.trig_type = self.nidaqmx.constants.TriggerType.DIGITAL_LEVEL
             self.task_counter_ctr_ref.triggers.pause_trigger.dig_lvl_when = self.nidaqmx.constants.Level.LOW
 
+            self.task_counter_ctr.in_stream.relative_to = self.nidaqmx.constants.ReadRelativeTo.FIRST_SAMPLE
+            self.task_counter_ctr_ref.in_stream.relative_to = self.nidaqmx.constants.ReadRelativeTo.FIRST_SAMPLE
+            # relative to beginning of buffer, change offset instead
 
             self.task_counter_clock = self.nidaqmx.Task()
-            self.task_counter_clock.co_channels.add_co_pulse_chan_freq(counter="Dev2/ctr0", freq=1e3, duty_cycle=0.5)
+            self.task_counter_clock.co_channels.add_co_pulse_chan_freq(counter="Dev2/ctr0", freq=self.clock, duty_cycle=0.5)
             # ctr3 clock for buffered edge counting ctr1 and ctr2
             self.task_counter_clock.timing.cfg_implicit_timing(sample_mode=self.nidaqmx.constants.AcquisitionType.CONTINUOUS)
 
@@ -405,9 +371,13 @@ class USB2120(BaseCounter, metaclass=SingletonAndCloseMeta):
 
 
     def read_counts(self, exposure, counter_mode = 'apd', data_mode='single',**kwargs):
-        if exposure<10/self.clock:
+        if exposure<1/self.clock:
             print('Exposure too short, change clock rate accordingly.')
-            exposure = 10/self.clock
+            exposure = 1/self.clock
+
+        if exposure>0.5*(self.buffer_size/self.clock):
+            print('Exposure too long, change buffer size accordingly.')
+            exposure = 0.5*(self.buffer_size/self.clock)
 
         self.data_mode = data_mode
         if (counter_mode != self.counter_mode) or (exposure != self.exposure):
@@ -416,11 +386,18 @@ class USB2120(BaseCounter, metaclass=SingletonAndCloseMeta):
 
 
         if self.counter_mode == 'apd':
-            self.read_start = True
-            if self.data_ready_event.wait(timeout=None):
-                data_main = float(self.counts_main_array[-1] - self.counts_main_array[-self.sample_num-1])
-                data_ref = float(self.counts_ref_array[-1] - self.counts_ref_array[-self.sample_num-1])
-                self.data_ready_event.clear()
+
+            total_sample = self.task_counter_ctr.in_stream.total_samp_per_chan_acquired
+            self.task_counter_ctr.in_stream.offset = total_sample
+            self.task_counter_ctr_ref.in_stream.offset = total_sample
+            # update read pos accrodingly to keep reading most recent self.sample_num+1 samples
+            self.reader_ctr.read_many_sample_uint32(self.counts_main_array\
+                , number_of_samples_per_channel = (self.sample_num+1), timeout=self.nidaqmx.constants.WAIT_INFINITELY)
+            self.reader_ctr_ref.read_many_sample_uint32(self.counts_ref_array\
+                , number_of_samples_per_channel = (self.sample_num+1), timeout=self.nidaqmx.constants.WAIT_INFINITELY)
+
+            data_main = float(self.counts_main_array[-1] - self.counts_main_array[-self.sample_num-1])
+            data_ref = float(self.counts_ref_array[-1] - self.counts_ref_array[-self.sample_num-1])
 
         else:
             print(f'can only be one of the {self.valid_counter_mode}')
@@ -445,6 +422,80 @@ class USB2120(BaseCounter, metaclass=SingletonAndCloseMeta):
 
         else:
             print(f'can only be one of the {self.valid_data_mode}')
+
+
+class USB6009(BaseScanner, metaclass=SingletonAndCloseMeta):
+    """
+    Class for NI DAQ USB-6009
+    """
+    
+    def __init__(self):
+
+        import nidaqmx
+        import warnings 
+
+        self.nidaqmx = nidaqmx
+
+        self.task = nidaqmx.Task()
+        self.nidaqmx = nidaqmx
+        self.task.ao_channels.add_ao_voltage_chan('Dev1/ao0', min_val=0, max_val=5)
+        self.task.ao_channels.add_ao_voltage_chan('Dev1/ao1', min_val=0, max_val=5)
+        self.task.start()
+
+        self.tasks_to_close = [self.task,] # tasks need to be closed after swicthing counter mode  
+
+
+        self._x = 0
+        self._y = 0
+        self.x_lb = -5000
+        self.x_ub = 5000
+        self.y_lb = -5000
+        self.y_ub = 5000
+
+    def gui(self):
+        """
+        Use self.gui_property and self.gui_property_type to determine how to display configurable parameters
+        """
+        self.gui_property = ['x', 'y']
+        self.gui_property_type = ['float', 'float']
+        GUI_Device(self)
+
+    def close_old_tasks(self):
+        for task in self.tasks_to_close:
+            task.stop()
+            task.close()
+        self.tasks_to_close = []
+
+    def close(self):
+        self.close_old_tasks()
+
+    @property
+    def valid_counter_mode(self):
+        return ['analog', 'apd']
+
+    @property
+    def valid_data_mode(self):
+        return ['single', 'ref_div', 'ref_sub', 'dual']
+
+        
+    @property
+    def x(self):
+        return self._x
+    
+    @x.setter
+    def x(self, value):
+        self._x = int(value) # in mV 
+        self.task.write([self._x/1000, self._y/1000], auto_start=True) # in V
+
+        
+    @property
+    def y(self):
+        return self._y
+    
+    @y.setter
+    def y(self, value):
+        self._y = int(value) # in mV 
+        self.task.write([self._x/1000, self._y/1000], auto_start=True) # in V
 
 
 class AFG31152(BaseScanner):
