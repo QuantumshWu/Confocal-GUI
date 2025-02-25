@@ -286,10 +286,11 @@ class USB2120(BaseCounter, metaclass=SingletonAndCloseMeta):
         self.exposure = None
         self.clock = 1e3 # sampling rate for edge counting, defines when transfer counts from DAQ to PC, should be not too large to accomdate long exposure
         self.read_n = 0
-        self.read_start = False
+        self.read_start = False # tells callback_read when to start read data
+        self.stop_callback = False # tells callback_read to prepare for stop
         self.data_ready_event = threading.Event()
-        self.callback_func = None
-        self.tasks_to_close = [] # tasks need to be closed after swicthing counter mode  
+        self.tasks_to_close = [] # tasks need to be closed after swicthing counter mode 
+        self.tasks_with_callback = [] 
 
 
 
@@ -301,19 +302,21 @@ class USB2120(BaseCounter, metaclass=SingletonAndCloseMeta):
     def valid_data_mode(self):
         return ['single', 'ref_div', 'ref_sub', 'dual']
 
-    def _callback_read(self, task, task_handle, event_type, number_of_samples, callback_data):
+    def _callback_read(self, task_handle, event_type, number_of_samples, callback_data):
         if self.read_start:
-            if self.read_n >= 11:
-                self.counts_main_array = self.task_counter_ctr.read(number_of_samples_per_channel = -1)
-                self.counts_ref_array = self.task_counter_ctr_ref.read(number_of_samples_per_channel = -1)
+            if self.read_n >= 10:
+                self.counts_main_array = self.task_counter_ctr.read(number_of_samples_per_channel = number_of_samples*(self.read_n+1))
+                self.counts_ref_array = self.task_counter_ctr_ref.read(number_of_samples_per_channel = number_of_samples*(self.read_n+1))
                 self.read_n = 0
                 self.read_start = False
                 self.data_ready_event.set()
             else:
                 self.read_n += 1
         else:
-            _ = self.task_counter_ctr.read(number_of_samples_per_channel = -1)
-            _ = self.task_counter_ctr_ref.read(number_of_samples_per_channel = -1)
+            if not self.stop_callback:
+                # avoid accessing stopped task
+                _ = self.task_counter_ctr.read(number_of_samples_per_channel = number_of_samples)
+                _ = self.task_counter_ctr_ref.read(number_of_samples_per_channel = number_of_samples)
 
         return 0
 
@@ -335,17 +338,14 @@ class USB2120(BaseCounter, metaclass=SingletonAndCloseMeta):
 
             self.exposure = exposure
 
-            if self.callback_func is not None:
-                self.task_counter_ctr.register_every_n_samples_acquired_into_buffer_event(self.sample_num_div_10, \
-                    None)
-            self.callback_func = functools.partial(self._callback_read, self.task_counter_ctr)
             self.task_counter_ctr.register_every_n_samples_acquired_into_buffer_event(self.sample_num_div_10, \
                 self.callback_func)
             # register call back for one of counter, only one
 
-            self.task_counter_clock.start()
             self.task_counter_ctr.start()
             self.task_counter_ctr_ref.start()
+            # start clock after counter tasks
+            self.task_counter_clock.start()
 
         else:
             print(f'can only be one of the {self.valid_counter_mode}')
@@ -353,11 +353,19 @@ class USB2120(BaseCounter, metaclass=SingletonAndCloseMeta):
 
 
     def close_old_tasks(self):
+        for task in self.tasks_with_callback:
+            self.stop_callback = True 
+            time.sleep(self.exposure/10)
+            # wait for callback_read to the next cycle
+            task.stop()
+            task.register_every_n_samples_acquired_into_buffer_event(10, None)
+        self.tasks_with_callback = []
+
         for task in self.tasks_to_close:
             task.stop()
             task.close()
-
         self.tasks_to_close = []
+        self.stop_callback = False
 
     def close(self):
         self.close_old_tasks()
@@ -409,14 +417,11 @@ class USB2120(BaseCounter, metaclass=SingletonAndCloseMeta):
 
 
         if self.counter_mode == 'apd':
-            self.read_n = 0
-            self.data_ready_event.clear()
             self.read_start = True
-
-            if self.data_ready_event.wait(timeout=self.exposure*10):
+            if self.data_ready_event.wait(timeout=None):
                 data_main = float(self.counts_main_array[-1] - self.counts_main_array[-self.sample_num-1])
                 data_ref = float(self.counts_ref_array[-1] - self.counts_ref_array[-self.sample_num-1])
-
+                self.data_ready_event.clear()
 
         else:
             print(f'can only be one of the {self.valid_counter_mode}')
