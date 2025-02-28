@@ -774,7 +774,8 @@ class LiveAndDisLive(LivePlotGUI):
         self.last_data_time = time.time()
         newest_data = self.data_y[0, 0]
         if 1e-4<=np.abs(newest_data)<=1e4:
-            newest_data_str = f'{newest_data:.{0 if self.axes_formatter.oom>=0 else -int(self.axes_formatter.oom)}f}'
+            oom = np.floor(np.log10(self.axes_formatter.abs_step))
+            newest_data_str = f'{newest_data:.{0 if oom>=0 else -int(oom)}f}'
         else:
             newest_data_str = f'{newest_data:.1e}'
         if not hasattr(self, 'text'):

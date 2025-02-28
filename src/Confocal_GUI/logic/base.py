@@ -86,8 +86,12 @@ class BaseMeasurement(ABC):
     def load_params(self, **kwargs):
         self._load_params(**kwargs)
 
-        len_counts = len(self.counter.read_counts(0.01, parent = self, counter_mode=self.counter_mode, data_mode=self.data_mode))
+        len_counts = len(self.counter.read_counts(0.1, parent = self, counter_mode=self.counter_mode, data_mode=self.data_mode))
         valid_update_mode = ['normal', 'roll', 'new', 'adaptive', 'single']
+        # single for PL which only display one set of data, normal for PLE which enables show more sets depends on counter return
+        # roll for live which shift data
+        # new for repeat to add newline instead of adding to exsiting line
+        # adaptive for adaptive exposure
         if self.update_mode not in valid_update_mode:
             print(f'update_mode must be one of {valid_update_mode}')
             return
