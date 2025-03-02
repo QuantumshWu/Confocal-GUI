@@ -203,6 +203,314 @@ class BaseCounter(ABC):
     def read_counts(self, exposure, counter_mode, data_mode):
         pass
 
+class BaseCounterNI(ABC):
+    # Basecounter class for NI-DAQ board/card
+    # defines how to setup counter tasks and analogin tasks
+
+    def __init__(self, port_config):
+
+        import nidaqmx
+        from nidaqmx.constants import AcquisitionType
+        from nidaqmx.constants import TerminalConfiguration
+        from nidaqmx.stream_readers import AnalogMultiChannelReader
+        import warnings 
+
+
+        # e.g. port_config = ({'apd_signal':'/Dev2/PFI3', 'apd_gate':'/Dev2/PFI4', 'apd_gate_ref':'/Dev2/PFI1',
+        # 'analog_signal':'/Dev2/ai0', 'analog_gate':'/Dev2/ai1', 'analog_gate_ref':'/Dev2/ai2', 'apd_clock':'/Dev2/PFI5'})
+        self.port_config = port_config
+        self.dev_num = '/'+self.port_config.get('apd_signal', self.port_config['analog_signal']).split('/')[-2]+'/'
+        # get '/Dev2/'
+        self.nidaqmx = nidaqmx
+        self.counter_mode = None
+        # analog, apd
+        self.data_mode = None
+        # single, ref_div, ref_sub, dual
+        self.exposure = None
+        self.tasks_to_close = [] # tasks need to be closed after swicthing counter mode 
+        self.__valid_counter_mode = ['apd', 'apd_pg', 'analog']
+        # apd_pg uses pulse sequence as sampling clock to sync counting clock with pulse clock in order to get best stability and accuracy
+        # can only use when pulse.total_duration is fixed otherwise need to reset exposure/timing
+        # with apd_clock be the sampling clock defined by pulse
+        self.__valid_data_mode = ['single', 'ref_div', 'ref_sub', 'dual']
+        self.valid_counter_mode = self.__valid_counter_mode
+        self.valid_data_mode = self.__valid_data_mode
+
+    @property
+    def valid_counter_mode(self):
+        return self._valid_counter_mode
+
+    @valid_counter_mode.setter
+    def valid_counter_mode(self, value):
+        if not all(mode in self.__valid_counter_mode for mode in value):
+            print(f'Can only be subset of the {self.__valid_counter_mode}')
+        else:
+            self._valid_counter_mode = value
+
+    @property
+    def valid_data_mode(self):
+        return self._valid_data_mode
+
+    @valid_data_mode.setter
+    def valid_data_mode(self, value):
+        if not all(mode in self.__valid_data_mode for mode in value):
+            print(f'Can only be subset of the {self.__valid_data_mode}')
+        else:
+            self._valid_data_mode = value
+
+
+    def set_timing(self, exposure):
+        if self.counter_mode == 'apd':
+            self.clock = 1e4 
+            # sampling rate for edge counting, defines when transfer counts from DAQ to PC, should be not too large to accomdate long exposure
+            self.buffer_size = int(1e6)
+            self.task_counter_clock = self.nidaqmx.Task()
+            self.task_counter_clock.co_channels.add_co_pulse_chan_freq(counter=self.dev_num+'ctr2', freq=self.clock, duty_cycle=0.5)
+            # ctr2 clock for buffered edge counting ctr0 and ctr1
+            self.task_counter_clock.timing.cfg_implicit_timing(sample_mode=self.nidaqmx.constants.AcquisitionType.CONTINUOUS)
+
+            self.tasks_to_close += [self.task_counter_clock,]
+
+            self.sample_num = int(round(self.clock*exposure))+1
+            self.task_counter_ctr.timing.cfg_samp_clk_timing(self.clock, source = self.dev_num+'Ctr2InternalOutput',
+                sample_mode=self.nidaqmx.constants.AcquisitionType.CONTINUOUS, samps_per_chan=self.buffer_size
+            )
+            self.task_counter_ctr_ref.timing.cfg_samp_clk_timing(self.clock, source = self.dev_num+'Ctr2InternalOutput',
+                sample_mode=self.nidaqmx.constants.AcquisitionType.CONTINUOUS, samps_per_chan=self.buffer_size
+            )
+
+            self.exposure = exposure
+
+            self.counts_main_array = np.zeros(self.sample_num, dtype=np.uint32)
+            self.counts_ref_array = np.zeros(self.sample_num, dtype=np.uint32)
+            self.reader_ctr = self.nidaqmx.stream_readers.CounterReader(self.task_counter_ctr.in_stream)
+            self.reader_ctr_ref = self.nidaqmx.stream_readers.CounterReader(self.task_counter_ctr_ref.in_stream)
+
+            self.task_counter_ctr.start()
+            self.task_counter_ctr_ref.start()
+            # start clock after counter tasks
+            self.task_counter_clock.start()
+
+        elif self.counter_mode == 'apd_pg':
+            self.clock = 1/(self.parent.config_instances['pulse'].total_duration/1e9)
+            # sampling rate for edge counting, defines when transfer counts from DAQ to PC, should be not too large to accomdate long exposure
+            self.buffer_size = int(1e6)
+            # need to estimate clock rate to register every_n_sample_event if buffer_size not enough
+
+            self.sample_num = int(round(self.clock*exposure))+1
+            self.task_counter_ctr.timing.cfg_samp_clk_timing(self.clock, source = self.port_config['apd_clock'],
+                sample_mode=self.nidaqmx.constants.AcquisitionType.CONTINUOUS, samps_per_chan=self.buffer_size
+            )
+            self.task_counter_ctr_ref.timing.cfg_samp_clk_timing(self.clock, source = self.port_config['apd_clock'],
+                sample_mode=self.nidaqmx.constants.AcquisitionType.CONTINUOUS, samps_per_chan=self.buffer_size
+            )
+
+            self.exposure = (self.sample_num-1)*self.parent.config_instances['pulse'].total_duration/1e9
+
+            self.counts_main_array = np.zeros(self.sample_num, dtype=np.uint32)
+            self.counts_ref_array = np.zeros(self.sample_num, dtype=np.uint32)
+            self.reader_ctr = self.nidaqmx.stream_readers.CounterReader(self.task_counter_ctr.in_stream)
+            self.reader_ctr_ref = self.nidaqmx.stream_readers.CounterReader(self.task_counter_ctr_ref.in_stream)
+
+            self.task_counter_ctr.start()
+            self.task_counter_ctr_ref.start()
+
+        elif self.counter_mode == 'analog':
+            self.clock = 500e3 # sampling rate for analog input, should be fast enough to capture gate signal for postprocessing
+            self.buffer_size = int(1e6)
+            self.sample_num = int(round(self.clock*exposure))
+            self.task_counter_ai.timing.cfg_samp_clk_timing(self.clock, sample_mode=self.nidaqmx.constants.AcquisitionType.CONTINUOUS
+                , samps_per_chan=self.buffer_size)
+            self.exposure = exposure
+            self.counts_array = np.zeros((3, self.sample_num), dtype=np.float64)
+            self.reader_analog = self.nidaqmx.stream_readers.AnalogMultiChannelReader(self.task_counter_ai.in_stream)
+            self.task_counter_ai.start()
+        else:
+            print(f'Can only be one of the {self.valid_counter_mode}')
+
+
+
+    def close_old_tasks(self):
+        for task in self.tasks_to_close:
+            task.stop()
+            task.close()
+        self.tasks_to_close = []
+
+    def close(self):
+        self.close_old_tasks()
+
+    def set_counter(self, counter_mode = 'apd'):
+        if counter_mode == 'apd':
+            self.close_old_tasks()
+
+            self.task_counter_ctr = self.nidaqmx.Task()
+            self.task_counter_ctr.ci_channels.add_ci_count_edges_chan(self.dev_num+'ctr0')
+            self.task_counter_ctr.triggers.pause_trigger.dig_lvl_src = self.port_config['apd_gate']
+            self.task_counter_ctr.ci_channels.all.ci_count_edges_term = self.port_config['apd_signal']
+            self.task_counter_ctr.triggers.pause_trigger.trig_type = self.nidaqmx.constants.TriggerType.DIGITAL_LEVEL
+            self.task_counter_ctr.triggers.pause_trigger.dig_lvl_when = self.nidaqmx.constants.Level.LOW
+
+            self.task_counter_ctr_ref = self.nidaqmx.Task()
+            self.task_counter_ctr_ref.ci_channels.add_ci_count_edges_chan(self.dev_num+'ctr1')
+            self.task_counter_ctr_ref.triggers.pause_trigger.dig_lvl_src = self.port_config['apd_gate_ref']
+            self.task_counter_ctr_ref.ci_channels.all.ci_count_edges_term = self.port_config['apd_signal']
+            self.task_counter_ctr_ref.triggers.pause_trigger.trig_type = self.nidaqmx.constants.TriggerType.DIGITAL_LEVEL
+            self.task_counter_ctr_ref.triggers.pause_trigger.dig_lvl_when = self.nidaqmx.constants.Level.LOW
+
+            self.task_counter_ctr.in_stream.relative_to = self.nidaqmx.constants.ReadRelativeTo.FIRST_SAMPLE
+            self.task_counter_ctr_ref.in_stream.relative_to = self.nidaqmx.constants.ReadRelativeTo.FIRST_SAMPLE
+            # relative to beginning of buffer, change offset instead
+
+            self.counter_mode = counter_mode
+            self.tasks_to_close += [self.task_counter_ctr, self.task_counter_ctr_ref]
+
+        elif counter_mode == 'apd_pg':
+            self.close_old_tasks()
+
+            self.task_counter_ctr = self.nidaqmx.Task()
+            self.task_counter_ctr.ci_channels.add_ci_count_edges_chan(self.dev_num+'ctr0')
+            self.task_counter_ctr.triggers.pause_trigger.dig_lvl_src = self.port_config['apd_gate']
+            self.task_counter_ctr.ci_channels.all.ci_count_edges_term = self.port_config['apd_signal']
+            self.task_counter_ctr.triggers.pause_trigger.trig_type = self.nidaqmx.constants.TriggerType.DIGITAL_LEVEL
+            self.task_counter_ctr.triggers.pause_trigger.dig_lvl_when = self.nidaqmx.constants.Level.LOW
+
+            self.task_counter_ctr_ref = self.nidaqmx.Task()
+            self.task_counter_ctr_ref.ci_channels.add_ci_count_edges_chan(self.dev_num+'ctr1')
+            self.task_counter_ctr_ref.triggers.pause_trigger.dig_lvl_src = self.port_config['apd_gate_ref']
+            self.task_counter_ctr_ref.ci_channels.all.ci_count_edges_term = self.port_config['apd_signal']
+            self.task_counter_ctr_ref.triggers.pause_trigger.trig_type = self.nidaqmx.constants.TriggerType.DIGITAL_LEVEL
+            self.task_counter_ctr_ref.triggers.pause_trigger.dig_lvl_when = self.nidaqmx.constants.Level.LOW
+
+            self.task_counter_ctr.in_stream.relative_to = self.nidaqmx.constants.ReadRelativeTo.FIRST_SAMPLE
+            self.task_counter_ctr_ref.in_stream.relative_to = self.nidaqmx.constants.ReadRelativeTo.FIRST_SAMPLE
+            # relative to beginning of buffer, change offset instead
+
+            self.counter_mode = counter_mode
+            self.tasks_to_close += [self.task_counter_ctr, self.task_counter_ctr_ref]
+
+        elif counter_mode == 'analog':
+            self.close_old_tasks()
+
+            self.task_counter_ai = self.nidaqmx.Task()
+            self.task_counter_ai.ai_channels.add_ai_voltage_chan(self.port_config['analog_signal'])
+            self.task_counter_ai.ai_channels.add_ai_voltage_chan(self.port_config['analog_gate'])
+            self.task_counter_ai.ai_channels.add_ai_voltage_chan(self.port_config['analog_gate_ref'])
+            # for analog counter
+            self.counter_mode = counter_mode
+            self.tasks_to_close += [self.task_counter_ai,]
+
+        else:
+            print(f'can only be one of the {self.valid_counter_mode}')
+
+
+    def read_counts(self, exposure, counter_mode = 'apd', data_mode='single',**kwargs):
+        self.parent = kwargs.get('parent', None)
+
+        self.data_mode = data_mode
+        if (counter_mode != self.counter_mode) or (exposure != self.exposure):
+            self.set_counter(counter_mode)
+            self.set_timing(exposure)
+
+
+        if self.counter_mode == 'apd':
+            total_sample = self.task_counter_ctr.in_stream.total_samp_per_chan_acquired
+            self.task_counter_ctr.in_stream.offset = total_sample
+            self.task_counter_ctr_ref.in_stream.offset = total_sample
+            # update read pos accrodingly to keep reading most recent self.sample_num samples
+
+            sample_remain = self.sample_num
+            while sample_remain>0:
+                read_sample_num = np.min([self.buffer_size, sample_remain])
+                self.reader_ctr.read_many_sample_uint32(self.counts_main_array
+                    , number_of_samples_per_channel = read_sample_num, timeout=self.nidaqmx.constants.WAIT_INFINITELY
+                )
+                self.reader_ctr_ref.read_many_sample_uint32(self.counts_ref_array
+                    , number_of_samples_per_channel = read_sample_num, timeout=self.nidaqmx.constants.WAIT_INFINITELY
+                )
+
+                data_main_0 = float(self.counts_main_array[0])
+                data_ref_0 = float(self.counts_ref_array[0])
+                sample_remain -= read_sample_num
+            data_main = float(self.counts_main_array[-1] - data_main_0)
+            data_ref = float(self.counts_ref_array[-1] - data_ref_0)
+
+        elif self.counter_mode == 'apd_pg':
+            total_sample = self.task_counter_ctr.in_stream.total_samp_per_chan_acquired
+            self.task_counter_ctr.in_stream.offset = total_sample
+            self.task_counter_ctr_ref.in_stream.offset = total_sample
+            # update read pos accrodingly to keep reading most recent self.sample_num samples
+
+            sample_remain = self.sample_num
+            while sample_remain>0:
+                read_sample_num = np.min([self.buffer_size, sample_remain])
+                self.reader_ctr.read_many_sample_uint32(self.counts_main_array
+                    , number_of_samples_per_channel = read_sample_num, timeout=self.nidaqmx.constants.WAIT_INFINITELY
+                )
+                self.reader_ctr_ref.read_many_sample_uint32(self.counts_ref_array
+                    , number_of_samples_per_channel = read_sample_num, timeout=self.nidaqmx.constants.WAIT_INFINITELY
+                )
+
+                data_main_0 = float(self.counts_main_array[0])
+                data_ref_0 = float(self.counts_ref_array[0])
+                sample_remain -= read_sample_num
+            data_main = float(self.counts_main_array[-1] - data_main_0)
+            data_ref = float(self.counts_ref_array[-1] - data_ref_0)
+
+        elif self.counter_mode == 'analog':
+            total_sample = self.task_counter_ai.in_stream.total_samp_per_chan_acquired
+            self.task_counter_ai.in_stream.offset = total_sample
+            # update read pos accrodingly to keep reading most recent self.sample_num+1 samples
+
+            sample_remain = self.sample_num
+            data_main = 0
+            data_ref = 0
+            while sample_remain>0:
+                read_sample_num = np.min([self.buffer_size, sample_remain])
+                self.reader_analog.read_many_sample(self.data_buffer, 
+                    number_of_samples_per_channel = read_sample_num, timeout=self.nidaqmx.constants.WAIT_INFINITELY
+                )
+
+                data = self.counts_array[0, :]
+                gate1 = self.counts_array[1, :]
+                gate2 = self.counts_array[2, :]
+                threshold = 2.7
+
+                gate1_index = np.where(gate1 > threshold)[0]
+                gate2_index = np.where(gate2 > threshold)[0]
+
+                data_main += float(np.sum(data[gate1_index]))
+                data_ref += float(np.sum(data[gate2_index]))
+                # seems better than np.sum()/np.sum(), don't know why?
+                # may due to finite sampling rate than they have different array length
+                sample_remain -= read_sample_num
+
+            data_main = data_main/self.sample_num
+            data_ref = data_ref/self.sample_num
+
+        else:
+            print(f'can only be one of the {self.valid_counter_mode}')
+
+
+        if self.data_mode == 'single':
+
+            return [data_main,]
+
+        elif self.data_mode == 'ref_div':
+
+            if data_main==0 or data_ref==0:
+                return [0,]
+            else:
+                return [data_main/data_ref,]
+
+        elif self.data_mode == 'ref_sub':
+            return [(data_main - data_ref),]
+
+        elif self.data_mode == 'dual':
+            return [data_main, data_ref]
+
+        else:
+            print(f'can only be one of the {self.valid_data_mode}')
+
 class BaseScanner(ABC):
 
     @property
@@ -311,8 +619,8 @@ class BasePulse(ABC):
         self.repeat_info = [0, -1, 1] # start_index, end_index(include), repeat_times
         self.repeat_info_tmp = [0, -1, 1]
 
-        self.ref_info = {"is_ref":False, "signal":None, "DAQ":None, "DAQ_ref":None} #
-        self.ref_info_tmp = {"is_ref":False, "signal":None, "DAQ":None, "DAQ_ref":None}
+        self.ref_info = {"is_ref":False, "signal":None, "DAQ":None, "DAQ_ref":None, 'clock':None} #
+        self.ref_info_tmp = {"is_ref":False, "signal":None, "DAQ":None, "DAQ_ref":None, 'clock':None}
 
         # _data_matrix for on_pulse(), data_matrix_tmp for reopen gui display
         self.channel_names = ['', '', '', '', '', '', '', '']
@@ -415,13 +723,13 @@ class BasePulse(ABC):
     @ref_info.setter
     def ref_info(self, value):
         if len(value)!= 4 or not isinstance(value, dict):
-            print('invalid ref_info, example {"is_ref":False, "signal":None, "DAQ":None, "DAQ_ref":None}')
+            print('invalid ref_info, example {"is_ref":False, "signal":None, "DAQ":None, "DAQ_ref":None, "clock":None}')
             return
         if value.get('is_ref', None) not in [True, False]:
             print('Invalid ref_info["is_ref"].')
             return
-        if not all(value.get(key, True) in [None, 0, 1, 2, 3, 4, 5, 6, 7] for key in ['signal', 'DAQ', 'DAQ_ref']):
-            print('Invalid ref_info["signal"] or ref_info["DAQ"] or ref_info["DAQ_ref"].')
+        if not all(value.get(key, True) in [None, 0, 1, 2, 3, 4, 5, 6, 7] for key in ['signal', 'DAQ', 'DAQ_ref', 'clock']):
+            print('Invalid ref_info["signal"] or ref_info["DAQ"] or ref_info["DAQ_ref"] or ref_info["clock"]')
         self._ref_info = value
         # must all be integers
 
@@ -524,14 +832,14 @@ class BasePulse(ABC):
             time_slice = []
 
             for period in data_matrix[:start_index]:
-                time_slice.append([self.load_x_to_str(period[0], 'duration'), period[channel+1]])
+                time_slice.append([self.load_x_to_str(period[0], 'duration'), period[1:][channel]])
             # before repeat sequence
             for repeat in range(int(self.repeat_info[2])):
                 for period in data_matrix[start_index:end_index]:
-                    time_slice.append([self.load_x_to_str(period[0], 'duration'), period[channel+1]])
+                    time_slice.append([self.load_x_to_str(period[0], 'duration'), period[1:][channel]])
             # repeat sequence
             for period in data_matrix[end_index:]:
-                time_slice.append([self.load_x_to_str(period[0], 'duration'), period[channel+1]])
+                time_slice.append([self.load_x_to_str(period[0], 'duration'), period[1:][channel]])
             # after repeat sequence
 
             if self.ref_info['is_ref']:
@@ -541,19 +849,21 @@ class BasePulse(ABC):
                         return 0
                     if channel==self.ref_info['DAQ']:
                         return 0
+                    if channel==self.ref_info['clock']:
+                        return 0
                     if channel==self.ref_info['DAQ_ref']:
-                        return period[self.ref_info['DAQ']+1]
-                    return period[channel+1]
+                        return period[self.ref_info['DAQ']]
+                    return period[channel]
 
                 for period in data_matrix[:start_index]:
-                    time_slice.append([self.load_x_to_str(period[0], 'duration'), apply_ref(channel, period)])
+                    time_slice.append([self.load_x_to_str(period[0], 'duration'), apply_ref(channel, period[1:])])
                 # before repeat sequence
                 for repeat in range(int(self.repeat_info[2])):
                     for period in data_matrix[start_index:end_index]:
-                        time_slice.append([self.load_x_to_str(period[0], 'duration'), apply_ref(channel, period)])
+                        time_slice.append([self.load_x_to_str(period[0], 'duration'), apply_ref(channel, period[1:])])
                 # repeat sequence
                 for period in data_matrix[end_index:]:
-                    time_slice.append([self.load_x_to_str(period[0], 'duration'), apply_ref(channel, period)])
+                    time_slice.append([self.load_x_to_str(period[0], 'duration'), apply_ref(channel, period[1:])])
                 # after repeat sequence
 
 
@@ -599,11 +909,12 @@ class BasePulse(ABC):
                 os.makedirs(directory)
 
         
-        np.savez(addr + '_pulse' + '.npz', data_matrix = np.array(self.data_matrix, dtype=object), \
-            delay_array = np.array(self.delay_array, dtype=object), \
-            channel_names = np.array(self.channel_names, dtype=object), \
-            repeat_info = np.array(self.repeat_info, dtype=object),\
-            ref_info = np.array(self.ref_info, dtype=object))
+        np.savez(addr + '_pulse' + '.npz', data_matrix = np.array(self.data_matrix, dtype=object),
+            delay_array = np.array(self.delay_array, dtype=object),
+            channel_names = np.array(self.channel_names, dtype=object), 
+            repeat_info = np.array(self.repeat_info, dtype=object),
+            ref_info = np.array(self.ref_info, dtype=object)
+        )
 
     def load_from_file(self, addr):
         import glob
@@ -826,8 +1137,9 @@ class VirtualCounter(BaseCounter):
             time.sleep(exposure)
             wavelength = parent.laser_stabilizer.desired_wavelength if parent.laser_stabilizer.desired_wavelength is not None else 0
             #print(wavelength, parent.laser_stabilizer)
-            lambda_counts = exposure*(ple_dict['ple_height']*(ple_dict['ple_width']/2)**2\
-                                     /((wavelength-ple_dict['ple_center'])**2 + (ple_dict['ple_width']/2)**2) + ple_dict['ple_bg'])
+            lambda_counts = exposure*(ple_dict['ple_height']*(ple_dict['ple_width']/2)**2
+                                     /((wavelength-ple_dict['ple_center'])**2 + (ple_dict['ple_width']/2)**2) + ple_dict['ple_bg']
+            )
             lambda_ref = exposure*(ple_dict['ple_bg'])
             if data_mode=='dual':
                 return [np.random.poisson(lambda_counts),np.random.poisson(lambda_ref)]
@@ -849,8 +1161,9 @@ class VirtualCounter(BaseCounter):
             position = np.array([parent.scanner.x, parent.scanner.y])
             distance = np.linalg.norm(np.array(pl_dict['pl_center']) - position)
             
-            lambda_counts = exposure*(pl_dict['pl_height']*(pl_dict['pl_width']/2)**2\
-                                     /((distance)**2 + (pl_dict['pl_width']/2)**2) + pl_dict['pl_bg'])
+            lambda_counts = exposure*(pl_dict['pl_height']*(pl_dict['pl_width']/2)**2
+                                     /((distance)**2 + (pl_dict['pl_width']/2)**2) + pl_dict['pl_bg']
+            )
             return [np.random.poisson(lambda_counts),]
 
         elif _class == 'ODMRMeasurement' or _class == 'LiveMeasurement':
@@ -863,33 +1176,39 @@ class VirtualCounter(BaseCounter):
             frequency = rf.frequency
 
             if counter_mode == 'analog':
-                lambda_counts = exposure*odmr_dict['odmr_height']*(1-0.01*(odmr_dict['odmr_width']/2)**2\
-                                         /((frequency-odmr_dict['odmr_center'])**2 + (odmr_dict['odmr_width']/2)**2))
+                lambda_counts = exposure*odmr_dict['odmr_height']*(1-0.01*(odmr_dict['odmr_width']/2)**2
+                                         /((frequency-odmr_dict['odmr_center'])**2 + (odmr_dict['odmr_width']/2)**2)
+                )
                 lambda_counts_ref = 0.995*exposure*odmr_dict['odmr_height']
                 if self.data_mode == 'single':
                     return [np.random.normal(loc=0.1, scale=0.1/10000),]
                 if self.data_mode == 'ref_div':
-                    return [np.random.normal(loc=lambda_counts, scale=lambda_counts/10000)\
-                    /np.random.normal(loc=lambda_counts_ref, scale=lambda_counts_ref/10000),]
+                    return [np.random.normal(loc=lambda_counts, scale=lambda_counts/10000)
+                    /np.random.normal(loc=lambda_counts_ref, scale=lambda_counts_ref/10000),
+                    ]
                 if self.data_mode == 'ref_sub':
-                    return [np.random.normal(loc=lambda_counts, scale=lambda_counts/10000)\
-                    -np.random.normal(loc=lambda_counts_ref, scale=lambda_counts_ref/10000),]
+                    return [np.random.normal(loc=lambda_counts, scale=lambda_counts/10000)
+                    -np.random.normal(loc=lambda_counts_ref, scale=lambda_counts_ref/10000),
+                    ]
                 if self.data_mode == 'dual':
-                    return [np.random.normal(loc=lambda_counts, scale=lambda_counts/10000)\
-                    ,np.random.normal(loc=lambda_counts_ref, scale=lambda_counts_ref/10000)]
+                    return [np.random.normal(loc=lambda_counts, scale=lambda_counts/10000)
+                    ,np.random.normal(loc=lambda_counts_ref, scale=lambda_counts_ref/10000)
+                    ]
 
 
             if self.data_mode == 'single':
-                lambda_counts = exposure*odmr_dict['odmr_height']*(1-(odmr_dict['odmr_width']/2)**2\
-                                         /((frequency-odmr_dict['odmr_center'])**2 + (odmr_dict['odmr_width']/2)**2))
+                lambda_counts = exposure*odmr_dict['odmr_height']*(1-(odmr_dict['odmr_width']/2)**2
+                                         /((frequency-odmr_dict['odmr_center'])**2 + (odmr_dict['odmr_width']/2)**2)
+                )
 
                 if not rf.on:
                     return [np.random.poisson(exposure*odmr_dict['odmr_height']),]
                 else:
                     return [np.random.poisson(lambda_counts),]
             elif self.data_mode == 'ref_sub':
-                lambda_counts = exposure*odmr_dict['odmr_height']*(1-(odmr_dict['odmr_width']/2)**2\
-                                         /((frequency-odmr_dict['odmr_center'])**2 + (odmr_dict['odmr_width']/2)**2))
+                lambda_counts = exposure*odmr_dict['odmr_height']*(1-(odmr_dict['odmr_width']/2)**2
+                                         /((frequency-odmr_dict['odmr_center'])**2 + (odmr_dict['odmr_width']/2)**2)
+                )
 
                 lambda_counts_ref = exposure*odmr_dict['odmr_height']
                 if not rf.on:
@@ -897,8 +1216,9 @@ class VirtualCounter(BaseCounter):
                 else:
                     return [np.random.poisson(lambda_counts) - np.random.poisson(lambda_counts_ref),]
             elif self.data_mode == 'ref_div':
-                lambda_counts = exposure*odmr_dict['odmr_height']*(1-(odmr_dict['odmr_width']/2)**2\
-                                         /((frequency-odmr_dict['odmr_center'])**2 + (odmr_dict['odmr_width']/2)**2))
+                lambda_counts = exposure*odmr_dict['odmr_height']*(1-(odmr_dict['odmr_width']/2)**2
+                                         /((frequency-odmr_dict['odmr_center'])**2 + (odmr_dict['odmr_width']/2)**2)
+                )
 
                 lambda_counts_ref = exposure*odmr_dict['odmr_height']
                 if not rf.on:
@@ -907,8 +1227,9 @@ class VirtualCounter(BaseCounter):
                     return [np.random.poisson(lambda_counts)/np.random.poisson(lambda_counts_ref),]
 
             elif self.data_mode == 'dual':
-                lambda_counts = exposure*odmr_dict['odmr_height']*(1-(odmr_dict['odmr_width']/2)**2\
-                                         /((frequency-odmr_dict['odmr_center'])**2 + (odmr_dict['odmr_width']/2)**2))
+                lambda_counts = exposure*odmr_dict['odmr_height']*(1-(odmr_dict['odmr_width']/2)**2
+                                         /((frequency-odmr_dict['odmr_center'])**2 + (odmr_dict['odmr_width']/2)**2)
+                )
 
                 lambda_counts_ref = exposure*odmr_dict['odmr_height']
                 if not rf.on:
@@ -926,8 +1247,9 @@ class VirtualCounter(BaseCounter):
             position = np.array([parent.scanner.x, parent.scanner.y])
             distance = np.linalg.norm(np.array(pl_dict['pl_center']) - position)
             
-            lambda_counts = exposure*(pl_dict['pl_height']*(pl_dict['pl_width']/2)**2\
-                                     /((distance)**2 + (pl_dict['pl_width']/2)**2) + pl_dict['pl_bg'])
+            lambda_counts = exposure*(pl_dict['pl_height']*(pl_dict['pl_width']/2)**2
+                                     /((distance)**2 + (pl_dict['pl_width']/2)**2) + pl_dict['pl_bg']
+            )
             return [np.random.poisson(lambda_counts),]
 
 

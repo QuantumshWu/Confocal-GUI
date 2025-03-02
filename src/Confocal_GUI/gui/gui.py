@@ -474,6 +474,7 @@ class MainWindow(QMainWindow):
             return
         # else, stabilizer is checked
         self.wavelength = self.doubleSpinBox_wavelength.value()
+        self.measurement_PLE.to_initial_state()
         self.measurement_PLE.device_to_state(self.wavelength)
 
 
@@ -675,6 +676,8 @@ class MainWindow(QMainWindow):
         if hasattr(self, 'live_plot_PL') and self.live_plot_PL.data_generator.thread.is_alive():
             points_total = self.live_plot_PL.points_total
             points_done = self.live_plot_PL.points_done
+            if points_done==0:
+                return
             ratio = points_done/points_total
             time_done = time.time()-self.time_PL_start
             self.overhead_PL = time_done/points_done - self.exposure_PL
@@ -822,6 +825,8 @@ class MainWindow(QMainWindow):
         if hasattr(self, 'live_plot_PLE') and self.live_plot_PLE.data_generator.thread.is_alive():
             points_total = self.live_plot_PLE.points_total
             points_done = self.live_plot_PLE.points_done
+            if points_done==0:
+                return
             ratio = points_done/points_total
             time_done = time.time() - self.time_PLE_start
             self.overhead_PLE = time_done/points_done - self.exposure_PLE
@@ -1506,7 +1511,8 @@ class PulseGUI(QMainWindow):
 
         Ref settings:
             if checkbox is checked, will automatically repeat current sequence another time for reference,
-            where the second sequence disables signal and replace DAQ gate with DAQ_ref gate
+            where the second sequence disables signal and replace DAQ gate with DAQ_ref gate while clock will
+            not be repeated for the ref pulse
 
         x:
             number in Channel delay or pulse duration can be a number or expression, if expression, then corresponding
@@ -1620,7 +1626,7 @@ class PulseGUI(QMainWindow):
         group_layout.addWidget(self.checkbox)
 
         self.comboboxes = {}
-        combobox_labels = ['Signal', 'DAQ', 'DAQ_ref']
+        combobox_labels = ['Signal', 'DAQ', 'DAQ_ref', 'Clock']
         for label_text in combobox_labels:
             h_layout = QHBoxLayout()
             label = QLabel(label_text)
@@ -1832,6 +1838,8 @@ class PulseGUI(QMainWindow):
         combobox.setCurrentText(f'Ch{self.ref_info["DAQ"]}')
         combobox = self.btn_ref_info.layout().itemAt(3).layout().itemAt(1).widget()
         combobox.setCurrentText(f'Ch{self.ref_info["DAQ_ref"]}')
+        combobox = self.btn_ref_info.layout().itemAt(4).layout().itemAt(1).widget()
+        combobox.setCurrentText(f'Ch{self.ref_info["clock"]}')
 
     def save_data(self):
         """
@@ -1946,6 +1954,8 @@ class PulseGUI(QMainWindow):
         new_ref_info['DAQ'] = None if combobox.currentText()=='None' else int(combobox.currentText()[-1])
         combobox = self.btn_ref_info.layout().itemAt(3).layout().itemAt(1).widget()
         new_ref_info['DAQ_ref'] = None if combobox.currentText()=='None' else int(combobox.currentText()[-1])
+        combobox = self.btn_ref_info.layout().itemAt(4).layout().itemAt(1).widget()
+        new_ref_info['clock'] = None if combobox.currentText()=='None' else int(combobox.currentText()[-1])
         return new_ref_info
     
         

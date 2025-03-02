@@ -277,7 +277,7 @@ class LiveMeasurement(BaseMeasurement):
         counter_mode='apd', data_mode='single', relim_mode='normal'):
 
         example:
-        fig, data_figure = live(data_x = np.arange(100), exposure=0.1, 
+        fig, data_figure = live(data_x = np.arange(100), exposure=0.1,
                                 config_instances=config_instances, repeat=1, is_finite=False,
                                 counter_mode='apd', data_mode='single', relim_mode='normal')
 

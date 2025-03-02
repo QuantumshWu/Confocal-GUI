@@ -17,8 +17,6 @@ class RFWithPulseMeasurement(BaseMeasurement):
 
     def device_to_state(self, duration):
         # move device state to x from data_x, defaul frequency in GHz
-        self.rf.on = True
-        self.rf.frequency = self.frequency
         self.pulse.x = duration
         self.pulse.on_pulse()
 
@@ -125,7 +123,7 @@ def rabi(data_x=None, exposure=0.1, power=-10, frequency=2.88, pulse_file=None, 
         counter_mode='apd', data_mode='ref_sub', relim_mode='tight'):
 
     example:
-    fig, data_figure = rabi(data_x=np.arange(20, 2000, 10), exposure=0.1, power=-10, frequency=2.88, 
+    fig, data_figure = rabi(data_x=np.arange(20, 2000, 10), exposure=0.1, power=-10, frequency=2.88,
                             pulse_file=None,
                             config_instances=config_instances, repeat=1, is_GUI=False,
                             counter_mode='apd', data_mode='ref_sub', relim_mode='tight')
@@ -167,7 +165,7 @@ def ramsey(data_x=None, exposure=0.1, power=-10, frequency=2.88, pulse_file=None
         counter_mode='apd', data_mode='ref_sub', relim_mode='tight'):
 
     example:
-    fig, data_figure = ramsey(data_x=np.arange(20, 2000, 10), exposure=0.1, power=-10, frequency=2.88, 
+    fig, data_figure = ramsey(data_x=np.arange(20, 2000, 10), exposure=0.1, power=-10, frequency=2.88,
                             pulse_file=None,
                             config_instances=config_instances, repeat=1, is_GUI=False,
                             counter_mode='apd', data_mode='ref_sub', relim_mode='tight')
@@ -209,7 +207,7 @@ def spinecho(data_x=None, exposure=0.1, power=-10, frequency=2.88, pulse_file=No
         counter_mode='apd', data_mode='ref_sub', relim_mode='tight'):
 
     example:
-    fig, data_figure = spinecho(data_x=np.arange(20, 2000, 10), exposure=0.1, power=-10, frequency=2.88, 
+    fig, data_figure = spinecho(data_x=np.arange(20, 2000, 10), exposure=0.1, power=-10, frequency=2.88,
                             pulse_file=None,
                             config_instances=config_instances, repeat=1, is_GUI=False,
                             counter_mode='apd', data_mode='ref_sub', relim_mode='tight')
@@ -252,7 +250,7 @@ def roduration(data_x=None, exposure=0.1, power=-10, frequency=2.88, pulse_file=
         counter_mode='apd', data_mode='ref_sub', relim_mode='tight'):
 
     example:
-    fig, data_figure = roduration(data_x=np.arange(-1000, 10000, 100), exposure=0.1, power=-10, frequency=2.88, 
+    fig, data_figure = roduration(data_x=np.arange(-1000, 10000, 100), exposure=0.1, power=-10, frequency=2.88,
                             pulse_file=None,
                             config_instances=config_instances, repeat=1, is_GUI=False,
                             counter_mode='apd', data_mode='ref_sub', relim_mode='tight')
@@ -297,7 +295,7 @@ def t1(data_x=None, exposure=0.1, power=-10, frequency=2.88, pulse_file=None, co
         counter_mode='apd', data_mode='ref_sub', relim_mode='tight'):
 
     example:
-    fig, data_figure = t1(data_x=np.arange(10, 300000, 1000), exposure=0.1, power=-10, frequency=2.88, 
+    fig, data_figure = t1(data_x=np.arange(10, 300000, 1000), exposure=0.1, power=-10, frequency=2.88,
                             pulse_file=None,
                             config_instances=config_instances, repeat=1, is_GUI=False,
                             counter_mode='apd', data_mode='ref_sub', relim_mode='tight')

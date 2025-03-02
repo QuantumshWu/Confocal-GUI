@@ -19,7 +19,6 @@ class PLEMeasurement(BaseMeasurement):
 
     def device_to_state(self, wavelength):
         # move device state to x from data_x
-        self.laser_stabilizer.on = True
         self.laser_stabilizer.wavelength = wavelength
         while self.is_running:
             time.sleep(0.01)
@@ -67,8 +66,8 @@ class PLEMeasurement(BaseMeasurement):
         counter_mode='apd', data_mode='single', relim_mode='tight'):
 
         example:
-        fig, data_figure = ple(data_x=np.arange(737.1-0.005, 737.1+0.005, 0.0005), exposure=0.1, 
-                                config_instances=config_instances, repeat=1, is_GUI=False, 
+        fig, data_figure = ple(data_x=np.arange(737.1-0.005, 737.1+0.005, 0.0005), exposure=0.1,
+                                config_instances=config_instances, repeat=1, is_GUI=False,
                                 counter_mode='apd', data_mode='single', relim_mode='tight')
 
         """
@@ -113,7 +112,6 @@ class ODMRMeasurement(BaseMeasurement):
 
     def device_to_state(self, frequency):
         # move device state to x from data_x, defaul frequency in GHz
-        self.rf.on = True
         self.rf.frequency = frequency*1e9
 
 
@@ -159,9 +157,9 @@ class ODMRMeasurement(BaseMeasurement):
         counter_mode='apd', data_mode='single', relim_mode='tight'):
 
         example:
-        fig, data_figure = odmr(data_x=np.arange(2.88-0.1, 2.88+0.1, 0.001), exposure=0.1, 
-                                power=-10, 
-                                config_instances=config_instances, repeat=1, is_GUI=False, 
+        fig, data_figure = odmr(data_x=np.arange(2.88-0.1, 2.88+0.1, 0.001), exposure=0.1,
+                                power=-10,
+                                config_instances=config_instances, repeat=1, is_GUI=False,
                                 counter_mode='apd', data_mode='single', relim_mode='tight')
 
         """
@@ -263,7 +261,7 @@ class PLMeasurement(BaseMeasurement):
         counter_mode='apd', data_mode='single', relim_mode='tight'):
 
         example:
-        fig, data_figure = pl(x_array = np.arange(-10, 10, 1), y_array = np.arange(-10, 10, 1), exposure=0.1, 
+        fig, data_figure = pl(x_array = np.arange(-10, 10, 1), y_array = np.arange(-10, 10, 1), exposure=0.1,
                                 config_instances=config_instances, repeat=1, is_GUI=False, is_dis=True,
                                 counter_mode='apd', data_mode='single', relim_mode='tight')
 
