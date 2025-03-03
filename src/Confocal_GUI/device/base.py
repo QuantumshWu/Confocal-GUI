@@ -203,7 +203,7 @@ class BaseCounter(ABC):
     def read_counts(self, exposure, counter_mode, data_mode):
         pass
 
-class BaseCounterNI(ABC):
+class BaseCounterNI(BaseCounter):
     # Basecounter class for NI-DAQ board/card
     # defines how to setup counter tasks and analogin tasks
 
@@ -235,6 +235,7 @@ class BaseCounterNI(ABC):
         self.__valid_data_mode = ['single', 'ref_div', 'ref_sub', 'dual']
         self.valid_counter_mode = self.__valid_counter_mode
         self.valid_data_mode = self.__valid_data_mode
+        self.exposure_min = 0
 
     @property
     def valid_counter_mode(self):
@@ -404,7 +405,14 @@ class BaseCounterNI(ABC):
 
 
     def read_counts(self, exposure, counter_mode = 'apd', data_mode='single',**kwargs):
+
+        if exposure < self.exposure_min:
+            exposure = self.exposure_min
+
         self.parent = kwargs.get('parent', None)
+        if (self.parent.config_instances.get('pulse', None) is None) and (counter_mode == 'apd_pg'):
+            counter_mode = 'apd'
+        # if no pulse return to 'apd' mode
 
         self.data_mode = data_mode
         if (counter_mode != self.counter_mode) or (exposure != self.exposure):
@@ -422,10 +430,10 @@ class BaseCounterNI(ABC):
             while sample_remain>0:
                 read_sample_num = np.min([self.buffer_size, sample_remain])
                 self.reader_ctr.read_many_sample_uint32(self.counts_main_array
-                    , number_of_samples_per_channel = read_sample_num, timeout=self.nidaqmx.constants.WAIT_INFINITELY
+                    , number_of_samples_per_channel = read_sample_num, timeout=5*self.exposure
                 )
                 self.reader_ctr_ref.read_many_sample_uint32(self.counts_ref_array
-                    , number_of_samples_per_channel = read_sample_num, timeout=self.nidaqmx.constants.WAIT_INFINITELY
+                    , number_of_samples_per_channel = read_sample_num, timeout=5*self.exposure
                 )
 
                 data_main_0 = float(self.counts_main_array[0])
@@ -444,10 +452,10 @@ class BaseCounterNI(ABC):
             while sample_remain>0:
                 read_sample_num = np.min([self.buffer_size, sample_remain])
                 self.reader_ctr.read_many_sample_uint32(self.counts_main_array
-                    , number_of_samples_per_channel = read_sample_num, timeout=self.nidaqmx.constants.WAIT_INFINITELY
+                    , number_of_samples_per_channel = read_sample_num, timeout=5*self.exposure
                 )
                 self.reader_ctr_ref.read_many_sample_uint32(self.counts_ref_array
-                    , number_of_samples_per_channel = read_sample_num, timeout=self.nidaqmx.constants.WAIT_INFINITELY
+                    , number_of_samples_per_channel = read_sample_num, timeout=5*self.exposure
                 )
 
                 data_main_0 = float(self.counts_main_array[0])
@@ -467,7 +475,7 @@ class BaseCounterNI(ABC):
             while sample_remain>0:
                 read_sample_num = np.min([self.buffer_size, sample_remain])
                 self.reader_analog.read_many_sample(self.data_buffer, 
-                    number_of_samples_per_channel = read_sample_num, timeout=self.nidaqmx.constants.WAIT_INFINITELY
+                    number_of_samples_per_channel = read_sample_num, timeout=5*self.exposure
                 )
 
                 data = self.counts_array[0, :]
@@ -722,7 +730,7 @@ class BasePulse(ABC):
     
     @ref_info.setter
     def ref_info(self, value):
-        if len(value)!= 4 or not isinstance(value, dict):
+        if not isinstance(value, dict):
             print('invalid ref_info, example {"is_ref":False, "signal":None, "DAQ":None, "DAQ_ref":None, "clock":None}')
             return
         if value.get('is_ref', None) not in [True, False]:
@@ -730,7 +738,9 @@ class BasePulse(ABC):
             return
         if not all(value.get(key, True) in [None, 0, 1, 2, 3, 4, 5, 6, 7] for key in ['signal', 'DAQ', 'DAQ_ref', 'clock']):
             print('Invalid ref_info["signal"] or ref_info["DAQ"] or ref_info["DAQ_ref"] or ref_info["clock"]')
-        self._ref_info = value
+
+        for key, channel in value.items():
+            self._ref_info[key] = channel
         # must all be integers
 
     @property

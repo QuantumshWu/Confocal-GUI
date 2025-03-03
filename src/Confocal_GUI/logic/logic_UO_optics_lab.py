@@ -73,7 +73,7 @@ class RFWithPulseMeasurement(BaseMeasurement):
         self.counter_mode = counter_mode
         self.data_mode = data_mode
         self.relim_mode = relim_mode
-        self.update_mode = update_mode
+        self.set_update_mode(update_mode=update_mode)
 
         self.power = self.rf.power if power is None else power
         self.frequency = self.rf.frequency if frequency is None else frequency*1e9
@@ -82,13 +82,14 @@ class RFWithPulseMeasurement(BaseMeasurement):
             self.pulse.load_from_file(pulse_file)
             # may load from 'rabi_pulse*'
         self.is_plot = is_plot
-        self.info = {'measurement_name':self.measurement_name, 'plot_type':self.plot_type, 'exposure':self.exposure\
-                    , 'repeat':self.repeat, 'power':self.power, 'frequency':self.frequency, \
-                    'scanner':(None if self.scanner is None else (self.scanner.x, self.scanner.y)), \
-                    'pulse':{'data_matrix': self.pulse.data_matrix, \
-                              'delay_array': self.pulse.delay_array, \
-                               'repeat_info': self.pulse.repeat_info, \
+        self.info.update({'measurement_name':self.measurement_name, 'plot_type':self.plot_type, 'exposure':self.exposure
+                    , 'repeat':self.repeat, 'power':self.power, 'frequency':self.frequency,
+                    'scanner':(None if self.scanner is None else (self.scanner.x, self.scanner.y)),
+                    'pulse':{'data_matrix': self.pulse.data_matrix,
+                              'delay_array': self.pulse.delay_array,
+                               'repeat_info': self.pulse.repeat_info,
                                'channel_names': self.pulse.channel_names}}
+        )
 
     def plot(self, **kwargs):
         self.load_params(**kwargs)
@@ -103,8 +104,9 @@ class RFWithPulseMeasurement(BaseMeasurement):
             data_x = self.data_x
             data_y = self.data_y
             data_generator = self
+            update_time = np.max([1, self.exposure*len(data_x)/1000])
             liveplot = PLELive(labels=[f'{self.x_name} ({self.x_unit})', f'Counts/{self.exposure}s'], \
-                                update_time=0.1, data_generator=data_generator, data=[data_x, data_y], \
+                                update_time=update_time, data_generator=data_generator, data=[data_x, data_y], \
                                 config_instances = self.config_instances, relim_mode=self.relim_mode)
             fig, selector = liveplot.plot()
             data_figure = DataFigure(liveplot)

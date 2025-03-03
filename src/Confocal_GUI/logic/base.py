@@ -40,6 +40,7 @@ class BaseMeasurement(ABC):
         super().__init__()
         self.config_instances = config_instances
         self.assign_names()
+        self.info = {}
         self.is_running = True
         # enable using all method even before load_params()
 
@@ -86,16 +87,7 @@ class BaseMeasurement(ABC):
     def load_params(self, **kwargs):
         self._load_params(**kwargs)
 
-        len_counts = len(self.counter.read_counts(0.1, parent = self, counter_mode=self.counter_mode, data_mode=self.data_mode))
-        valid_update_mode = ['normal', 'roll', 'new', 'adaptive', 'single']
-        # single for PL which only display one set of data, normal for PLE which enables show more sets depends on counter return
-        # roll for live which shift data
-        # new for repeat to add newline instead of adding to exsiting line
-        # adaptive for adaptive exposure
-        if self.update_mode not in valid_update_mode:
-            print(f'update_mode must be one of {valid_update_mode}')
-            return
-
+        len_counts = len(self.counter.read_counts(0.01, parent = self, counter_mode=self.counter_mode, data_mode=self.data_mode))
         if self.update_mode=='new':
             self.data_y = np.full((len(self.data_x), self.repeat), np.nan)
         elif self.update_mode=='single':
@@ -125,15 +117,63 @@ class BaseMeasurement(ABC):
             self.data_y[i, self.repeat_done] = counts[0]
 
         elif self.update_mode == 'adaptive':
-            self.threshold = 2*np.sqrt(1000)
+            if (time.time()-self.data_y_ref_time)>=self.data_y_ref_gap:
+                self.recent_ref = 0
+                for i in range(self.ref_exposure_repeat):
+                    self.recent_ref += self.counter.read_counts(self.exposure, parent = self, 
+                        counter_mode=self.counter_mode, data_mode=self.data_mode)[0]
+                self.data_y_ref[i] = self.recent_ref
+                self.data_y_ref_index[i] = self.data_x[i]
+                self.data_y_ref_time = time.time()
+
             exposure = self.exposure
             counts = counts[0]
-            while counts/(np.sqrt(exposure)*self.threshold) > 1:
+            ref_counts_norm = self.recent_ref*exposure/(self.ref_exposure_repeat*self.exposure)
+            while (((counts -  ref_counts_norm) > self.threshold_in_sigma*np.sqrt(ref_counts_norm)) 
+                and exposure<=(self.max_exposure_repeat*self.exposure)
+            ):
                 counts += self.counter.read_counts(self.exposure, parent = self, counter_mode=self.counter_mode, data_mode=self.data_mode)[0]
                 exposure += self.exposure
-                if exposure/self.exposure >= 10:
-                    break
-            self.data_y[i] = [counts/(np.sqrt(exposure)*self.threshold),]
+                ref_counts_norm = self.recent_ref*exposure/(self.ref_exposure_repeat*self.exposure)
+
+            self.data_y[i] = [(counts -  ref_counts_norm)/np.sqrt(ref_counts_norm),]
+            self.data_y_counts[i] = [counts,]
+            self.data_y_exposure[i] = [exposure,]
+
+    def set_update_mode(self, update_mode, **kwargs):
+        valid_update_mode = ['normal', 'roll', 'new', 'adaptive', 'single']
+        # single for PL which only display one set of data, normal for PLE which enables show more sets depends on counter return
+        # roll for live which shift data
+        # new for repeat to add newline instead of adding to exsiting line
+        # adaptive for adaptive exposure
+        if self.update_mode not in valid_update_mode:
+            print(f'update_mode must be one of {valid_update_mode}')
+            self.update_mode = 'normal'
+            return
+        else:
+            self.update_mode = update_mode
+
+        if self.update_mode == 'adaptive':
+            self.data_y_ref_time = time.time()
+
+            self.threshold_in_sigma = kwargs.get('threshold_in_sigma', 4)
+            self.data_y_ref_gap = kwargs.get('ref_gap', 10)
+            self.ref_exposure_repeat = int(round(kwargs.get('ref_exposure', 1)/self.exposure))
+            self.max_exposure_repeat = int(round(kwargs.get('max_exposure', 1)/self.exposure))
+
+            self.data_y_counts = np.full(self.data_y, np.nan)
+            self.data_y_exposure = np.full(self.data_x, np.nan)
+            self.data_y_ref = np.full(self.data_y, np.nan)
+            self.data_y_ref_index = np.full(self.data_x, np.nan)
+
+            self.info.update({'threshold_in_sigma':self.threshold_in_sigma, 'ref_gap':self.data_y_ref_gap,
+             'ref_exposure_repeat':self.ref_exposure_repeat, 'max_exposure_repeat':self.max_exposure_repeat,
+             'data_y_counts':self.self.data_y_counts, 'data_y_exposure':self.data_y_exposure, 'data_y_ref':self.data_y_ref,
+             'data_y_ref_index':self.data_y_ref_index}
+            )
+            # update info finally to record self.data_y_counts etc.
+
+
 
 
     def stop(self):
@@ -267,7 +307,7 @@ class LiveMeasurement(BaseMeasurement):
             raise KeyError('Missing devices in config_instances')
 
 
-    def _load_params(self, data_x=None, exposure=0.1, config_instances=None, is_finite=False, is_GUI=False, repeat=1, \
+    def _load_params(self, data_x=None, exposure=0.1, config_instances=None, is_finite=False, is_GUI=False, repeat=1,
         counter_mode='apd', data_mode='single', relim_mode='normal', is_plot=True):
         """
         live
@@ -291,15 +331,15 @@ class LiveMeasurement(BaseMeasurement):
         if data_x is None:
             data_x = np.arange(100)
         self.data_x = data_x
-        self.update_mode = 'roll'
+        self.set_update_mode(update_mode='roll')
         self.exposure = exposure
         self.is_GUI = is_GUI
         self.counter_mode = counter_mode
         self.data_mode = data_mode
         self.relim_mode = relim_mode
         self.is_plot = is_plot
-        self.info = {'measurement_name':self.measurement_name, 'plot_type':self.plot_type, 'exposure':self.exposure\
-                    , 'repeat':self.repeat, 'scanner':(None if self.scanner is None else (self.scanner.x, self.scanner.y))}
+        self.info.update({'measurement_name':self.measurement_name, 'plot_type':self.plot_type, 'exposure':self.exposure
+                    , 'repeat':self.repeat, 'scanner':(None if self.scanner is None else (self.scanner.x, self.scanner.y))})
 
     def plot(self, **kwargs):
         self.load_params(**kwargs)
@@ -313,8 +353,8 @@ class LiveMeasurement(BaseMeasurement):
             data_x = self.data_x
             data_y = self.data_y
             data_generator = self
-            liveplot = LiveAndDisLive(labels=[f'{self.x_name} ({self.x_unit})', f'Counts/{self.exposure}s'], \
-                                update_time=0.02, data_generator=data_generator, data=[data_x, data_y], \
+            liveplot = LiveAndDisLive(labels=[f'{self.x_name} ({self.x_unit})', f'Counts/{self.exposure}s'],
+                                update_time=0.02, data_generator=data_generator, data=[data_x, data_y],
                                 config_instances = self.config_instances, relim_mode=self.relim_mode)
 
             fig, selector = liveplot.plot()
