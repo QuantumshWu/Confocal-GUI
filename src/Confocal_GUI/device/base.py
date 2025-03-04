@@ -220,9 +220,9 @@ class BaseCounterNI(BaseCounter):
         # 'analog_signal':'/Dev2/ai0', 'analog_gate':'/Dev2/ai1', 'analog_gate_ref':'/Dev2/ai2', 'apd_clock':'/Dev2/PFI5'})
         self.port_config = port_config
         if self.port_config.get('apd_signal') is not None:
-            self.dev_num = '/'+self.port_config.get('apd_signal')+'/'
+            self.dev_num = '/'+self.port_config.get('apd_signal').split('/')[-2]+'/'
         else:
-            self.dev_num = '/'+self.port_config['analog_signal'].split('/')[-2]+'/'
+            self.dev_num = '/'+self.port_config.get('analog_signal').split('/')[-2]+'/'
         # get '/Dev2/'
         self.nidaqmx = nidaqmx
         self.counter_mode = None
