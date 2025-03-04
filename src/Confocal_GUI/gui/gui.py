@@ -97,8 +97,9 @@ class DetachedWindow(QMainWindow):
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, config_instances, measurement_PL, measurement_PLE, measurement_Live, ui='GUI.ui'):
+    def __init__(self, measurement_PL, measurement_PLE, measurement_Live, ui='GUI.ui'):
         super().__init__()
+        from Confocal_GUI.device import config_instances
         self.config_instances = config_instances
         self.data_figure_PL = None
         self.data_figure_PLE = None
@@ -574,13 +575,13 @@ class MainWindow(QMainWindow):
         
         data_x = np.arange(self.many)
 
-        self.measurement_Live.load_params(data_x=data_x, exposure=self.exposure_Live, repeat=self.repeat,\
-            is_finite=self.is_finite,\
+        self.measurement_Live.load_params(data_x=data_x, exposure=self.exposure_Live, repeat=self.repeat,
+            is_finite=self.is_finite,
             counter_mode=self.counter_mode, data_mode=self.data_mode, relim_mode=self.relim_Live)
         data_y = self.measurement_Live.data_y
-        self.live_plot_Live = LiveAndDisLive(labels=['Data', f'Counts/{self.exposure_Live:.2f}s'], \
-                            update_time=0.02, data_generator=self.measurement_Live, data=[data_x, data_y],\
-                                         fig=self.canvas_Live.fig, config_instances=self.config_instances, relim_mode = self.relim_Live)
+        self.live_plot_Live = LiveAndDisLive(labels=['Data', f'Counts/{self.exposure_Live:.2f}s'],
+                            update_time=0.02, data_generator=self.measurement_Live, data=[data_x, data_y],
+                                         fig=self.canvas_Live.fig, relim_mode = self.relim_Live)
         
         
         self.cur_live_plot = self.live_plot_Live
@@ -785,9 +786,9 @@ class MainWindow(QMainWindow):
         data_y = self.measurement_PL.data_y
         data_x = self.measurement_PL.data_x
         update_time = float(np.max([1, self.exposure_PL*len(data_x)/1000]))
-        self.live_plot_PL = PLDisLive(labels=[['X', 'Y'], f'Counts/{self.exposure_PL:.2f}s'], \
-                        update_time=update_time, data_generator=self.measurement_PL, data=[data_x, data_y],\
-                                       fig=self.canvas_PL.fig, config_instances=self.config_instances, relim_mode = self.relim_PL)
+        self.live_plot_PL = PLDisLive(labels=[['X', 'Y'], f'Counts/{self.exposure_PL:.2f}s'],
+                        update_time=update_time, data_generator=self.measurement_PL, data=[data_x, data_y],
+                                       fig=self.canvas_PL.fig, relim_mode = self.relim_PL)
         
         self.cur_live_plot = self.live_plot_PL
         self.live_plot_PL.init_figure_and_data()
@@ -946,14 +947,14 @@ class MainWindow(QMainWindow):
         self.doubleSpinBox_wavelength.setDisabled(True)
 
 
-        self.measurement_PLE.load_params(data_x=data_x, exposure=self.exposure_PLE, repeat=self.repeat, \
+        self.measurement_PLE.load_params(data_x=data_x, exposure=self.exposure_PLE, repeat=self.repeat,
             counter_mode=self.counter_mode, data_mode=self.data_mode, relim_mode=self.relim_PLE)
 
         data_y = self.measurement_PLE.data_y
         update_time = float(np.max([1, self.exposure_PLE*len(data_x)/1000]))
         self.live_plot_PLE = PLELive(labels=[f'{self.measurement_PLE.x_name} ({self.measurement_PLE.x_unit})', f'Counts/{self.exposure_PLE:.2f}s'], 
-                                     update_time=update_time, data_generator=self.measurement_PLE, data=[data_x, data_y],\
-                                    fig=self.canvas_PLE.fig, config_instances=self.config_instances, relim_mode = self.relim_PLE)
+                                     update_time=update_time, data_generator=self.measurement_PLE, data=[data_x, data_y],
+                                    fig=self.canvas_PLE.fig, relim_mode = self.relim_PLE)
         
         self.cur_live_plot = self.live_plot_PLE
         self.live_plot_PLE.init_figure_and_data()
@@ -988,14 +989,14 @@ class MainWindow(QMainWindow):
 
 
 
-def GUI_(config_instances, measurement_PLE=None, measurement_PL=None, measurement_Live=None, mode='PL_and_PLE'):
+def GUI_(measurement_PLE=None, measurement_PL=None, measurement_Live=None, mode='PL_and_PLE'):
     """
     The function opens pyqt GUI for PLE, PL, live counts, and pulse control.
     Save button will also output data and figure to jupyter notebook.
    
     Examples
     --------
-    >>> GUI(config_instances = config_instances)
+    >>> GUI()
 
     Read range button reads range from area created by left mouse event 
 
@@ -1017,16 +1018,16 @@ def GUI_(config_instances, measurement_PLE=None, measurement_PL=None, measuremen
         app = QtWidgets.QApplication(sys.argv)
 
     if mode == 'PL_and_PLE':
-        w = MainWindow(config_instances, measurement_PLE=measurement_PLE, measurement_PL=measurement_PL\
+        w = MainWindow(measurement_PLE=measurement_PLE, measurement_PL=measurement_PL
             , measurement_Live=measurement_Live, ui='GUI.ui')
     elif mode == 'PLE_and_Live':
-        w = MainWindow(config_instances, measurement_PLE=measurement_PLE, measurement_PL=measurement_PL\
+        w = MainWindow(measurement_PLE=measurement_PLE, measurement_PL=measurement_PL
             , measurement_Live=measurement_Live, ui='PLE.ui')
     elif mode == 'PL_and_Live':
-        w = MainWindow(config_instances, measurement_PLE=measurement_PLE, measurement_PL=measurement_PL\
+        w = MainWindow(measurement_PLE=measurement_PLE, measurement_PL=measurement_PL
             , measurement_Live=measurement_Live, ui='PL.ui')
     elif mode == 'Live':
-        w = MainWindow(config_instances, measurement_PLE=measurement_PLE, measurement_PL=measurement_PL\
+        w = MainWindow(measurement_PLE=measurement_PLE, measurement_PL=measurement_PL
             , measurement_Live=measurement_Live, ui='Live.ui')
 
     app.setStyle('Windows')
@@ -1039,34 +1040,34 @@ def GUI_(config_instances, measurement_PLE=None, measurement_PL=None, measuremen
 
 
 
-def GUI_PLE(config_instances, measurement_PLE, measurement_Live):
+def GUI_PLE(measurement_PLE, measurement_Live):
     """
     GUI for PLE type measurement
 
     """
-    GUI_(config_instances = config_instances, measurement_PLE=measurement_PLE, \
+    GUI_(measurement_PLE=measurement_PLE,
         measurement_PL=None, measurement_Live=measurement_Live, mode='PLE_and_Live')
 
 
 
 
 
-def GUI_PL(config_instances, measurement_PL, measurement_Live):
+def GUI_PL(measurement_PL, measurement_Live):
     """
     GUI for PL type measurement
 
     """
 
-    GUI_(config_instances = config_instances, measurement_PL=measurement_PL, \
+    GUI_(measurement_PL=measurement_PL,
         measurement_PLE=None, measurement_Live=measurement_Live, mode='PL_and_Live')
 
-def GUI_Live(config_instances, measurement_Live):
+def GUI_Live(measurement_Live):
     """
     GUI for Live type measurement
 
     """
 
-    GUI_(config_instances = config_instances, measurement_PL=None, \
+    GUI_(measurement_PL=None,
         measurement_PLE=None, measurement_Live=measurement_Live, mode='Live')
 
 

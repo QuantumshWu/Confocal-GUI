@@ -170,7 +170,7 @@ class LoadAcquire(threading.Thread):
     """
     class for load existing .npz data
     """
-    def __init__(self, address, config_instances=None):
+    def __init__(self, address):
         super().__init__()
 
 
@@ -323,7 +323,7 @@ class LivePlotGUI(ABC):
     # convert the old fig from widget to static otherwise reopen notebook will lose these figs
     # display_id is important to keep tracking of all output areas
     
-    def __init__(self, labels, update_time, data_generator, data, fig=None, config_instances=None, relim_mode='normal'):
+    def __init__(self, labels, update_time, data_generator, data, fig=None, relim_mode='normal'):
 
         self.labels = labels
         
@@ -349,7 +349,6 @@ class LivePlotGUI(ABC):
         self.repeat_done = 0
         self.selector = None
         # assign value by self.choose_selector()
-        self.config_instances = config_instances
         self.relim_mode = relim_mode
         self.valid_relim_mode = ['normal', 'tight']
 
@@ -643,7 +642,7 @@ class LiveAndDisLive(LivePlotGUI):
 
         self.counts_max = 10
         # filter out zero data
-        self.n_bins = np.min((self.points_total//4, 100))
+        self.n_bins = np.min((self.points_total//4, 50))
         self.n, self.bins = np.histogram(self.data_y[:self.points_done, 0],
                         bins=self.n_bins, range=(self.ylim_min, self.ylim_max))
 
@@ -955,7 +954,7 @@ class PLDisLive(LivePlotGUI):
         self.axdis.relim()
         self.axdis.autoscale_view()
         # reset axdis ticks, labels
-        self.n_bins = np.min((self.points_total//4, 100))
+        self.n_bins = np.min((self.points_total//4, 50))
 
         self.n, self.bins = np.histogram(self.data_y[:self.points_done, 0],
                         bins=self.n_bins, range=(self.ylim_min, self.ylim_max))
@@ -1528,9 +1527,9 @@ class DataFigure():
                 x_label = data_generator.info.get('x_label', 'Data (1)')
                 y_label = data_generator.info.get('y_label', f'Counts/{exposure}s x1')
 
-                _live_plot = PLELive(labels=[x_label, y_label[:-3]], \
-                                    update_time=0.1, data_generator=data_generator, data=[self.data_x, self.data_y], \
-                                    config_instances = None, relim_mode = relim_mode, fig=fig)
+                _live_plot = PLELive(labels=[x_label, y_label[:-3]],
+                                    update_time=0.1, data_generator=data_generator, data=[self.data_x, self.data_y]
+                                    , relim_mode = relim_mode, fig=fig)
 
             else:
                 self.data_x = data_generator.data_x
@@ -1538,9 +1537,9 @@ class DataFigure():
                 x_label = data_generator.info.get('x_label', ['X', 'Y'])
                 y_label = data_generator.info.get('y_label', f'Counts/{exposure}s x1')
 
-                _live_plot = PLDisLive(labels=[x_label, y_label[:-3]], \
-                        update_time=1, data_generator=data_generator, data=[self.data_x, self.data_y], \
-                        config_instances = None, relim_mode = relim_mode, fig=fig)
+                _live_plot = PLDisLive(labels=[x_label, y_label[:-3]],
+                        update_time=1, data_generator=data_generator, data=[self.data_x, self.data_y],
+                        relim_mode = relim_mode, fig=fig)
 
             fig, selector = _live_plot.plot()
             self.fig = _live_plot.fig

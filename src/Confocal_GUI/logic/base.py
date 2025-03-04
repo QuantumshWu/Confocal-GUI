@@ -7,7 +7,7 @@ from threading import Event
 from abc import ABC, abstractmethod
 from Confocal_GUI.live_plot import *
 from Confocal_GUI.gui import *
-
+from Confocal_GUI.device import config_instances
 
 class BaseMeasurement(ABC):
     """
@@ -36,7 +36,7 @@ class BaseMeasurement(ABC):
     GUI uses measurement.device_to_state() methods etc.
     """
 
-    def __init__(self, config_instances):
+    def __init__(self):
         super().__init__()
         self.config_instances = config_instances
         self.assign_names()
@@ -92,21 +92,6 @@ class BaseMeasurement(ABC):
             self.data_y = np.full((len(self.data_x), self.repeat), np.nan)
         elif self.update_mode=='single':
             self.data_y = np.full((len(self.data_x), 1), np.nan)
-        elif self.update_mode=='adaptive':
-            self.data_y = np.full((len(self.data_x), 1), np.nan)
-
-            self.data_y_counts = np.full(np.shape(self.data_y), np.nan)
-            self.data_y_exposure = np.full(np.shape(self.data_x), np.nan)
-            self.data_y_ref = np.full(np.shape(self.data_y), np.nan)
-            self.data_y_ref_index = np.full(np.shape(self.data_x), np.nan)
-
-            self.info.update({'threshold_in_sigma':self.threshold_in_sigma, 'ref_gap':self.data_y_ref_gap,
-             'ref_exposure_repeat':self.ref_exposure_repeat, 'max_exposure_repeat':self.max_exposure_repeat,
-             'data_y_counts':self.data_y_counts, 'data_y_exposure':self.data_y_exposure, 'data_y_ref':self.data_y_ref,
-             'data_y_ref_index':self.data_y_ref_index}
-            )
-            # update info finally to record self.data_y_counts etc.
-
         else:
             self.data_y = np.full((len(self.data_x), len_counts), np.nan)
 
@@ -131,32 +116,9 @@ class BaseMeasurement(ABC):
         elif self.update_mode == 'new':
             self.data_y[i, self.repeat_done] = counts[0]
 
-        elif self.update_mode == 'adaptive':
-            if (time.time()-self.data_y_ref_time)>=self.data_y_ref_gap or (not hasattr(self, 'recent_ref')):
-                self.recent_ref = 0
-                self.device_to_state(self.data_x[0])
-                for ii in range(self.ref_exposure_repeat):
-                    self.recent_ref += self.counter.read_counts(self.exposure, parent = self, 
-                        counter_mode=self.counter_mode, data_mode=self.data_mode)[0]
-                self.data_y_ref[ii] = self.recent_ref
-                self.data_y_ref_index[ii] = self.data_x[i]
-                self.data_y_ref_time = time.time()
-                self.device_to_state(self.data_x[i])
-            exposure = self.exposure
-            counts = counts[0]
-            ref_counts_norm = self.recent_ref*exposure/(self.ref_exposure_repeat*self.exposure)
-            while (((counts -  ref_counts_norm) > self.threshold_in_sigma*np.sqrt(ref_counts_norm)) 
-                and exposure<=(self.max_exposure_repeat*self.exposure)
-            ):
-                counts += self.counter.read_counts(self.exposure, parent = self, counter_mode=self.counter_mode, data_mode=self.data_mode)[0]
-                exposure += self.exposure
-                ref_counts_norm = self.recent_ref*exposure/(self.ref_exposure_repeat*self.exposure)
-            self.data_y[i] = [(counts -  ref_counts_norm)/np.sqrt(ref_counts_norm),]
-            self.data_y_counts[i] = [counts,]
-            self.data_y_exposure[i] = exposure
 
     def set_update_mode(self, update_mode, **kwargs):
-        valid_update_mode = ['normal', 'roll', 'new', 'adaptive', 'single']
+        valid_update_mode = ['normal', 'roll', 'new', 'single']
         # single for PL which only display one set of data, normal for PLE which enables show more sets depends on counter return
         # roll for live which shift data
         # new for repeat to add newline instead of adding to exsiting line
@@ -167,19 +129,6 @@ class BaseMeasurement(ABC):
             return
         else:
             self.update_mode = update_mode
-
-        if self.update_mode == 'adaptive':
-            self.data_y_ref_time = time.time()
-            self.counter.read_counts(self.exposure, parent = self, counter_mode=self.counter_mode, data_mode=self.data_mode)
-            self.exposure = self.counter.exposure
-            # reload exposure based on counter setting
-
-            self.threshold_in_sigma = kwargs.get('threshold_in_sigma', 4)
-            self.data_y_ref_gap = kwargs.get('ref_gap', 10)
-            self.ref_exposure_repeat = int(np.ceil(kwargs.get('ref_exposure', 1)/self.exposure))
-            self.max_exposure_repeat = int(np.ceil(kwargs.get('max_exposure', 1)/self.exposure))
-
-
 
 
     def stop(self):
@@ -239,7 +188,7 @@ def run_measurement(name, **kwargs):
     cls = measurement_registry.get(name)
     if cls is None:
         raise ValueError(f"No measurement registered with name '{name}'")
-    measurement = cls({**kwargs}['config_instances'])
+    measurement = cls()
     return measurement.plot(**kwargs)
 
 def register_measurement(name: str):
@@ -313,18 +262,18 @@ class LiveMeasurement(BaseMeasurement):
             raise KeyError('Missing devices in config_instances')
 
 
-    def _load_params(self, data_x=None, exposure=0.1, config_instances=None, is_finite=False, is_GUI=False, repeat=1,
+    def _load_params(self, data_x=None, exposure=0.1, is_finite=False, is_GUI=False, repeat=1,
         counter_mode='apd', data_mode='single', relim_mode='normal', is_plot=True):
         """
         live
 
         args:
-        (data_x=None, exposure=0.1, config_instances=None, is_finite=False, repeat=1, 
+        (data_x=None, exposure=0.1, is_finite=False, repeat=1, 
         counter_mode='apd', data_mode='single', relim_mode='normal'):
 
         example:
-        fig, data_figure = live(data_x = np.arange(100), exposure=0.1,
-                                config_instances=config_instances, repeat=1, is_finite=False,
+        fig, data_figure = live(data_x = np.arange(100), exposure=0.1
+                                , repeat=1, is_finite=False,
                                 counter_mode='apd', data_mode='single', relim_mode='normal')
 
         """
@@ -353,7 +302,7 @@ class LiveMeasurement(BaseMeasurement):
             return self
 
         if self.is_GUI:
-            GUI_Live(config_instances = self.config_instances, measurement_Live=self)
+            GUI_Live(measurement_Live=self)
             return None, None
         else:
             data_x = self.data_x
@@ -361,7 +310,7 @@ class LiveMeasurement(BaseMeasurement):
             data_generator = self
             liveplot = LiveAndDisLive(labels=[f'{self.x_name} ({self.x_unit})', f'Counts/{self.exposure}s'],
                                 update_time=0.02, data_generator=data_generator, data=[data_x, data_y],
-                                config_instances = self.config_instances, relim_mode=self.relim_mode)
+                                relim_mode=self.relim_mode)
 
             fig, selector = liveplot.plot()
             data_figure = DataFigure(liveplot)

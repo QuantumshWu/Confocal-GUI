@@ -56,8 +56,8 @@ class RFWithPulseMeasurement(BaseMeasurement):
             raise KeyError('Missing devices in config_instances')
 
 
-    def _load_params(self, data_x=None, exposure=0.1, power=None, frequency=None, pulse_file=None, config_instances=None, \
-        repeat=1, is_GUI=False, \
+    def _load_params(self, data_x=None, exposure=0.1, power=None, frequency=None, pulse_file=None,
+        repeat=1, is_GUI=False,
         counter_mode='apd', data_mode='ref_sub', relim_mode='tight', update_mode='normal', is_plot=True):
         """
         rabi func doc str
@@ -97,37 +97,37 @@ class RFWithPulseMeasurement(BaseMeasurement):
             return self
 
         if self.is_GUI:
-            self.measurement_Live = live(config_instances=self.config_instances, is_plot=False)
-            GUI_PLE(config_instances = self.config_instances, measurement_PLE=self, measurement_Live=self.measurement_Live)
+            self.measurement_Live = live(is_plot=False)
+            GUI_PLE(measurement_PLE=self, measurement_Live=self.measurement_Live)
             return None, None
         else:
             data_x = self.data_x
             data_y = self.data_y
             data_generator = self
             update_time = float(np.max([1, self.exposure*len(data_x)/1000]))
-            liveplot = PLELive(labels=[f'{self.x_name} ({self.x_unit})', f'Counts/{self.exposure}s'], \
-                                update_time=update_time, data_generator=data_generator, data=[data_x, data_y], \
-                                config_instances = self.config_instances, relim_mode=self.relim_mode)
+            liveplot = PLELive(labels=[f'{self.x_name} ({self.x_unit})', f'Counts/{self.exposure}s'],
+                                update_time=update_time, data_generator=data_generator, data=[data_x, data_y],
+                                relim_mode=self.relim_mode)
             fig, selector = liveplot.plot()
             data_figure = DataFigure(liveplot)
             return fig, data_figure
 
 
-def rabi(data_x=None, exposure=0.1, power=-10, frequency=2.88, pulse_file=None, config_instances=None, \
-        repeat=1, is_GUI=False, \
+def rabi(data_x=None, exposure=0.1, power=-10, frequency=2.88, pulse_file=None,
+        repeat=1, is_GUI=False,
         counter_mode='apd', data_mode='ref_sub', relim_mode='tight', is_plot=True):
     """
     rabi
 
     args:
-    (data_x=None, exposure=0.1, power=-10, frequency=2.88, pulse_file=None, config_instances=None, 
+    (data_x=None, exposure=0.1, power=-10, frequency=2.88, pulse_file=None, 
         repeat=1, is_GUI=False, 
         counter_mode='apd', data_mode='ref_sub', relim_mode='tight'):
 
     example:
     fig, data_figure = rabi(data_x=np.arange(20, 2000, 10), exposure=0.1, power=-10, frequency=2.88,
                             pulse_file=None,
-                            config_instances=config_instances, repeat=1, is_GUI=False,
+                            repeat=1, is_GUI=False,
                             counter_mode='apd', data_mode='ref_sub', relim_mode='tight')
 
     notes:
@@ -143,7 +143,7 @@ def rabi(data_x=None, exposure=0.1, power=-10, frequency=2.88, pulse_file=None, 
     if data_x is None:
         data_x = np.arange(20, 2000, 10)
 
-    measurement = RFWithPulseMeasurement(config_instances=config_instances)
+    measurement = RFWithPulseMeasurement()
     measurement.x_name = 'RF duration'
     measurement.x_unit = 'ns'
     measurement.measurement_name = 'Rabi'
@@ -151,25 +151,25 @@ def rabi(data_x=None, exposure=0.1, power=-10, frequency=2.88, pulse_file=None, 
     measurement.plot_type = '1D'
     measurement.fit_func = 'rabi'
 
-    return measurement.plot(data_x=data_x, exposure=exposure, power=power, frequency=frequency, pulse_file=pulse_file,\
-                    config_instances=config_instances, repeat=repeat, is_GUI=is_GUI, counter_mode=counter_mode,\
+    return measurement.plot(data_x=data_x, exposure=exposure, power=power, frequency=frequency, pulse_file=pulse_file,
+                    repeat=repeat, is_GUI=is_GUI, counter_mode=counter_mode,
                     data_mode=data_mode, relim_mode=relim_mode, is_plot=is_plot)
 
-def ramsey(data_x=None, exposure=0.1, power=-10, frequency=2.88, pulse_file=None, config_instances=None, \
-        repeat=1, is_GUI=False, \
+def ramsey(data_x=None, exposure=0.1, power=-10, frequency=2.88, pulse_file=None,
+        repeat=1, is_GUI=False,
         counter_mode='apd', data_mode='ref_sub', relim_mode='tight', is_plot=True):
     """
     ramsey
 
     args:
-    (data_x=None, exposure=0.1, power=-10, frequency=2.88, pulse_file=None, config_instances=None, 
+    (data_x=None, exposure=0.1, power=-10, frequency=2.88, pulse_file=None, 
         repeat=1, is_GUI=False, 
         counter_mode='apd', data_mode='ref_sub', relim_mode='tight'):
 
     example:
     fig, data_figure = ramsey(data_x=np.arange(20, 2000, 10), exposure=0.1, power=-10, frequency=2.88,
                             pulse_file=None,
-                            config_instances=config_instances, repeat=1, is_GUI=False,
+                            repeat=1, is_GUI=False,
                             counter_mode='apd', data_mode='ref_sub', relim_mode='tight')
 
     notes:
@@ -185,7 +185,7 @@ def ramsey(data_x=None, exposure=0.1, power=-10, frequency=2.88, pulse_file=None
     if data_x is None:
         data_x = np.arange(20, 2000, 10)
 
-    measurement = RFWithPulseMeasurement(config_instances=config_instances)
+    measurement = RFWithPulseMeasurement()
     measurement.x_name = 'Gap'
     measurement.x_unit = 'ns'
     measurement.measurement_name = 'Ramsey'
@@ -193,25 +193,25 @@ def ramsey(data_x=None, exposure=0.1, power=-10, frequency=2.88, pulse_file=None
     measurement.plot_type = '1D'
     measurement.fit_func = 'rabi'
 
-    return measurement.plot(data_x=data_x, exposure=exposure, power=power, frequency=frequency, pulse_file=pulse_file,\
-                    config_instances=config_instances, repeat=repeat, is_GUI=is_GUI, counter_mode=counter_mode,\
+    return measurement.plot(data_x=data_x, exposure=exposure, power=power, frequency=frequency, pulse_file=pulse_file,
+                    repeat=repeat, is_GUI=is_GUI, counter_mode=counter_mode,
                     data_mode=data_mode, relim_mode=relim_mode, is_plot=is_plot)
 
-def spinecho(data_x=None, exposure=0.1, power=-10, frequency=2.88, pulse_file=None, config_instances=None, \
-        repeat=1, is_GUI=False, \
+def spinecho(data_x=None, exposure=0.1, power=-10, frequency=2.88, pulse_file=None,
+        repeat=1, is_GUI=False,
         counter_mode='apd', data_mode='ref_sub', relim_mode='tight', is_plot=True):
     """
     spinecho
 
     args:
-    (data_x=None, exposure=0.1, power=-10, frequency=2.88, pulse_file=None, config_instances=None, 
+    (data_x=None, exposure=0.1, power=-10, frequency=2.88, pulse_file=None, 
         repeat=1, is_GUI=False, 
         counter_mode='apd', data_mode='ref_sub', relim_mode='tight'):
 
     example:
     fig, data_figure = spinecho(data_x=np.arange(20, 2000, 10), exposure=0.1, power=-10, frequency=2.88,
                             pulse_file=None,
-                            config_instances=config_instances, repeat=1, is_GUI=False,
+                            repeat=1, is_GUI=False,
                             counter_mode='apd', data_mode='ref_sub', relim_mode='tight')
 
     notes:
@@ -227,7 +227,7 @@ def spinecho(data_x=None, exposure=0.1, power=-10, frequency=2.88, pulse_file=No
     if data_x is None:
         data_x = np.arange(20, 2000, 10)
 
-    measurement = RFWithPulseMeasurement(config_instances=config_instances)
+    measurement = RFWithPulseMeasurement()
     measurement.x_name = 'half-Gap'
     measurement.x_unit = 'ns'
     measurement.measurement_name = 'Spinecho'
@@ -235,26 +235,26 @@ def spinecho(data_x=None, exposure=0.1, power=-10, frequency=2.88, pulse_file=No
     measurement.plot_type = '1D'
     measurement.fit_func = 'decay'
 
-    return measurement.plot(data_x=data_x, exposure=exposure, power=power, frequency=frequency, pulse_file=pulse_file,\
-                    config_instances=config_instances, repeat=repeat, is_GUI=is_GUI, counter_mode=counter_mode,\
+    return measurement.plot(data_x=data_x, exposure=exposure, power=power, frequency=frequency, pulse_file=pulse_file,
+                    repeat=repeat, is_GUI=is_GUI, counter_mode=counter_mode,
                     data_mode=data_mode, relim_mode=relim_mode, is_plot=is_plot)
 
 
-def roduration(data_x=None, exposure=0.1, power=-10, frequency=2.88, pulse_file=None, \
-    config_instances=None, repeat=1, is_GUI=False, \
+def roduration(data_x=None, exposure=0.1, power=-10, frequency=2.88, pulse_file=None,
+    repeat=1, is_GUI=False,
         counter_mode='apd', data_mode='ref_sub', relim_mode='tight', is_plot=True):
     """
     roduration
 
     args:
-    (data_x=None, exposure=0.1, power=-10, frequency=2.88, pulse_file=None, config_instances=None, 
+    (data_x=None, exposure=0.1, power=-10, frequency=2.88, pulse_file=None, 
         repeat=1, is_GUI=False, 
         counter_mode='apd', data_mode='ref_sub', relim_mode='tight'):
 
     example:
     fig, data_figure = roduration(data_x=np.arange(-1000, 10000, 100), exposure=0.1, power=-10, frequency=2.88,
                             pulse_file=None,
-                            config_instances=config_instances, repeat=1, is_GUI=False,
+                            repeat=1, is_GUI=False,
                             counter_mode='apd', data_mode='ref_sub', relim_mode='tight')
 
     notes:
@@ -272,7 +272,7 @@ def roduration(data_x=None, exposure=0.1, power=-10, frequency=2.88, pulse_file=
     if data_x is None:
         data_x = np.arange(-1000, 10000, 100)
 
-    measurement = RFWithPulseMeasurement(config_instances=config_instances)
+    measurement = RFWithPulseMeasurement()
     measurement.x_name = 'DAQ read at'
     measurement.x_unit = 'ns'
     measurement.measurement_name = 'ROduration'
@@ -280,26 +280,26 @@ def roduration(data_x=None, exposure=0.1, power=-10, frequency=2.88, pulse_file=
     measurement.plot_type = '1D'
     measurement.fit_func = 'decay'
 
-    return measurement.plot(data_x=data_x, exposure=exposure, power=power, frequency=frequency, pulse_file=pulse_file,\
-                    config_instances=config_instances, repeat=repeat, is_GUI=is_GUI, counter_mode=counter_mode,\
+    return measurement.plot(data_x=data_x, exposure=exposure, power=power, frequency=frequency, pulse_file=pulse_file,
+                    repeat=repeat, is_GUI=is_GUI, counter_mode=counter_mode,
                     data_mode=data_mode, relim_mode=relim_mode, is_plot=is_plot)
 
 
-def t1(data_x=None, exposure=0.1, power=-10, frequency=2.88, pulse_file=None, config_instances=None, \
+def t1(data_x=None, exposure=0.1, power=-10, frequency=2.88, pulse_file=None,
         repeat=1, is_GUI=False, \
         counter_mode='apd', data_mode='ref_sub', relim_mode='tight', is_plot=True):
     """
     t1
 
     args:
-    (data_x=None, exposure=0.1, power=-10, frequency=2.88, pulse_file=None, config_instances=None, 
+    (data_x=None, exposure=0.1, power=-10, frequency=2.88, pulse_file=None, 
         repeat=1, is_GUI=False, 
         counter_mode='apd', data_mode='ref_sub', relim_mode='tight'):
 
     example:
     fig, data_figure = t1(data_x=np.arange(10, 300000, 1000), exposure=0.1, power=-10, frequency=2.88,
                             pulse_file=None,
-                            config_instances=config_instances, repeat=1, is_GUI=False,
+                            repeat=1, is_GUI=False,
                             counter_mode='apd', data_mode='ref_sub', relim_mode='tight')
 
     notes:
@@ -315,7 +315,7 @@ def t1(data_x=None, exposure=0.1, power=-10, frequency=2.88, pulse_file=None, co
     if data_x is None:
         data_x = np.arange(10, 300000, 1000)
 
-    measurement = RFWithPulseMeasurement(config_instances=config_instances)
+    measurement = RFWithPulseMeasurement()
     measurement.x_name = 'Gap'
     measurement.x_unit = 'ns'
     measurement.measurement_name = 'T1'
@@ -323,8 +323,8 @@ def t1(data_x=None, exposure=0.1, power=-10, frequency=2.88, pulse_file=None, co
     measurement.plot_type = '1D'
     measurement.fit_func = 'decay'
 
-    return measurement.plot(data_x=data_x, exposure=exposure, power=power, frequency=frequency, pulse_file=pulse_file,\
-                    config_instances=config_instances, repeat=repeat, is_GUI=is_GUI, counter_mode=counter_mode,\
+    return measurement.plot(data_x=data_x, exposure=exposure, power=power, frequency=frequency, pulse_file=pulse_file,
+                    repeat=repeat, is_GUI=is_GUI, counter_mode=counter_mode,
                     data_mode=data_mode, relim_mode=relim_mode, is_plot=is_plot)
     
 

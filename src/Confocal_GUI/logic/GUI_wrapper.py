@@ -4,7 +4,7 @@ from .__init__ import *
 from Confocal_GUI.gui import *
 
 
-def GUI(config_instances, measurement_PL='pl', measurement_PLE='ple', measurement_Live='live'):
+def GUI(measurement_PL='pl', measurement_PLE='ple', measurement_Live='live'):
     """
     GUI
 
@@ -12,7 +12,7 @@ def GUI(config_instances, measurement_PL='pl', measurement_PLE='ple', measuremen
     measurement_PLE can be any measurement of 1D plot_type, such as 'odmr', 'rabi', 'spinecho' etc.
 
     example:
-    GUI(config_instances=config_instances) or GUI(config_instances=config_instances, measurement_PLE='odmr')
+    GUI() or GUI(measurement_PLE='odmr')
 
     GUI notes:
 
@@ -40,9 +40,9 @@ def GUI(config_instances, measurement_PL='pl', measurement_PLE='ple', measuremen
     
     """
 
-    measurement_Live_handle = (globals().get(measurement_Live))(**{'config_instances':config_instances, 'is_plot':False})
-    measurement_PL_handle = (globals().get(measurement_PL))(**{'config_instances':config_instances, 'is_plot':False})
-    measurement_PLE_handle = (globals().get(measurement_PLE))(**{'config_instances':config_instances, 'is_plot':False})
+    measurement_Live_handle = (globals().get(measurement_Live))(**{'is_plot':False})
+    measurement_PL_handle = (globals().get(measurement_PL))(**{'is_plot':False})
+    measurement_PLE_handle = (globals().get(measurement_PLE))(**{'is_plot':False})
 
-    return GUI_(config_instances, measurement_PLE=measurement_PLE_handle, measurement_PL=measurement_PL_handle\
+    return GUI_(measurement_PLE=measurement_PLE_handle, measurement_PL=measurement_PL_handle\
         , measurement_Live=measurement_Live_handle, mode='PL_and_PLE')

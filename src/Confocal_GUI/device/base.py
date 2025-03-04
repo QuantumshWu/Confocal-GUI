@@ -6,7 +6,7 @@ from abc import ABC, abstractmethod, ABCMeta
 import atexit
 from Confocal_GUI.gui import *
 
-
+config_instances = {}
 def initialize_classes(config, lookup_dict, namespace):
     """
 
@@ -25,7 +25,7 @@ def initialize_classes(config, lookup_dict, namespace):
         'wavemeter': {'type': 'VirtualWaveMeter'},    
         'rf': {'type': 'VirtualRF'},
         'pulse': {'type': 'VirtualPulse'},
-        'laser_stabilizer': {'type': 'VirtualLaserStabilizer','config_instances':'config_instances'},
+        'laser_stabilizer': {'type': 'VirtualLaserStabilizer','has_dependency':True},
         }
 
         config_instances = initialize_classes(config, lookup_dict=globals(), namespace=globals())
@@ -57,26 +57,26 @@ def initialize_classes(config, lookup_dict, namespace):
 
     for key, raw_params in config.items():
         params = dict(raw_params)  
-        if "config_instances" not in params:
+        if ("has_dependency" not in params) or (params.get('has_dependency') is False):
             type_name = params.pop("type")
             result = get_callable_from_type(type_name, params)
             instances[key] = result
-
+    config_instances.update(instances)
 
     for key, raw_params in config.items():
         params = dict(raw_params)
-        if "config_instances" in params:
+        if (params.get('has_dependency') is True):
             type_name = params.pop("type")
-            params.pop("config_instances")  
+            params.pop("has_dependency")  
             class_or_func = lookup_dict[type_name]
             if hasattr(class_or_func, "__bases__"):
 
-                obj = class_or_func(instances, **params)
+                obj = class_or_func(**params)
                 instances[key] = obj
             else:
 
                 func = class_or_func
-                instances[key] = func(instances, **params)
+                instances[key] = func(**params)
 
     if namespace is not None:
         namespace.update(instances)
@@ -84,7 +84,7 @@ def initialize_classes(config, lookup_dict, namespace):
     for k, v in instances.items():
         print(f"{k} => {v}")
     print('\nNow you can call devices using e.g. config_instances["rf"].gui() or rf.gui()')
-    return instances
+    config_instances.update(instances)
 
 def simple_hashable_value(v):
     # if dict, converted to a tuple
@@ -235,6 +235,7 @@ class BaseCounterNI(BaseCounter):
         # apd_pg uses pulse sequence as sampling clock to sync counting clock with pulse clock in order to get best stability and accuracy
         # can only use when pulse.total_duration is fixed otherwise need to reset exposure/timing
         # with apd_clock be the sampling clock defined by pulse
+        # need to read counter.exposure back to exposure to align with pulse duration manually
         self.__valid_data_mode = ['single', 'ref_div', 'ref_sub', 'dual']
         self.valid_counter_mode = self.__valid_counter_mode
         self.valid_data_mode = self.__valid_data_mode
@@ -296,7 +297,7 @@ class BaseCounterNI(BaseCounter):
             self.task_counter_clock.start()
 
         elif self.counter_mode == 'apd_pg':
-            self.clock = 1/(self.parent.config_instances['pulse'].total_duration/1e9)
+            self.clock = 1/(config_instances['pulse'].total_duration/1e9)
             # sampling rate for edge counting, defines when transfer counts from DAQ to PC, should be not too large to accomdate long exposure
             self.buffer_size = int(1e6)
             # need to estimate clock rate to register every_n_sample_event if buffer_size not enough
@@ -309,7 +310,7 @@ class BaseCounterNI(BaseCounter):
                 sample_mode=self.nidaqmx.constants.AcquisitionType.CONTINUOUS, samps_per_chan=self.buffer_size
             )
 
-            self.exposure = (self.sample_num-1)*self.parent.config_instances['pulse'].total_duration/1e9
+            self.exposure = (self.sample_num-1)*config_instances['pulse'].total_duration/1e9
 
             self.counts_main_array = np.zeros(self.sample_num, dtype=np.uint32)
             self.counts_ref_array = np.zeros(self.sample_num, dtype=np.uint32)
@@ -413,7 +414,7 @@ class BaseCounterNI(BaseCounter):
             exposure = self.exposure_min
 
         self.parent = kwargs.get('parent', None)
-        if (self.parent.config_instances.get('pulse', None) is None) and (counter_mode == 'apd_pg'):
+        if (config_instances.get('pulse', None) is None) and (counter_mode == 'apd_pg'):
             counter_mode = 'apd'
         # if no pulse return to 'apd' mode
 
@@ -454,12 +455,15 @@ class BaseCounterNI(BaseCounter):
             sample_remain = self.sample_num
             while sample_remain>0:
                 read_sample_num = np.min([self.buffer_size, sample_remain])
-                self.reader_ctr.read_many_sample_uint32(self.counts_main_array
-                    , number_of_samples_per_channel = read_sample_num, timeout=5*self.exposure
-                )
-                self.reader_ctr_ref.read_many_sample_uint32(self.counts_ref_array
-                    , number_of_samples_per_channel = read_sample_num, timeout=5*self.exposure
-                )
+                try:
+                    self.reader_ctr.read_many_sample_uint32(self.counts_main_array
+                        , number_of_samples_per_channel = read_sample_num, timeout=5*self.exposure
+                    )
+                    self.reader_ctr_ref.read_many_sample_uint32(self.counts_ref_array
+                        , number_of_samples_per_channel = read_sample_num, timeout=5*self.exposure
+                    )
+                except:
+                    print('No Clock signal for sampling')
 
                 data_main_0 = float(self.counts_main_array[0])
                 data_ref_0 = float(self.counts_ref_array[0])
@@ -550,7 +554,7 @@ class BaseLaserStabilizer(ABC):
     Base class to 
     
     """
-    def __init__(self, config_instances):
+    def __init__(self):
         import threading
         self.is_ready = False
         self._wavelength = None # wavelength that user inputs
@@ -1146,7 +1150,7 @@ class VirtualCounter(BaseCounter):
             
             ple_dict = {'ple_height':None, 'ple_width':None, 'ple_center':None, 'ple_bg':None}
             for key in ple_dict.keys():
-                ple_dict[key] = parent.config_instances.get(key, 1)
+                ple_dict[key] = config_instances.get(key, 1)
             
             time.sleep(exposure)
             wavelength = parent.laser_stabilizer.desired_wavelength if parent.laser_stabilizer.desired_wavelength is not None else 0
@@ -1169,7 +1173,7 @@ class VirtualCounter(BaseCounter):
             
             pl_dict = {'pl_height':None, 'pl_width':None, 'pl_center':None, 'pl_bg':None}
             for key in pl_dict.keys():
-                pl_dict[key] = parent.config_instances.get(key, 1)
+                pl_dict[key] = config_instances.get(key, 1)
             
             time.sleep(exposure)
             position = np.array([parent.scanner.x, parent.scanner.y])
@@ -1183,10 +1187,10 @@ class VirtualCounter(BaseCounter):
         elif _class == 'ODMRMeasurement' or _class == 'LiveMeasurement':
             odmr_dict = {'odmr_height':None, 'odmr_width':None, 'odmr_center':None}
             for key in odmr_dict.keys():
-                odmr_dict[key] = parent.config_instances.get(key, 1)
+                odmr_dict[key] = config_instances.get(key, 1)
             
             time.sleep(exposure)
-            rf = parent.config_instances['rf']
+            rf = config_instances['rf']
             frequency = rf.frequency
 
             if counter_mode == 'analog':
@@ -1254,7 +1258,7 @@ class VirtualCounter(BaseCounter):
         elif _class == 'ModeSearchMeasurement':
             mode_dict = {'mode_height':None, 'mode_width':None, 'mode_center':None, 'mode_bg':None}
             for key in mode_dict.keys():
-                mode_dict[key] = parent.config_instances.get(key, 1)
+                mode_dict[key] = config_instances.get(key, 1)
             
             time.sleep(exposure)
             frequency = parent.rf_1550.frequency
@@ -1275,7 +1279,7 @@ class VirtualCounter(BaseCounter):
         else: # None of these cases
             pl_dict = {'pl_height':None, 'pl_width':None, 'pl_center':None, 'pl_bg':None}
             for key in pl_dict.keys():
-                pl_dict[key] = parent.config_instances.get(key, 1)
+                pl_dict[key] = config_instances.get(key, 1)
             
             time.sleep(exposure)
             position = np.array([parent.scanner.x, parent.scanner.y])
@@ -1336,8 +1340,8 @@ class VirtualLaserStabilizer(BaseLaserStabilizer, metaclass=SingletonAndCloseMet
     call laserstabilizer.gui() to see all configurable parameters
     
     """
-    def __init__(self, config_instances):
-        super().__init__(config_instances)
+    def __init__(self):
+        super().__init__()
 
 
     def gui(self):

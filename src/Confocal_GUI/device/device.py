@@ -113,7 +113,7 @@ class LaserStabilizerCore(BaseLaserStabilizer, metaclass=SingletonAndCloseMeta):
     .ratio = -0.85GHz/V defines the ratio for feedback
     """
     
-    def __init__(self, config_instances, ratio=-0.85):
+    def __init__(self, ratio=-0.85):
         self.ratio = ratio
         self.laser = config_instances.get('laser')
         self.spl = 299792458
@@ -520,7 +520,7 @@ class DSG836(BaseRF, metaclass=SingletonAndCloseMeta):
         self._frequency = eval(self.handle.query('SOURce:FREQuency?')[:-1])
         self._iq = False # if IQ modulation is on
         self._on = False # if output is on
-        self.power_ul = 10
+        self.power_ul = -5
 
     def gui(self):
         """

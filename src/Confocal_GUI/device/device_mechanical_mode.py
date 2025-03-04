@@ -96,8 +96,8 @@ class LaserStabilizerDLCpro(BaseLaserStabilizer, metaclass=SingletonAndCloseMeta
     .ratio = -0.85GHz/V defines the ratio for feedback
     """
     
-    def __init__(self, config_instances):
-        super().__init__(config_instances=config_instances)
+    def __init__(self):
+        super().__init__()
         self.ratio = 0.54 # +1V piezo -> +0.54GHz freq
         self.laser = config_instances.get('laser')
         self.spl = 299792458
