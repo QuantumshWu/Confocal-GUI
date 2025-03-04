@@ -104,7 +104,7 @@ class RFWithPulseMeasurement(BaseMeasurement):
             data_x = self.data_x
             data_y = self.data_y
             data_generator = self
-            update_time = np.max([1, self.exposure*len(data_x)/1000])
+            update_time = float(np.max([1, self.exposure*len(data_x)/1000]))
             liveplot = PLELive(labels=[f'{self.x_name} ({self.x_unit})', f'Counts/{self.exposure}s'], \
                                 update_time=update_time, data_generator=data_generator, data=[data_x, data_y], \
                                 config_instances = self.config_instances, relim_mode=self.relim_mode)

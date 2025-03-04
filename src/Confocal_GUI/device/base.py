@@ -627,6 +627,7 @@ class BasePulse(ABC):
         self.repeat_info = [0, -1, 1] # start_index, end_index(include), repeat_times
         self.repeat_info_tmp = [0, -1, 1]
 
+        self._ref_info = {"is_ref":False, "signal":None, "DAQ":None, "DAQ_ref":None, 'clock':None}
         self.ref_info = {"is_ref":False, "signal":None, "DAQ":None, "DAQ_ref":None, 'clock':None} #
         self.ref_info_tmp = {"is_ref":False, "signal":None, "DAQ":None, "DAQ_ref":None, 'clock':None}
 
@@ -1246,7 +1247,27 @@ class VirtualCounter(BaseCounter):
                     return [np.random.poisson(lambda_counts_ref), np.random.poisson(lambda_counts_ref)]
                 else:
                     return [np.random.poisson(lambda_counts), np.random.poisson(lambda_counts_ref)]
+
+        elif _class == 'ModeSearchMeasurement':
+            mode_dict = {'mode_height':None, 'mode_width':None, 'mode_center':None, 'mode_bg':None}
+            for key in mode_dict.keys():
+                mode_dict[key] = parent.config_instances.get(key, 1)
             
+            time.sleep(exposure)
+            frequency = parent.rf_1550.frequency
+            lambda_counts = exposure*(mode_dict['mode_height']*(mode_dict['mode_width']/2)**2
+                                     /((frequency-mode_dict['mode_center'])**2 + (mode_dict['mode_width']/2)**2) + mode_dict['mode_bg']
+            )
+            lambda_ref = exposure*(mode_dict['mode_bg'])
+            if data_mode=='dual':
+                return [np.random.poisson(lambda_counts),np.random.poisson(lambda_ref)]
+            elif self.data_mode == 'ref_sub':
+                return [np.random.poisson(lambda_counts)-np.random.poisson(lambda_ref),]
+            elif self.data_mode == 'ref_div':
+                ref = np.random.poisson(lambda_ref)
+                return [np.random.poisson(lambda_counts)/ref if ref!=0 else 0,]
+            elif self.data_mode == 'single':
+                return [np.random.poisson(lambda_counts),]
             
         else: # None of these cases
             pl_dict = {'pl_height':None, 'pl_width':None, 'pl_center':None, 'pl_bg':None}

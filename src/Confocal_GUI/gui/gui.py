@@ -784,9 +784,9 @@ class MainWindow(QMainWindow):
 
         data_y = self.measurement_PL.data_y
         data_x = self.measurement_PL.data_x
-        update_time = np.max([1, self.exposure_PL*len(data_x)/1000])
+        update_time = float(np.max([1, self.exposure_PL*len(data_x)/1000]))
         self.live_plot_PL = PLDisLive(labels=[['X', 'Y'], f'Counts/{self.exposure_PL:.2f}s'], \
-                        update_time=pdate_time, data_generator=self.measurement_PL, data=[data_x, data_y],\
+                        update_time=update_time, data_generator=self.measurement_PL, data=[data_x, data_y],\
                                        fig=self.canvas_PL.fig, config_instances=self.config_instances, relim_mode = self.relim_PL)
         
         self.cur_live_plot = self.live_plot_PL
@@ -798,7 +798,7 @@ class MainWindow(QMainWindow):
                 self.data_figure_PL = None
         
         self.timer = QtCore.QTimer()
-        self.timer.setInterval(1000*self.live_plot_PL.update_time)  # Interval in milliseconds
+        self.timer.setInterval(int(1000*self.live_plot_PL.update_time))  # Interval in milliseconds
         self.timer.timeout.connect(self.update_plot)
         self.timer.start()
 
@@ -950,7 +950,7 @@ class MainWindow(QMainWindow):
             counter_mode=self.counter_mode, data_mode=self.data_mode, relim_mode=self.relim_PLE)
 
         data_y = self.measurement_PLE.data_y
-        update_time = np.max([1, self.exposure_PLE*len(data_x)/1000])
+        update_time = float(np.max([1, self.exposure_PLE*len(data_x)/1000]))
         self.live_plot_PLE = PLELive(labels=[f'{self.measurement_PLE.x_name} ({self.measurement_PLE.x_unit})', f'Counts/{self.exposure_PLE:.2f}s'], 
                                      update_time=update_time, data_generator=self.measurement_PLE, data=[data_x, data_y],\
                                     fig=self.canvas_PLE.fig, config_instances=self.config_instances, relim_mode = self.relim_PLE)
@@ -965,7 +965,7 @@ class MainWindow(QMainWindow):
         
         
         self.timer = QtCore.QTimer()
-        self.timer.setInterval(1000*self.live_plot_PLE.update_time)  # Interval in milliseconds
+        self.timer.setInterval(int(1000*self.live_plot_PLE.update_time))  # Interval in milliseconds
         self.timer.timeout.connect(self.update_plot)
         self.timer.start()
 

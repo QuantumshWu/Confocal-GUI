@@ -99,7 +99,7 @@ class PLEMeasurement(BaseMeasurement):
             data_x = self.data_x
             data_y = self.data_y
             data_generator = self
-            update_time = np.max([1, self.exposure*len(data_x)/1000])
+            update_time = float(np.max([1, self.exposure*len(data_x)/1000]))
             liveplot = PLELive(labels=[f'{self.x_name} ({self.x_unit})', f'Counts/{self.exposure}s'], \
                                 update_time=update_time, data_generator=data_generator, data=[data_x, data_y], \
                                 config_instances = self.config_instances, relim_mode=self.relim_mode)
@@ -196,7 +196,7 @@ class ODMRMeasurement(BaseMeasurement):
             data_x = self.data_x
             data_y = self.data_y
             data_generator = self
-            update_time = np.max([1, self.exposure*len(data_x)/1000])
+            update_time = float(np.max([1, self.exposure*len(data_x)/1000]))
             liveplot = PLELive(labels=[f'{self.x_name} ({self.x_unit})', f'Counts/{self.exposure}s'], \
                                 update_time=update_time, data_generator=data_generator, data=[data_x, data_y], \
                                 config_instances = self.config_instances, relim_mode=self.relim_mode)
@@ -316,7 +316,7 @@ class PLMeasurement(BaseMeasurement):
             data_x = self.data_x
             data_y = self.data_y
             data_generator = self
-            update_time = np.max([1, self.exposure*len(data_x)/1000])
+            update_time = float(np.max([1, self.exposure*len(data_x)/1000]))
             if self.is_dis:
                 liveplot = PLDisLive(labels=[['X', 'Y'], f'Counts/{self.exposure}s'], \
                                     update_time=update_time, data_generator=data_generator, data=[data_x, data_y], \
@@ -334,31 +334,32 @@ class PLMeasurement(BaseMeasurement):
 @register_measurement("mode_search") #allow a faster call to .load_params() using mode_search()
 class ModeSearchMeasurement(BaseMeasurement):
 
-    def device_to_state(self, wavelength):
+    def device_to_state(self, frequency):
         # move device state to x from data_x
-        self.laser_stabilizer.wavelength = wavelength
-        while self.is_running:
-            time.sleep(0.01)
-            if self.laser_stabilizer.is_ready:
-                break
+        self.rf_1550.frequency = frequency
 
     def to_initial_state(self):
         # move device/data state to initial state before measurement
         self.laser_stabilizer.on = True
+        self.laser_stabilizer.wavelength = self.wavelength
+        while self.is_running:
+            time.sleep(0.01)
+            if self.laser_stabilizer.is_ready:
+                break
 
     def to_final_state(self):
         # move device/data state to final state after measurement
         self.laser_stabilizer.on = False
 
     def read_x(self):
-        return self.wavemeter.wavelength
+        return self.rf_1550.frequency
 
     def assign_names(self):
         # only assign once measurement is created
-        self.x_name = 'Wavelength'
-        self.x_unit = 'nm'
-        self.measurement_name = 'PLE'
-        self.x_device_name = 'wavemeter'
+        self.x_name = 'Frequency'
+        self.x_unit = 'Hz'
+        self.measurement_name = 'Mode'
+        self.x_device_name = 'rf_1550'
         # defines the label name used in GUI
         self.plot_type = '1D'
         self.fit_func = 'lorent'
@@ -368,33 +369,36 @@ class ModeSearchMeasurement(BaseMeasurement):
         self.wavemeter = self.config_instances.get('wavemeter', None)
         self.laser_stabilizer = self.config_instances.get('laser_stabilizer', None)
         self.scanner = self.config_instances.get('scanner', None)
+        self.rf_1550 = self.config_instances.get('rf_1550', None)
         # init assignment
-        if (self.counter is None) or (self.wavemeter is None) or (self.laser_stabilizer is None):
+        if (self.counter is None) or (self.wavemeter is None) or (self.laser_stabilizer is None) or (self.rf_1550 is None):
             raise KeyError('Missing devices in config_instances')
 
 
-    def _load_params(self, data_x=None, exposure=0.1, config_instances=None, repeat=1, is_GUI=False, \
-        counter_mode='apd', data_mode='single', relim_mode='tight', update_mode='normal', is_plot=True):
+    def _load_params(self, data_x=None, exposure=0.01, wavelength=737.1, config_instances=None, repeat=1, is_GUI=False,
+        counter_mode='apd', data_mode='single', relim_mode='tight', is_plot=True, **kwargs):
         """
         ple
 
         args:
-        (data_x=None, exposure=0.1, config_instances=None, repeat=1, is_GUI=False,
-        counter_mode='apd', data_mode='single', relim_mode='tight'):
+        (data_x=None, exposure=0.01, wavelength=737.1, config_instances=None, repeat=1, is_GUI=False,
+        counter_mode='apd', data_mode='single', relim_mode='tight', is_plot=True, **kwargs):
 
         example:
-        fig, data_figure = ple(data_x=np.arange(737.1-0.005, 737.1+0.005, 0.0005), exposure=0.1,
-                                config_instances=config_instances, repeat=1, is_GUI=False,
-                                counter_mode='apd', data_mode='single', relim_mode='tight')
+        fig, data_figure = mode_search(data_x=np.arange(1e9-10e6, 1e9+10e6, 0.1e3), exposure=0.01,
+                                , wavelength=737.1, config_instances=config_instances, repeat=1, is_GUI=False,
+                                counter_mode='apd', data_mode='single', relim_mode='tight',
+                                threshold_in_sigma=3, ref_gap=10, ref_exposure=1, max_exposure=1)
 
         """
         self.loaded_params = True
         if data_x is None:
-            data_x = np.arange(737.1-0.005, 737.1+0.005, 0.0005)
+            data_x = np.arange(1e9-10e6, 1e9+10e6, 0.1e3)
         self.data_x = data_x
-        self.set_update_mode(update_mode=update_mode)
         self.exposure = exposure
+        self.set_update_mode(update_mode='adaptive', **kwargs)
         self.repeat = repeat
+        self.wavelength = wavelength
         self.is_GUI = is_GUI
         self.counter_mode = counter_mode
         self.data_mode = data_mode
@@ -416,8 +420,8 @@ class ModeSearchMeasurement(BaseMeasurement):
             data_x = self.data_x
             data_y = self.data_y
             data_generator = self
-            update_time = np.max([1, self.exposure*len(data_x)/1000])
-            liveplot = PLELive(labels=[f'{self.x_name} ({self.x_unit})', f'Counts/{self.exposure}s'], \
+            update_time = float(np.max([1, self.exposure*len(data_x)/1000]))
+            liveplot = PLELive(labels=[f'{self.x_name} ({self.x_unit})', f'Sigma/{self.exposure}s'], \
                                 update_time=update_time, data_generator=data_generator, data=[data_x, data_y], \
                                 config_instances = self.config_instances, relim_mode=self.relim_mode)
             fig, selector = liveplot.plot()

@@ -1883,8 +1883,15 @@ class DataFigure():
         # return data in the area selector, and only return first set if there are multiple sets of data (only data not data_ref)
         valid_index = [i for i, data in enumerate(self.data_y) if not np.isnan(data[0])]
         # index of none np.nan data
-        if self.selector[0] is None:
-            return self.data_x[valid_index], self.data_y[valid_index, 0]
+        if self.selector[0].range[0] is None:
+            xlim = self.fig.axes[0].get_xlim()
+            index_l = np.argmin(np.abs(self.data_x[valid_index] - xlim[0]))
+            index_h = np.argmin(np.abs(self.data_x[valid_index] - xlim[1]))
+            index_l, index_h = np.sort([index_l, index_h])
+            # in order to handle data_x from max to min (e.g. GHz unit)
+            if np.abs(index_l - index_h)<=min_num:
+                return self.data_x[valid_index], self.data_y[valid_index, 0]
+            return self.data_x[valid_index][index_l:index_h], self.data_y[valid_index, 0][index_l:index_h]
         else:
             xl, xh, yl, yh = self.selector[0].range
             if (xl is None) or (xh is None):
