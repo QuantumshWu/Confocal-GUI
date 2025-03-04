@@ -219,7 +219,10 @@ class BaseCounterNI(BaseCounter):
         # e.g. port_config = ({'apd_signal':'/Dev2/PFI3', 'apd_gate':'/Dev2/PFI4', 'apd_gate_ref':'/Dev2/PFI1',
         # 'analog_signal':'/Dev2/ai0', 'analog_gate':'/Dev2/ai1', 'analog_gate_ref':'/Dev2/ai2', 'apd_clock':'/Dev2/PFI5'})
         self.port_config = port_config
-        self.dev_num = '/'+self.port_config.get('apd_signal', self.port_config['analog_signal']).split('/')[-2]+'/'
+        if self.port_config.get('apd_signal') is not None:
+            self.dev_num = '/'+self.port_config.get('apd_signal')+'/'
+        else:
+            self.dev_num = '/'+self.port_config['analog_signal'].split('/')[-2]+'/'
         # get '/Dev2/'
         self.nidaqmx = nidaqmx
         self.counter_mode = None
