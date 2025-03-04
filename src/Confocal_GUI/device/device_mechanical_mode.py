@@ -266,7 +266,7 @@ class USB2120(BaseCounterNI, metaclass=SingletonAndCloseMeta):
 
         if port_config is None:
             port_config = {'apd_signal':'/Dev2/PFI3', 'apd_gate':'/Dev2/PFI4', 'apd_gate_ref':'/Dev2/PFI1', 'apd_clock':'/Dev2/PFI12'}
-        super().__init__(exposure=exposure, port_config=port_config)
+        super().__init__(port_config=port_config)
         self.valid_counter_mode = ['apd', 'apd_pg']
         self.valid_data_mode = ['single', 'ref_div', 'ref_sub', 'dual']
 
