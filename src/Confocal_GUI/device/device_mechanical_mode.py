@@ -262,7 +262,7 @@ class USB2120(BaseCounterNI, metaclass=SingletonAndCloseMeta):
     Class for NI DAQ USB-2120
     """
     
-    def __init__(self, exposure=1, port_config=None):
+    def __init__(self, port_config=None):
 
         if port_config is None:
             port_config = {'apd_signal':'/Dev2/PFI3', 'apd_gate':'/Dev2/PFI4', 'apd_gate_ref':'/Dev2/PFI1', 'apd_clock':'/Dev2/PFI12'}
