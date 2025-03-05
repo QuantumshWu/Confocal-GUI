@@ -512,7 +512,7 @@ class DSG836(BaseRF, metaclass=SingletonAndCloseMeta):
     on for if output is on
     """
     
-    def __init__(self, visa_str='USB0::0x1AB1::0x099C::DSG8M223900103::INSTR'):
+    def __init__(self, visa_str='USB0::0x1AB1::0x099C::DSG8M223900103::INSTR', power_ul = -5):
         import pyvisa
         rm = pyvisa.ResourceManager()
         self.handle = rm.open_resource(visa_str)
@@ -520,7 +520,7 @@ class DSG836(BaseRF, metaclass=SingletonAndCloseMeta):
         self._frequency = eval(self.handle.query('SOURce:FREQuency?')[:-1])
         self._iq = False # if IQ modulation is on
         self._on = False # if output is on
-        self.power_ul = -5
+        self.power_ul = power_ul
 
     def gui(self):
         """

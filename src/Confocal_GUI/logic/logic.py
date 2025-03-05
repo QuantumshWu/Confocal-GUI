@@ -368,8 +368,8 @@ class ModeSearchMeasurement(BaseMeasurement):
             for ii in range(self.ref_exposure_repeat):
                 self.recent_ref += self.counter.read_counts(self.exposure, parent = self, 
                     counter_mode=self.counter_mode, data_mode=self.data_mode)[0]
-            self.data_y_ref[ii] = self.recent_ref
-            self.data_y_ref_index[ii] = self.data_x[i]
+            self.data_y_ref[i] = self.recent_ref
+            self.data_y_ref_index[i] = self.data_x[i]
             self.data_y_ref_time = time.time()
             self.device_to_state(self.data_x[i])
         exposure = self.exposure
@@ -452,7 +452,7 @@ class ModeSearchMeasurement(BaseMeasurement):
 
         example:
         fig, data_figure = mode_search(data_x=np.arange(1e9-10e6, 1e9+10e6, 0.1e3), exposure=0.01,
-                                , wavelength=737.1, repeat=1, is_GUI=False,
+                                wavelength=737.1, repeat=1, is_GUI=False,
                                 counter_mode='apd', data_mode='single', relim_mode='tight',
                                 threshold_in_sigma=3, ref_gap=10, ref_exposure=1, max_exposure=1)
 
