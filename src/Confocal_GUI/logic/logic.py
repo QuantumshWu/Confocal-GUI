@@ -360,7 +360,6 @@ class ModeSearchMeasurement(BaseMeasurement):
         # normally will be
         # counts = self.counter(self.exposure, parent=self) 
         # data_y[i] += counts
-        counts = self.counter.read_counts(self.exposure, parent = self, counter_mode=self.counter_mode, data_mode=self.data_mode)
 
         if (time.time()-self.data_y_ref_time)>=self.data_y_ref_gap or (not hasattr(self, 'recent_ref')):
             self.recent_ref = 0
@@ -372,8 +371,9 @@ class ModeSearchMeasurement(BaseMeasurement):
             self.data_y_ref_index[i] = self.data_x[i]
             self.data_y_ref_time = time.time()
             self.device_to_state(self.data_x[i])
+
+        counts = self.counter.read_counts(self.exposure, parent = self, counter_mode=self.counter_mode, data_mode=self.data_mode)[0]
         exposure = self.exposure
-        counts = counts[0]
         ref_counts_norm = self.recent_ref*exposure/(self.ref_exposure_repeat*self.exposure)
         while (((counts -  ref_counts_norm) > self.threshold_in_sigma*np.sqrt(ref_counts_norm)) 
             and exposure<=(self.max_exposure_repeat*self.exposure)
