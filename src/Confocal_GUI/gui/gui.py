@@ -482,6 +482,8 @@ class MainWindow(QMainWindow):
 
     def open_device_gui(self):
         self.stop_plot()
+        time.sleep(0.5)
+        # add delay to avoid expected bahaviour
         device_handle = self.comboBox_device_gui.currentText()
         device_instance = self.config_instances[device_handle]
         if hasattr(device_instance, 'gui'):
@@ -704,6 +706,8 @@ class MainWindow(QMainWindow):
 
         
     def read_xy(self):
+        if self.data_figure_PL is None:
+            return
         if self.data_figure_PL.selector == []:
             return
         _xy = self.data_figure_PL.selector[1].xy #cross selector
@@ -732,6 +736,8 @@ class MainWindow(QMainWindow):
         
         
     def read_range_PL(self):
+        if self.data_figure_PL is None:
+            return
         if self.data_figure_PL.selector[0].range[0] is None:
             xlim = self.data_figure_PL.fig.axes[0].get_xlim()
             ylim = self.data_figure_PL.fig.axes[0].get_ylim()
@@ -739,7 +745,8 @@ class MainWindow(QMainWindow):
         else:
             xl, xh, yl, yh = self.data_figure_PL.selector[0].range
 
-        
+        # are reading edge not the center of grid
+
         self.doubleSpinBox_xl.setValue(xl)
         self.doubleSpinBox_xu.setValue(xh)
         self.doubleSpinBox_yl.setValue(yl)
@@ -768,8 +775,9 @@ class MainWindow(QMainWindow):
         self.cur_plot = 'PL'  
         self.read_data_PL()
 
-        x_array = np.arange(self.xl, self.xu, self.step_PL)
-        y_array = np.arange(self.yl, self.yu, self.step_PL)
+        x_array = np.arange(self.xl, self.xu+self.step_PL, self.step_PL)
+        y_array = np.arange(self.yl, self.yu+self.step_PL, self.step_PL)
+        # self.step_PL to include the end point if possible
 
         self.measurement_PL.load_params(x_array=x_array, y_array=y_array, exposure=self.exposure_PL, repeat=self.repeat,\
             counter_mode=self.counter_mode, data_mode=self.data_mode, relim_mode=self.relim_PL)
@@ -846,6 +854,8 @@ class MainWindow(QMainWindow):
 
 
     def read_wavelength(self):
+        if self.data_figure_PLE is None:
+            return
         if self.data_figure_PLE.selector == []:
             self.print_log(f'No {self.measurement_PLE.x_name} to read')
             return
@@ -901,6 +911,8 @@ class MainWindow(QMainWindow):
         
         
     def read_range_PLE(self):
+        if self.data_figure_PLE is None:
+            return
         if self.data_figure_PLE.selector[0].range[0] is None:
             xlim = self.data_figure_PLE.fig.axes[0].get_xlim()
             ylim = self.data_figure_PLE.fig.axes[0].get_ylim()
@@ -940,7 +952,8 @@ class MainWindow(QMainWindow):
         
         self.read_data_PLE()
         
-        data_x = np.arange(self.wl, self.wu, self.step_PLE)
+        data_x = np.arange(self.wl, self.wu+self.step_PLE, self.step_PLE)
+        # +step to include the end point is possible
 
         self.checkBox_is_stabilizer.setChecked(False)
         self.checkBox_is_stabilizer.setDisabled(True)
@@ -980,6 +993,9 @@ class MainWindow(QMainWindow):
 
         if self.cur_live_plot is not None:
             self.cur_live_plot.stop()
+
+        if self.findChild(QCheckBox, 'checkBox_is_stabilizer') is not None:
+            self.checkBox_is_stabilizer.setChecked(False)
 
         plt.close('all') # make sure close all plots which avoids error message
 

@@ -63,6 +63,9 @@ class BaseMeasurement(ABC):
                     self.to_final_state()
                     return
                 self.device_to_state(x)
+                if indices==0:
+                    time.sleep(1)
+                # wait for stabilization for the first data point, can be removed
                 self.update_data_y(indices)
                 self.points_done += 1
 
