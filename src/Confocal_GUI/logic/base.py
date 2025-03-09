@@ -90,7 +90,7 @@ class BaseMeasurement(ABC):
     def load_params(self, **kwargs):
         self._load_params(**kwargs)
 
-        len_counts = len(self.counter.read_counts(0.01, parent = self, counter_mode=self.counter_mode, data_mode=self.data_mode))
+        len_counts = len(self.counter.read_counts(0.1, parent = self, counter_mode=self.counter_mode, data_mode=self.data_mode))
         if self.update_mode=='new':
             self.data_y = np.full((len(self.data_x), self.repeat), np.nan)
         elif self.update_mode=='single':

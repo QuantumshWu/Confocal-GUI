@@ -337,7 +337,7 @@ class ModeSearchMeasurement(BaseMeasurement):
     def load_params(self, **kwargs):
         self._load_params(**kwargs)
 
-        len_counts = len(self.counter.read_counts(0.01, parent = self, counter_mode=self.counter_mode, data_mode=self.data_mode))
+        len_counts = len(self.counter.read_counts(0.1, parent = self, counter_mode=self.counter_mode, data_mode=self.data_mode))
 
         self.data_y = np.full((len(self.data_x), 1), np.nan)
 
@@ -352,8 +352,6 @@ class ModeSearchMeasurement(BaseMeasurement):
          'data_y_ref_index':self.data_y_ref_index}
         )
         # update info finally to record self.data_y_counts etc.
-
-
 
     def update_data_y(self, i):
         # defines how to update data_y

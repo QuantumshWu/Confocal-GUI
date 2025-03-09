@@ -850,10 +850,10 @@ class PLLive(LivePlotGUI):
                    self.y_array[-1]+half_step_y, self.y_array[0]-half_step_y] #left, right, bottom, up
 
 
-        self.line = self.axes.imshow(self.data_y.reshape(self.data_shape), animated=True, alpha=1, cmap=cmap, extent=extents)
+        self.lines = [self.axes.imshow(self.data_y.reshape(self.data_shape), animated=True, alpha=1, cmap=cmap, extent=extents),]
         divider = make_axes_locatable(self.axes)
         self.cax = divider.append_axes("right", size="5%", pad=0.15)
-        self.cbar = self.fig.colorbar(self.line, cax = self.cax)
+        self.cbar = self.fig.colorbar(self.lines[0], cax = self.cax)
 
         self.fig.axes[0].set_xlim((extents[0], extents[1]))
         self.fig.axes[0].set_ylim((extents[2], extents[3]))
@@ -864,7 +864,7 @@ class PLLive(LivePlotGUI):
         self.axes.set_xlabel(self.xlabel[0])
 
         self.blit_axes.append(self.axes)
-        self.blit_artists.append(self.line)
+        self.blit_artists.append(self.lines[0])
 
 
         
@@ -880,12 +880,12 @@ class PLLive(LivePlotGUI):
 
         self.fig.canvas.restore_region(self.bg_fig)
 
-        self.line.set_array(self.data_y.reshape(self.data_shape))
+        self.lines[0].set_array(self.data_y.reshape(self.data_shape))
         # other data just np.nan and controlled by set_bad
         
 
     def set_ylim(self):
-        self.line.set_clim(vmin=self.ylim_min, vmax=self.ylim_max)
+        self.lines[0].set_clim(vmin=self.ylim_min, vmax=self.ylim_max)
         
     def choose_selector(self):
 
@@ -925,9 +925,9 @@ class PLDisLive(LivePlotGUI):
         if self.have_init_fig:
             self.axdis = self.fig.axes[1]
             self.cax = self.fig.axes[2]
-            self.line = self.fig.axes[0].imshow(np.zeros(self.data_shape), animated=True, alpha=1, cmap=cmap, extent=extents)
+            self.lines = [self.fig.axes[0].imshow(np.zeros(self.data_shape), animated=True, alpha=1, cmap=cmap, extent=extents),]
             self.fig.canvas.draw()
-            self.cbar = self.fig.colorbar(self.line, cax = self.cax)
+            self.cbar = self.fig.colorbar(self.lines[0], cax = self.cax)
 
             self.fig.axes[0].set_xlim((extents[0], extents[1]))
             self.fig.axes[0].set_ylim((extents[2], extents[3]))
@@ -939,11 +939,11 @@ class PLDisLive(LivePlotGUI):
             self.cax = divider.append_axes("right", size="5%", pad=0.15)
             self.axdis = divider.append_axes("top", size="20%", pad=0.25)
             self.fig.set_size_inches(width, height*1.25)
-            self.line = self.axes.imshow(np.zeros(self.data_shape), animated=True, alpha=1, cmap=cmap, extent=extents)
+            self.lines = [self.axes.imshow(np.zeros(self.data_shape), animated=True, alpha=1, cmap=cmap, extent=extents),]
             self.fig.tight_layout()
             self.fig.canvas.draw()
 
-            self.cbar = self.fig.colorbar(self.line, cax = self.cax)
+            self.cbar = self.fig.colorbar(self.lines[0], cax = self.cax)
             self.fig.axes[0].set_xlim((extents[0], extents[1]))
             self.fig.axes[0].set_ylim((extents[2], extents[3]))
 
@@ -968,7 +968,7 @@ class PLDisLive(LivePlotGUI):
         self.blit_artists.append(self.poly)
 
         self.blit_axes.append(self.axes)
-        self.blit_artists.append(self.line)
+        self.blit_artists.append(self.lines[0])
 
 
         self.cbar.set_label(self.ylabel + ' x1')
@@ -1006,7 +1006,7 @@ class PLDisLive(LivePlotGUI):
 
         self.fig.canvas.restore_region(self.bg_fig)
 
-        self.line.set_array(self.data_y.reshape(self.data_shape))
+        self.lines[0].set_array(self.data_y.reshape(self.data_shape))
         # other data just np.nan and controlled by set_bad
    
         self.update_dis()    
@@ -1016,7 +1016,7 @@ class PLDisLive(LivePlotGUI):
         self.poly.set_verts(self.verts)  
 
     def set_ylim(self):
-        self.line.set_clim(vmin=self.ylim_min, vmax=self.ylim_max)
+        self.lines[0].set_clim(vmin=self.ylim_min, vmax=self.ylim_max)
         self.axdis.set_xlim(self.ylim_min, self.ylim_max)
         
     def choose_selector(self):
@@ -1047,7 +1047,7 @@ class PLDisLive(LivePlotGUI):
     def update_clim(self):
         vmin = self.line_l.get_xdata()[0]
         vmax = self.line_h.get_xdata()[0]
-        self.line.set_clim(vmin, vmax)
+        self.lines[0].set_clim(vmin, vmax)
 
                       
 class AreaSelector():
@@ -1457,7 +1457,7 @@ def dummy_area(ax, x1, y1, x2, y2):
             
 
 
-valid_fit_func = ['lorent', 'decay', 'rabi', 'lorent_zeeman']         
+valid_fit_func = ['lorent', 'decay', 'rabi', 'lorent_zeeman','center']         
 class DataFigure():
     """
     The class contains all data of the figure, enables more operations
@@ -1685,10 +1685,18 @@ class DataFigure():
 
         # ---------------------------------------------------------------------
         # Precompute polyline points in display coordinates.
-        pts = np.column_stack([self.data_x_p, self.data_y_p])
-        pts_disp = ax.transData.transform(pts)
-        pts_full = np.column_stack([self.data_x, self.data_y[:, 0]])
-        pts_disp_full = ax.transData.transform(pts_full)
+        if self.plot_type == '1D':
+            pts = np.column_stack([self.data_x_p, self.data_y_p])
+            pts_disp = ax.transData.transform(pts)
+            pts_full = np.column_stack([self.data_x, self.data_y[:, 0]])
+            pts_disp_full = ax.transData.transform(pts_full)
+        elif self.plot_type == '2D':
+            pts = [[self.popt[-2], self.popt[-1]], [self.popt[-2]+1e-3, self.popt[-1]+1e-3]]
+            pts_disp = ax.transData.transform(pts)
+            pts_full = [[self.popt[-2], self.popt[-1]], [self.popt[-2]+1e-3, self.popt[-1]+1e-3]]
+            pts_disp_full = ax.transData.transform(pts_full)
+            # set center of fit as the line which text needed to avoid
+
 
         def total_length(pts_arr):
             """Compute the total length of a polyline given its display coordinates."""
@@ -1871,8 +1879,8 @@ class DataFigure():
         else:
             self.text.set_text(result)
 
-        self._min_overlap(self.fig.axes[0], self.text)
 
+        self._min_overlap(self.fig.axes[0], self.text)
         for line in self.live_plot.lines:
             line.set_alpha(0.5)
 
@@ -1882,32 +1890,45 @@ class DataFigure():
         # return data in the area selector, and only return first set if there are multiple sets of data (only data not data_ref)
         valid_index = [i for i, data in enumerate(self.data_y) if not np.isnan(data[0])]
         # index of none np.nan data
-        if self.selector[0].range[0] is None:
-            xlim = self.fig.axes[0].get_xlim()
-            index_l = np.argmin(np.abs(self.data_x[valid_index] - xlim[0]))
-            index_h = np.argmin(np.abs(self.data_x[valid_index] - xlim[1]))
-            index_l, index_h = np.sort([index_l, index_h])
-            # in order to handle data_x from max to min (e.g. GHz unit)
-            if np.abs(index_l - index_h)<=min_num:
-                return self.data_x[valid_index], self.data_y[valid_index, 0]
-            return self.data_x[valid_index][index_l:index_h], self.data_y[valid_index, 0][index_l:index_h]
-        else:
-            xl, xh, yl, yh = self.selector[0].range
-            if (xl is None) or (xh is None):
-                return self.data_x[valid_index], self.data_y[valid_index, 0]
-            if (xl - xh)==0:
-                return self.data_x[valid_index], self.data_y[valid_index, 0]
+        if self.plot_type == '1D':
+            if self.selector[0].range[0] is None:
+                xlim = self.fig.axes[0].get_xlim()
+                index_l = np.argmin(np.abs(self.data_x[valid_index] - xlim[0]))
+                index_h = np.argmin(np.abs(self.data_x[valid_index] - xlim[1]))
+                index_l, index_h = np.sort([index_l, index_h])
+                # in order to handle data_x from max to min (e.g. GHz unit)
+                if np.abs(index_l - index_h)<=min_num:
+                    return self.data_x[valid_index], self.data_y[valid_index, 0]
+                return self.data_x[valid_index][index_l:index_h], self.data_y[valid_index, 0][index_l:index_h]
+            else:
+                xl, xh, yl, yh = self.selector[0].range
+                if (xl is None) or (xh is None):
+                    return self.data_x[valid_index], self.data_y[valid_index, 0]
+                if (xl - xh)==0:
+                    return self.data_x[valid_index], self.data_y[valid_index, 0]
 
-            index_l = np.argmin(np.abs(self.data_x[valid_index] - xl))
-            index_h = np.argmin(np.abs(self.data_x[valid_index] - xh))
-            index_l, index_h = np.sort([index_l, index_h])
-            # in order to handle data_x from max to min (e.g. GHz unit)
-            if np.abs(index_l - index_h)<=min_num:
-                return self.data_x[valid_index], self.data_y[valid_index, 0]
-            return self.data_x[valid_index][index_l:index_h], self.data_y[valid_index, 0][index_l:index_h]
+                index_l = np.argmin(np.abs(self.data_x[valid_index] - xl))
+                index_h = np.argmin(np.abs(self.data_x[valid_index] - xh))
+                index_l, index_h = np.sort([index_l, index_h])
+                # in order to handle data_x from max to min (e.g. GHz unit)
+                if np.abs(index_l - index_h)<=min_num:
+                    return self.data_x[valid_index], self.data_y[valid_index, 0]
+                return self.data_x[valid_index][index_l:index_h], self.data_y[valid_index, 0][index_l:index_h]
 
-    def _fit_and_draw(self, is_fit, is_display):
+        elif self.plot_type == '2D':
+            # should return data_x_p as ([x0, x1, ...], [y0, y1, ...])
+            x_array = self.data_x[valid_index][:, 0]
+            y_array = self.data_x[valid_index][:, 1]
+            return (x_array, y_array), self.data_y[valid_index, 0]
+       
+
+    def _fit_and_draw(self, is_fit, is_display, kwargs):
         # use self.p0_list and self.bounds, self.popt_str, self._fit_func
+        for index, param in enumerate(self.popt_str):
+            if kwargs.get(param, None) is not None:
+                self.bounds[0][index], self.bounds[1][index] = np.sort([kwargs.get(param, None)*(1-1e-5), kwargs.get(param, None)*(1+1e-5)])
+                for p0 in self.p0_list:
+                    p0[index] = kwargs.get(param, None)
 
         if is_fit:
             try:
@@ -1920,26 +1941,32 @@ class DataFigure():
                         popt = popt_cur
                         pcov = pcov_cur
             except:
-                return
+                return 'error', 'error'
 
         else:
             popt, pcov = self.p0_list[0], None
-        
-        
-        if self.fit is None:
-            self.fit = self.fig.axes[0].plot(self.data_x, self._fit_func(self.data_x, *popt), color='orange', linestyle='--')
-        else:
-            self.fit[0].set_ydata(self._fit_func(self.data_x, *popt))
+        self.popt = popt
 
-        self.fig.canvas.draw()
-        
         if is_display:
             self._display_popt(popt, self.popt_str)
+
+        if self.plot_type == '1D':
+            if self.fit is None:
+                self.fit = self.fig.axes[0].plot(self.data_x, self._fit_func(self.data_x, *popt), color='orange', linestyle='--')
+            else:
+                self.fit[0].set_ydata(self._fit_func(self.data_x, *popt))
+        elif self.plot_type == '2D':
+            if self.fit is None:
+                self.fit = self.fig.axes[0].scatter(popt[-2], popt[-1], color='orange', s=50)
+            else:
+                self.fit.set_offsets((popt[-2], popt[-1]))
+
+        self.fig.canvas.draw()
 
         return popt, pcov
 
 
-    def lorent(self, p0=None, is_display=True, is_fit=True):
+    def lorent(self, p0=None, is_display=True, is_fit=True, **kwargs):
         if self.plot_type == '2D':
             return 
         self.data_x_p, self.data_y_p = self._select_fit(min_num=4)
@@ -1978,12 +2005,12 @@ class DataFigure():
         [np.nanmax(self.data_x_p), guess_full_width*10, 10*data_y_range, np.nanmax(self.data_y_p)+10*data_y_range])
         
         self.popt_str = ['$x_0$', 'FWHM', 'H', 'B']
-        popt, pcov = self._fit_and_draw(is_fit, is_display)
+        popt, pcov = self._fit_and_draw(is_fit, is_display, kwargs)
         self.fit_func = 'lorent'
         return [self.popt_str, pcov], popt
 
 
-    def lorent_zeeman(self, p0=None, is_display=True, is_fit=True):
+    def lorent_zeeman(self, p0=None, is_display=True, is_fit=True, **kwargs):
         #fit of PLE under B field, will rewrite soon
         if self.plot_type == '2D':
             return 
@@ -2027,12 +2054,12 @@ class DataFigure():
         [np.nanmax(self.data_x_p), guess_full_width*10, 10*data_y_range, np.nanmax(self.data_y_p)+10*data_y_range, 2*data_x_range])
         
         self.popt_str = ['$x_0$', 'FWHM', 'H', 'B', '$\\delta$']
-        popt, pcov = self._fit_and_draw(is_fit, is_display)
+        popt, pcov = self._fit_and_draw(is_fit, is_display, kwargs)
         self.fit_func = 'lorent_zeeman'
         return [self.popt_str, pcov], popt
 
 
-    def rabi(self, p0=None, is_display=True, is_fit=True):
+    def rabi(self, p0=None, is_display=True, is_fit=True, **kwargs):
         if self.plot_type == '2D':
             return 
         self.data_x_p, self.data_y_p = self._select_fit(min_num=5)
@@ -2065,7 +2092,6 @@ class DataFigure():
             guess_decay = np.abs(-delta_x_min_max/np.log(ratio_min_max))
             guess_phi = np.pi/2
 
-            data_y_range = np.max(self.data_y_p) - np.min(self.data_y_p)
 
             self.p0_list = [[guess_amplitude, guess_offset, guess_omega, guess_decay, guess_phi],]
 
@@ -2078,18 +2104,17 @@ class DataFigure():
             guess_decay = self.p0[3]
             guess_phi = self.p0[4]
 
-            data_y_range = np.max(self.data_y_p) - np.min(self.data_y_p)
-
+        data_y_range = np.max(self.data_y_p) - np.min(self.data_y_p)
         self.bounds = ([guess_amplitude/5, np.nanmin(self.data_y_p), guess_omega/5, guess_decay/5, guess_phi - np.pi/20], \
             [guess_amplitude*5, np.nanmax(self.data_y_p), guess_omega*5, guess_decay*5, guess_phi + np.pi/20])
         
         self.popt_str = ['A', 'B', 'f', '$\\tau$', '$\\varphi$']
-        popt, pcov = self._fit_and_draw(is_fit, is_display)            
+        popt, pcov = self._fit_and_draw(is_fit, is_display, kwargs)            
         self.fit_func = 'rabi'
         return [self.popt_str, pcov], popt
 
 
-    def decay(self, p0=None, is_display=True, is_fit=True):
+    def decay(self, p0=None, is_display=True, is_fit=True, **kwargs):
         if self.plot_type == '2D':
             return 
         self.data_x_p, self.data_y_p = self._select_fit(min_num=3)
@@ -2103,8 +2128,6 @@ class DataFigure():
             guess_amplitude = np.abs(np.max(self.data_y_p) - np.min(self.data_y_p))
             guess_offset = np.mean(self.data_y_p)
             guess_decay = np.abs(self.data_x_p[np.argmin(self.data_y_p)] - self.data_x_p[np.argmax(self.data_y_p)])/2
-            data_y_range = np.abs(np.max(self.data_y_p) - np.min(self.data_y_p))
-
             self.p0_list.append([guess_amplitude, guess_offset, guess_decay])
             # if negtive
             self.p0_list.append([-guess_amplitude, guess_offset, guess_decay])
@@ -2115,16 +2138,64 @@ class DataFigure():
             guess_amplitude = self.p0[0]
             guess_offset = self.p0[1]
             guess_decay = self.p0[2]
-
-            data_y_range = np.abs(np.max(self.data_y_p) - np.min(self.data_y_p))
-
             
+        data_y_range = np.max(self.data_y_p) - np.min(self.data_y_p)
         self.bounds = ([-4*data_y_range, guess_offset - data_y_range, guess_decay/10], \
             [4*data_y_range, guess_offset + data_y_range, guess_decay*10])
         
         self.popt_str = ['A', 'B','$\\tau$']
-        popt, pcov = self._fit_and_draw(is_fit, is_display)            
+        popt, pcov = self._fit_and_draw(is_fit, is_display, kwargs)            
         self.fit_func = 'decay'
+        return [self.popt_str, pcov], popt
+
+    # 2D plot fit only display center, and x0, y0 must be last two parameters for fit_func
+    def center(self, p0=None, is_display=True, is_fit=True, **kwargs):
+        if self.plot_type == '1D':
+            return 
+        self.data_x_p, self.data_y_p = self._select_fit(min_num=5)
+        # data_x_p is [[x0, y0], [x1, y1], ...]
+        self.formula_str = '$f(r)=Ae^{-(r-(x0,y0))^2/R^2}+B$'
+        def _center(coord, amplitude, offset, size, x0, y0):
+            # coord is (x_array, y_array) or (x, y)
+            # center is (x0, y0)
+            x, y = coord
+            x, y = np.array(x), np.array(y)
+            x_dis = np.abs(x - x0)
+            y_dis = np.abs(y - y0)
+            return amplitude*np.exp(-(x_dis**2+y_dis**2)/size**2) + offset
+
+        self._fit_func = _center
+        if p0 is None:# no input
+            self.p0_list = []
+            guess_amplitude = np.abs(np.max(self.data_y_p) - np.min(self.data_y_p))
+            guess_offset = np.min(self.data_y_p)
+
+            max_5_points = np.argsort(self.data_y_p)[::-1][:5]
+            x_range = np.ptp(self.data_x_p[0][max_5_points])
+            y_range = np.ptp(self.data_x_p[1][max_5_points])
+            guess_size = np.hypot(x_range, y_range)
+            guess_x0 = np.mean(self.data_x_p[0][max_5_points])
+            guess_y0 = np.mean(self.data_x_p[1][max_5_points])
+
+            self.p0_list.append([guess_amplitude, guess_offset, guess_size, guess_x0, guess_y0])
+
+        else:
+            self.p0_list = [p0, ]
+
+            guess_amplitude = self.p0[0]
+            guess_offset = self.p0[1]
+            guess_size = self.p0[2]
+            guess_x0 = self.p0[3]
+            guess_y0 = self.p0[4]
+
+
+            
+        self.bounds = ([guess_amplitude/5, 0, guess_size/10, np.min(self.data_x_p[0]), np.min(self.data_x_p[1])], \
+            [guess_amplitude*5, guess_offset, guess_size*10, np.max(self.data_x_p[0]), np.max(self.data_x_p[1])])
+        
+        self.popt_str = ['A', 'B', 'R', 'x0', 'y0']
+        popt, pcov = self._fit_and_draw(is_fit, is_display, kwargs)            
+        self.fit_func = 'center'
         return [self.popt_str, pcov], popt
 
 
@@ -2135,7 +2206,7 @@ class DataFigure():
         if self.text is not None:
             self.text.remove()
         if self.fit is not None:
-            self.fit[0].remove()
+            self.fit.remove()
         for line in self.live_plot.lines:
             line.set_alpha(1)
         self.fig.canvas.draw()

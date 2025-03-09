@@ -1850,15 +1850,14 @@ class PulseGUI(QMainWindow):
 
         # load ref_info
         checkbox = self.btn_ref_info.layout().itemAt(0).widget()
-        checkbox.setChecked(self.ref_info['is_ref'])
-        combobox = self.btn_ref_info.layout().itemAt(1).layout().itemAt(1).widget()
-        combobox.setCurrentText(f'Ch{self.ref_info["signal"]}')
-        combobox = self.btn_ref_info.layout().itemAt(2).layout().itemAt(1).widget()
-        combobox.setCurrentText(f'Ch{self.ref_info["DAQ"]}')
-        combobox = self.btn_ref_info.layout().itemAt(3).layout().itemAt(1).widget()
-        combobox.setCurrentText(f'Ch{self.ref_info["DAQ_ref"]}')
-        combobox = self.btn_ref_info.layout().itemAt(4).layout().itemAt(1).widget()
-        combobox.setCurrentText(f'Ch{self.ref_info["clock"]}')
+        checkbox.setChecked(self.ref_info.get('is_ref', False))
+        for ii, type in enumerate(['signal', 'DAQ', 'DAQ_ref', 'clock']):
+            combobox = self.btn_ref_info.layout().itemAt(ii+1).layout().itemAt(1).widget()
+            ch = self.ref_info.get(type, None)
+            if ch is not None:
+                combobox.setCurrentText(f'Ch{ch}')
+            else:
+                combobox.setCurrentText(f'None')
 
     def save_data(self):
         """
