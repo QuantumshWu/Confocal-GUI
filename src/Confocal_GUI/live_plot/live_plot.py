@@ -1952,9 +1952,9 @@ class DataFigure():
 
         if self.plot_type == '1D':
             if self.fit is None:
-                self.fit = self.fig.axes[0].plot(self.data_x, self._fit_func(self.data_x, *popt), color='orange', linestyle='--')
+                self.fit = self.fig.axes[0].plot(self.data_x, self._fit_func(self.data_x, *popt), color='orange', linestyle='--')[0]
             else:
-                self.fit[0].set_ydata(self._fit_func(self.data_x, *popt))
+                self.fit.set_ydata(self._fit_func(self.data_x, *popt))
         elif self.plot_type == '2D':
             if self.fit is None:
                 self.fit = self.fig.axes[0].scatter(popt[-2], popt[-1], color='orange', s=50)
