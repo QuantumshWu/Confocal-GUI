@@ -63,7 +63,7 @@ class BaseMeasurement(ABC):
                     self.to_final_state()
                     return
                 self.device_to_state(x)
-                if indices==0:
+                if indices==0 and self.repeat_done==0:
                     time.sleep(1)
                 # wait for stabilization for the first data point, can be removed
                 self.update_data_y(indices)
@@ -203,20 +203,14 @@ def register_measurement(name: str):
     def decorator(cls):
         measurement_registry[name] = cls
 
-        
         def measure_func(**kwargs):
             return run_measurement(name, **kwargs)
 
         if hasattr(cls, '_load_params'):
             measure_func.__doc__ = cls._load_params.__doc__
 
-        measure_func.__name__ = name
-
-
-        parent_module = sys.modules[__name__] 
-        #print(parent_module, 'parent')
+        parent_module = sys.modules[__name__]
         setattr(parent_module, name, measure_func)
-
 
         if '__all__' in parent_module.__dict__:
             if name not in parent_module.__all__:
@@ -224,98 +218,7 @@ def register_measurement(name: str):
         else:
             parent_module.__all__ = [name]
 
-
         return cls
     return decorator
 
-
-@register_measurement('live') #allow a faster call to .load_params() using ple()
-class LiveMeasurement(BaseMeasurement):
-
-    def device_to_state(self, frequency):
-        # move device state to x from data_x, defaul frequency in GHz
-        pass
-
-
-    def to_initial_state(self):
-        # move device/data state to initial state before measurement
-        pass
-
-
-    def to_final_state(self):
-        # move device/data state to final state after measurement
-        pass
-
-    def read_x(self):
-        pass
-
-    def assign_names(self):
-
-        self.x_name = 'Data'
-        self.x_unit = '1'
-        self.measurement_name = 'Live'
-        self.x_device_name = ''
-        self.plot_type = '1D'
-        self.is_change_unit = False
-        self.loaded_params = False
-        self.counter = self.config_instances.get('counter', None)
-        self.scanner = self.config_instances.get('scanner', None)
-        # init assignment
-        if (self.counter is None):
-            raise KeyError('Missing devices in config_instances')
-
-
-    def _load_params(self, data_x=None, exposure=0.1, is_finite=False, is_GUI=False, repeat=1,
-        counter_mode='apd', data_mode='single', relim_mode='normal', is_plot=True):
-        """
-        live
-
-        args:
-        (data_x=None, exposure=0.1, is_finite=False, repeat=1, 
-        counter_mode='apd', data_mode='single', relim_mode='normal'):
-
-        example:
-        fig, data_figure = live(data_x = np.arange(100), exposure=0.1
-                                , repeat=1, is_finite=False,
-                                counter_mode='apd', data_mode='single', relim_mode='normal')
-
-        """
-        self.loaded_params = True
-        if is_finite==False:
-            self.repeat = int(1e6)
-        else:
-            self.repeat = int(repeat)
-        # large enough and in practical infinite
-        if data_x is None:
-            data_x = np.arange(100)
-        self.data_x = data_x
-        self.set_update_mode(update_mode='roll')
-        self.exposure = exposure
-        self.is_GUI = is_GUI
-        self.counter_mode = counter_mode
-        self.data_mode = data_mode
-        self.relim_mode = relim_mode
-        self.is_plot = is_plot
-        self.info.update({'measurement_name':self.measurement_name, 'plot_type':self.plot_type, 'exposure':self.exposure
-                    , 'repeat':self.repeat, 'scanner':(None if self.scanner is None else (self.scanner.x, self.scanner.y))})
-
-    def plot(self, **kwargs):
-        self.load_params(**kwargs)
-        if not self.is_plot:
-            return self
-
-        if self.is_GUI:
-            GUI_Live(measurement_Live=self)
-            return None, None
-        else:
-            data_x = self.data_x
-            data_y = self.data_y
-            data_generator = self
-            liveplot = LiveAndDisLive(labels=[f'{self.x_name} ({self.x_unit})', f'Counts/{self.exposure}s'],
-                                update_time=0.02, data_generator=data_generator, data=[data_x, data_y],
-                                relim_mode=self.relim_mode)
-
-            fig, selector = liveplot.plot()
-            data_figure = DataFigure(liveplot)
-            return fig, data_figure
 

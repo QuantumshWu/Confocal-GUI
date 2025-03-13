@@ -1952,14 +1952,20 @@ class DataFigure():
 
         if self.plot_type == '1D':
             if self.fit is None:
-                self.fit = self.fig.axes[0].plot(self.data_x, self._fit_func(self.data_x, *popt), color='orange', linestyle='--')[0]
+                self.fit = self.fig.axes[0].plot(self.data_x, self._fit_func(self.data_x, *popt), color='orange', linestyle='--')
             else:
-                self.fit.set_ydata(self._fit_func(self.data_x, *popt))
+                self.fit[0].set_ydata(self._fit_func(self.data_x, *popt))
         elif self.plot_type == '2D':
             if self.fit is None:
-                self.fit = self.fig.axes[0].scatter(popt[-2], popt[-1], color='orange', s=50)
+                self.fit = [self.fig.axes[0].scatter(popt[-2], popt[-1], color='orange', s=50),]
+                circle = matplotlib.patches.Circle((popt[-2], popt[-1]), radius=popt[-3], edgecolor='orange'
+                    , facecolor='none', linewidth=2, alpha=0.5)
+                self.fit.append(circle)
+                self.fig.axes[0].add_patch(circle)
             else:
-                self.fit.set_offsets((popt[-2], popt[-1]))
+                self.fit[0].set_offsets((popt[-2], popt[-1]))
+                self.fit[1].set_center((popt[-2], popt[-1]))
+                self.fit[1].set_radius(popt[-3])
 
         self.fig.canvas.draw()
 
@@ -2206,7 +2212,8 @@ class DataFigure():
         if self.text is not None:
             self.text.remove()
         if self.fit is not None:
-            self.fit.remove()
+            for fit in self.fit:
+                fit.remove()
         for line in self.live_plot.lines:
             line.set_alpha(1)
         self.fig.canvas.draw()

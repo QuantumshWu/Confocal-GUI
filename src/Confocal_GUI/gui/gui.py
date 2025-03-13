@@ -199,7 +199,8 @@ class MainWindow(QMainWindow):
                 {'name': 'doubleSpinBox_wl', 'func': self.estimate_PLE_time},
                 {'name': 'doubleSpinBox_wu', 'func': self.estimate_PLE_time},
                 {'name': 'doubleSpinBox_step_PLE', 'func': [self.estimate_PLE_time, self.step_PLE_in_MHz, self.update_stabilizer_step]},
-                {'name': 'doubleSpinBox_wavelength', 'func': self.is_stabilizer},
+                {'name': 'doubleSpinBox_wavelength', 'func': lambda _: self.is_stabilizer()},
+                # only pass param to is_stabilizer when toggled
                 # for PLE
                 {'name': 'doubleSpinBox_exposure_PL', 'func': self.estimate_PL_time},
                 {'name': 'doubleSpinBox_xl', 'func': self.estimate_PL_time},
@@ -468,15 +469,20 @@ class MainWindow(QMainWindow):
         self.pushButton_reattach.setEnabled(False)
 
 
-    def is_stabilizer(self):
+    def is_stabilizer(self, is_toggle_changed=False):
 
         if not self.checkBox_is_stabilizer.isChecked():
             self.measurement_PLE.to_final_state()
             return
         # else, stabilizer is checked
-        self.wavelength = self.doubleSpinBox_wavelength.value()
-        self.measurement_PLE.to_initial_state()
-        self.measurement_PLE.device_to_state(self.wavelength)
+        if is_toggle_changed is True:
+            self.wavelength = self.doubleSpinBox_wavelength.value()
+            self.measurement_PLE.to_initial_state()
+            self.measurement_PLE.device_to_state(self.wavelength)
+        else:
+            # only value is changed
+            self.wavelength = self.doubleSpinBox_wavelength.value()
+            self.measurement_PLE.device_to_state(self.wavelength)
 
 
 
