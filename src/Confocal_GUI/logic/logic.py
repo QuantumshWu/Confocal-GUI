@@ -632,52 +632,41 @@ def mode_search(siv_center, siv_pos, is_drift=True, is_adaptive=True, frequency_
     from .base import live, ple, pl, mode_search_core
     spl = 299792458
     scanner = config_instances['scanner']
-    try:
-        if is_drift:
-            points_before_recenter = int(np.ceil(recenter_gap/exposure))
-            points_every_cycle = int(np.ceil(recenter_gap/exposure)*0.8)
-            # 20% overlap 
-            cycles = int(np.ceil(len(frequency_array)/points_every_cycle))
-            for i in range(cycles):
-                fig, data_figure = pl(x_array = np.arange(siv_pos[0]-pl_range, siv_pos[0]+pl_range+pl_step, pl_step), 
-                                      y_array = np.arange(siv_pos[1]-pl_range, siv_pos[1]+pl_range+pl_step, pl_step), exposure=pl_exposure,
-                                        repeat=1, is_GUI=False, is_dis=True,
-                                        counter_mode='apd_pg', data_mode='single', relim_mode='tight', wavelength = siv_center)
-                _, popt = data_figure.center(R=R)
-                siv_pos[0] = popt[-2]
-                siv_pos[1] = popt[-1]
-                scanner.x = siv_pos[0]
-                scanner.y = siv_pos[1]
-                if save_addr is not None:
-                    data_figure.save(save_addr)
-                fig, data_figure = ple(data_x=np.arange(siv_center-ple_range, siv_center+ple_range, ple_step), exposure=ple_exposure,
-                                        repeat=1, is_GUI=False,
-                                        counter_mode='apd_pg', data_mode='single', relim_mode='tight')
-                _, popt = data_figure.lorent()
-                siv_center = popt[0]
-                data_figure.save(save_addr)
-                if red_bias_relative_center is None:
-                    red_bias = spl/(spl/siv_center + np.mean(frequency_array)/1e9)
-                else:
-                    red_bias = spl/(spl/siv_center + red_bias_relative_center)
-                print('Red biased at', red_bias)
-                fig, data_figure = mode_search_core(data_x=frequency_array, 
-                                        exposure=exposure,
-                                        wavelength=red_bias, repeat=1, is_GUI=False,
-                                        counter_mode='apd_pg', data_mode='single', relim_mode='tight',
-                                        update_mode='adaptive' if is_adaptive is True else 'normal',
-                                        threshold_in_sigma=threshold_in_sigma, ref_gap=ref_gap, ref_exposure=ref_exposure, max_exposure=max_exposure)
-                if save_addr is not None:
-                    data_figure.save(save_addr)
-        else:
+    if is_drift:
+        points_before_recenter = int(np.ceil(recenter_gap/exposure))
+        points_every_cycle = int(np.ceil(recenter_gap/exposure)*0.8)
+        # 20% overlap 
+        cycles = int(np.ceil(len(frequency_array)/points_every_cycle))
+        for i in range(cycles):
+            fig, data_figure = pl(x_array = np.arange(siv_pos[0]-pl_range, siv_pos[0]+pl_range+pl_step, pl_step), 
+                                  y_array = np.arange(siv_pos[1]-pl_range, siv_pos[1]+pl_range+pl_step, pl_step), exposure=pl_exposure,
+                                    repeat=1, is_GUI=False, is_dis=True,
+                                    counter_mode='apd_pg', data_mode='single', relim_mode='tight', wavelength = siv_center)
+            _, popt = data_figure.center(R=R)
+            siv_pos[0] = popt[-2]
+            siv_pos[1] = popt[-1]
             scanner.x = siv_pos[0]
             scanner.y = siv_pos[1]
+            if save_addr is not None:
+                data_figure.save(save_addr)
+            if np.isnan(data_figure.data_y).any():
+                break
+            # means keyboardInterrupt inside PL
+            fig, data_figure = ple(data_x=np.arange(siv_center-ple_range, siv_center+ple_range, ple_step), exposure=ple_exposure,
+                                    repeat=1, is_GUI=False,
+                                    counter_mode='apd_pg', data_mode='single', relim_mode='tight')
+            _, popt = data_figure.lorent()
+            siv_center = popt[0]
+            data_figure.save(save_addr)
+            if np.isnan(data_figure.data_y).any():
+                break
+            # means keyboardInterrupt inside PLE
             if red_bias_relative_center is None:
                 red_bias = spl/(spl/siv_center + np.mean(frequency_array)/1e9)
             else:
                 red_bias = spl/(spl/siv_center + red_bias_relative_center)
-
-            fig, data_figure = mode_search_core(data_x=frequency_array[points_every_cycle*cycles:points_every_cycle*cycles+points_before_recenter], 
+            print('Red biased at', red_bias)
+            fig, data_figure = mode_search_core(data_x=frequency_array, 
                                     exposure=exposure,
                                     wavelength=red_bias, repeat=1, is_GUI=False,
                                     counter_mode='apd_pg', data_mode='single', relim_mode='tight',
@@ -685,14 +674,29 @@ def mode_search(siv_center, siv_pos, is_drift=True, is_adaptive=True, frequency_
                                     threshold_in_sigma=threshold_in_sigma, ref_gap=ref_gap, ref_exposure=ref_exposure, max_exposure=max_exposure)
             if save_addr is not None:
                 data_figure.save(save_addr)
+            if np.isnan(data_figure.data_y).any():
+                break
+            # means keyboardInterrupt inside mode_search_core
+    else:
+        scanner.x = siv_pos[0]
+        scanner.y = siv_pos[1]
+        if red_bias_relative_center is None:
+            red_bias = spl/(spl/siv_center + np.mean(frequency_array)/1e9)
+        else:
+            red_bias = spl/(spl/siv_center + red_bias_relative_center)
 
-
-        return fig, data_figure
-
-    except KeyboardInterrupt:
+        fig, data_figure = mode_search_core(data_x=frequency_array[points_every_cycle*cycles:points_every_cycle*cycles+points_before_recenter], 
+                                exposure=exposure,
+                                wavelength=red_bias, repeat=1, is_GUI=False,
+                                counter_mode='apd_pg', data_mode='single', relim_mode='tight',
+                                update_mode='adaptive' if is_adaptive is True else 'normal',
+                                threshold_in_sigma=threshold_in_sigma, ref_gap=ref_gap, ref_exposure=ref_exposure, max_exposure=max_exposure)
         if save_addr is not None:
             data_figure.save(save_addr)
-        return fig, data_figure
+
+
+    return fig, data_figure
+
 
 # ----------------------- below will write soon-----------------------------------------------
 
