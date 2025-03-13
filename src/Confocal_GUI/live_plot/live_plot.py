@@ -404,10 +404,13 @@ class LivePlotGUI(ABC):
             # set fit to visible 
 
         self.bg_fig = self.fig.canvas.copy_from_bbox(self.fig.bbox)  # store bg
+
+        self.plot_overhead = 0
         
         self.data_generator.start()
         
     def update_figure(self):
+        t0 = time.time()
         self.points_done = self.data_generator.points_done
         # update points done so new plot
         self.update_core()
@@ -417,6 +420,7 @@ class LivePlotGUI(ABC):
 
         self.fig.canvas.blit(self.fig.bbox)
         self.fig.canvas.flush_events()
+        self.plot_overhead += time.time() - t0
 
         
     @abstractmethod    
@@ -453,6 +457,7 @@ class LivePlotGUI(ABC):
 
         self.after_plot()
         LivePlotGUI.old_fig = self.fig
+        print('Plot Overhead: {self.plot_overhead:.2f}s')
         
         return self.fig, self.selector
 

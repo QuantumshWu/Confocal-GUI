@@ -666,7 +666,7 @@ def mode_search(siv_center, siv_pos, is_drift=True, is_adaptive=True, frequency_
             else:
                 red_bias = spl/(spl/siv_center + red_bias_relative_center)
             print('Red biased at', red_bias)
-            fig, data_figure = mode_search_core(data_x=frequency_array, 
+            fig, data_figure = mode_search_core(data_x=frequency_array[points_every_cycle*cycles:points_every_cycle*cycles+points_before_recenter], 
                                     exposure=exposure,
                                     wavelength=red_bias, repeat=1, is_GUI=False,
                                     counter_mode='apd_pg', data_mode='single', relim_mode='tight',
@@ -685,7 +685,7 @@ def mode_search(siv_center, siv_pos, is_drift=True, is_adaptive=True, frequency_
         else:
             red_bias = spl/(spl/siv_center + red_bias_relative_center)
 
-        fig, data_figure = mode_search_core(data_x=frequency_array[points_every_cycle*cycles:points_every_cycle*cycles+points_before_recenter], 
+        fig, data_figure = mode_search_core(data_x=frequency_array, 
                                 exposure=exposure,
                                 wavelength=red_bias, repeat=1, is_GUI=False,
                                 counter_mode='apd_pg', data_mode='single', relim_mode='tight',
