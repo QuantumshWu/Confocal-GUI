@@ -372,7 +372,8 @@ class LivePlotGUI(ABC):
         if not self.have_init_fig:
 
             self.convert_widget_to_fig()
-
+            plt.close('all')
+            # close all previous figures
             with plt.ioff():
                 # avoid double display from display_immediately
                 self.fig = plt.figure()
