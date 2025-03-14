@@ -496,7 +496,7 @@ class ModeSearchMeasurement(BaseMeasurement):
     def set_update_mode(self, **kwargs):
         self.data_y_ref_time = time.time()
         self.counter.read_counts(self.exposure, parent = self, counter_mode=self.counter_mode, data_mode=self.data_mode)
-        if self.counter_mode == 'apd_gp':
+        if self.counter_mode == 'apd_pg':
             self.exposure = self.counter.exposure
         # reload exposure based on counter setting
         self.update_mode = kwargs.get('update_mode', 'adaptive')
