@@ -102,7 +102,7 @@ class LiveMeasurement(BaseMeasurement):
                                 relim_mode=self.relim_mode)
 
             fig, selector = liveplot.plot()
-            data_figure = DataFigure(liveplot)
+            data_figure = DataFigure(live_plot=liveplot)
             return fig, data_figure
 
 
@@ -198,7 +198,7 @@ class PLEMeasurement(BaseMeasurement):
                                 update_time=update_time, data_generator=data_generator, data=[data_x, data_y],
                                 relim_mode=self.relim_mode)
             fig, selector = liveplot.plot()
-            data_figure = DataFigure(liveplot)
+            data_figure = DataFigure(live_plot=liveplot)
             return fig, data_figure
 
 
@@ -296,7 +296,7 @@ class ODMRMeasurement(BaseMeasurement):
                                 update_time=update_time, data_generator=data_generator, data=[data_x, data_y],
                                 relim_mode=self.relim_mode)
             fig, selector = liveplot.plot()
-            data_figure = DataFigure(liveplot)
+            data_figure = DataFigure(live_plot=liveplot)
             return fig, data_figure
 
 
@@ -423,7 +423,7 @@ class PLMeasurement(BaseMeasurement):
                                     relim_mode=self.relim_mode)
 
             fig, selector = liveplot.plot()
-            data_figure = DataFigure(liveplot)
+            data_figure = DataFigure(live_plot=liveplot)
             return fig, data_figure
 
 
@@ -602,7 +602,7 @@ class ModeSearchMeasurement(BaseMeasurement):
                     update_time=update_time, data_generator=data_generator, data=[data_x, data_y],
                     relim_mode=self.relim_mode)
             fig, selector = liveplot.plot()
-            data_figure = DataFigure(liveplot)
+            data_figure = DataFigure(live_plot=liveplot)
             return fig, data_figure
 
 
@@ -771,5 +771,5 @@ def time_tagger(click_channel, start_channel, binwidth, n_bins, duration, config
                         update_time=0.5, data_generator=data_generator, data=[data_x, data_y], config_instances = config_instances\
                         , relim_mode='tight')
     fig, selector = liveplot.plot()
-    data_figure = DataFigure(liveplot)
+    data_figure = DataFigure(live_plot=liveplot)
     return fig, data_figure

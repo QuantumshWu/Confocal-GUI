@@ -1458,7 +1458,7 @@ def dummy_area(ax, x1, y1, x2, y2):
             
 
 
-valid_fit_func = ['lorent', 'decay', 'rabi', 'lorent_zeeman','center']         
+valid_fit_func = ['lorent', 'decay', 'rabi', 'lorent_zeeman', 'center']         
 class DataFigure():
     """
     The class contains all data of the figure, enables more operations
@@ -1471,7 +1471,9 @@ class DataFigure():
     
     Examples
     --------
-    >>> data_figure = DataFigure(live_plot)
+    >>> data_figure = DataFigure(live_plot=live_plot)
+    or
+    >>> data_figure = DataFigure(is_GUI=True)
     
     >>> data_x, data_y = data_figure.data
     
@@ -1484,7 +1486,16 @@ class DataFigure():
     >>> data_figure.clear()
     'remove lorent fit and text'
     """
-    def __init__(self, live_plot, address=None, fig=None, relim_mode='tight'):
+    def __init__(self, live_plot=None, address=None, fig=None, relim_mode='tight', is_GUI=False):
+
+        if is_GUI is True:
+            from Confocal_GUI.gui import GUI_Load
+            # load address using GUI
+            address = GUI_Load()
+            if address == '':
+                return
+            else:
+                address = address.split('.')[-2] + '*'
 
         if address is None:
             self.fig = live_plot.fig

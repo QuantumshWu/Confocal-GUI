@@ -411,7 +411,7 @@ class MainWindow(QMainWindow):
                 if self.data_figure_PLE is not None:
                         self.data_figure_PLE.close_selector()
 
-                data_figure = DataFigure(None, address = files[0][:-4] + '*', fig=self.canvas_PLE.fig)
+                data_figure = DataFigure(address = files[0][:-4] + '*', fig=self.canvas_PLE.fig)
                 figure_title = (files[0][:-4]).split('\\')[-1]
                 data_figure.fig.axes[0].set_title(f'{figure_title}')
                 data_figure.fig.tight_layout()
@@ -427,7 +427,7 @@ class MainWindow(QMainWindow):
                 if self.data_figure_PL is not None:
                         self.data_figure_PL.close_selector()
 
-                data_figure = DataFigure(None, address = files[0][:-4] + '*', fig=self.canvas_PL.fig)
+                data_figure = DataFigure(address = files[0][:-4] + '*', fig=self.canvas_PL.fig)
                 figure_title = (files[0][:-4]).split('\\')[-1]
                 data_figure.fig.axes[1].set_title(f'{figure_title}')
                 data_figure.fig.tight_layout()
@@ -487,15 +487,12 @@ class MainWindow(QMainWindow):
 
 
     def open_device_gui(self):
-        self.stop_plot()
-        time.sleep(0.5)
-        # add delay to avoid expected bahaviour
         device_handle = self.comboBox_device_gui.currentText()
         device_instance = self.config_instances[device_handle]
         if hasattr(device_instance, 'gui'):
             if device_handle == 'pulse':
-                device_instance.gui(is_in_GUI=True)
-                # need different way to open a QWindow instance, and reclose plot to wait a little longer
+                self.pulse_gui_handle = device_instance.gui(is_in_GUI=True)
+                self.pulse_gui_handle.show()
             else:
                 device_instance.gui()
         
@@ -628,7 +625,7 @@ class MainWindow(QMainWindow):
                 self.estimate_PLE_time()
                 self.cur_live_plot.data_generator.stop()  
                 self.cur_live_plot.after_plot()
-                setattr(self, f'data_figure_{self.cur_plot}', DataFigure(self.cur_live_plot))
+                setattr(self, f'data_figure_{self.cur_plot}', DataFigure(live_plot=self.cur_live_plot))
 
                 if hasattr(self, 'live_plot_PLE'):
                     self.checkBox_is_stabilizer.setDisabled(False)
@@ -1002,6 +999,9 @@ class MainWindow(QMainWindow):
 
         if self.findChild(QCheckBox, 'checkBox_is_stabilizer') is not None:
             self.checkBox_is_stabilizer.setChecked(False)
+
+        if hasattr(self, 'pulse_gui_handle') and (self.pulse_gui_handle is not None):
+            self.pulse_gui_handle.close()
 
         plt.close('all') # make sure close all plots which avoids error message
 
@@ -1513,8 +1513,7 @@ class DragContainer(QWidget):
                 return False
         return True
 
-
-class PulseGUI(QMainWindow):
+class PulseGUI(QDialog):
     """
     GUI:
 
@@ -1567,8 +1566,7 @@ class PulseGUI(QMainWindow):
         self.channel_names_map = [f'Ch{channel}' for channel in range(8)]
         self.drag_container = None
         
-        self.widget = QWidget()
-        self.layout = QVBoxLayout(self.widget)
+        self.layout = QVBoxLayout(self)
         self.widget_button = QWidget()
         self.layout.addWidget(self.widget_button)
         self.widget_dataset = QWidget()
@@ -1599,7 +1597,6 @@ class PulseGUI(QMainWindow):
         self.btn3.clicked.connect(self.add_column)
         self.layout_button.addWidget(self.btn3)
         
-        self.setCentralWidget(self.widget)
 
         self.btn3 = QPushButton('Save to file')
         self.btn3.setFixedSize(150,100)
@@ -2153,15 +2150,32 @@ def GUI_Pulse(device_handle, is_in_GUI=False):
     app = QApplication.instance()
     if app is None:
         app = QApplication(sys.argv)
-    w = PulseGUI(device_handle)
     app.setStyle('Windows')
-    if is_in_GUI:
-        w.show()
-        # otherwise won't opne a QWindow in another QWindow
+    dialog = PulseGUI(device_handle)
+    if is_in_GUI is True:
+        return dialog
     else:
-        try:
-            sys.exit(app.exec_())
-        except SystemExit as se:
-            if se.code != 0:
-                raise se
+        dialog.exec_()
+
 GUI_Pulse.__doc__ = PulseGUI.__doc__
+
+
+
+def GUI_Load():
+    if hasattr(QtCore.Qt, 'AA_EnableHighDpiScaling'):
+        QtWidgets.QApplication.setAttribute(QtCore.Qt.AA_EnableHighDpiScaling, True)
+    if hasattr(QtCore.Qt, 'AA_UseHighDpiPixmaps'):
+        QtWidgets.QApplication.setAttribute(QtCore.Qt.AA_UseHighDpiPixmaps, True)
+    
+
+    app = QtWidgets.QApplication.instance()
+    if app is None:
+        app = QtWidgets.QApplication(sys.argv)
+
+    app.setStyle('Windows')
+
+    address, _ = QtWidgets.QFileDialog.getOpenFileName(
+        None, "Select Data File", "", "Data Files (*.npz *.jpg);;All Files (*)"
+    )
+    
+    return address

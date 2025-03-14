@@ -109,7 +109,7 @@ class RFWithPulseMeasurement(BaseMeasurement):
                                 update_time=update_time, data_generator=data_generator, data=[data_x, data_y],
                                 relim_mode=self.relim_mode)
             fig, selector = liveplot.plot()
-            data_figure = DataFigure(liveplot)
+            data_figure = DataFigure(live_plot=liveplot)
             return fig, data_figure
 
 

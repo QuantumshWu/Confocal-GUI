@@ -431,17 +431,24 @@ class BaseCounterNI(BaseCounter):
             # update read pos accrodingly to keep reading most recent self.sample_num samples
 
             sample_remain = self.sample_num
+            data_main_0 = None
+            data_ref_0 = None
             while sample_remain>0:
                 read_sample_num = np.min([self.buffer_size, sample_remain])
-                self.reader_ctr.read_many_sample_uint32(self.counts_main_array
-                    , number_of_samples_per_channel = read_sample_num, timeout=5*self.exposure
-                )
-                self.reader_ctr_ref.read_many_sample_uint32(self.counts_ref_array
-                    , number_of_samples_per_channel = read_sample_num, timeout=5*self.exposure
-                )
+                try:
+                    self.reader_ctr.read_many_sample_uint32(self.counts_main_array
+                        , number_of_samples_per_channel = read_sample_num, timeout=5*self.exposure
+                    )
+                    self.reader_ctr_ref.read_many_sample_uint32(self.counts_ref_array
+                        , number_of_samples_per_channel = read_sample_num, timeout=5*self.exposure
+                    )
+                except:
+                    print('Timeout')
 
-                data_main_0 = float(self.counts_main_array[0])
-                data_ref_0 = float(self.counts_ref_array[0])
+                if (data_main_0 is None) and (data_ref_0 is None):
+                    data_main_0 = float(self.counts_main_array[0])
+                    data_ref_0 = float(self.counts_ref_array[0])
+                # get the first counts when sample_num larger than buffer_size and need loop
                 sample_remain -= read_sample_num
             data_main = float(self.counts_main_array[-1] - data_main_0)
             data_ref = float(self.counts_ref_array[-1] - data_ref_0)
@@ -453,6 +460,8 @@ class BaseCounterNI(BaseCounter):
             # update read pos accrodingly to keep reading most recent self.sample_num samples
 
             sample_remain = self.sample_num
+            data_main_0 = None
+            data_ref_0 = None
             while sample_remain>0:
                 read_sample_num = np.min([self.buffer_size, sample_remain])
                 try:
@@ -465,8 +474,10 @@ class BaseCounterNI(BaseCounter):
                 except:
                     print('No Clock signal for sampling')
 
-                data_main_0 = float(self.counts_main_array[0])
-                data_ref_0 = float(self.counts_ref_array[0])
+                if (data_main_0 is None) and (data_ref_0 is None):
+                    data_main_0 = float(self.counts_main_array[0])
+                    data_ref_0 = float(self.counts_ref_array[0])
+                # get the first counts when sample_num larger than buffer_size and need loop
                 sample_remain -= read_sample_num
             data_main = float(self.counts_main_array[-1] - data_main_0)
             data_ref = float(self.counts_ref_array[-1] - data_ref_0)
@@ -644,6 +655,15 @@ class BasePulse(ABC):
         # names of all channels, such as 'RF', 'Green', 'DAQ', 'DAQ_ref'
         self.total_duration = 0
         self.x = 10 # postive int in ns, a timing varible used to replace all 'x' in timing array and matrix, effective only in read_data()
+
+    def gui(self, is_in_GUI=False):
+        if is_in_GUI is True:
+            handle = GUI_Pulse(self, is_in_GUI=True)
+            return handle
+        else:
+            GUI_Pulse(self)
+
+    gui.__doc__ = GUI_Pulse.__doc__
 
     def round_up(self, t, type='resolution'):
         # round up t into multiple of self.t_resolution or keep t if str
@@ -1378,12 +1398,6 @@ class VirtualPulse(BasePulse):
 
     def __init__(self):
         super().__init__()
-
-    def gui(self, is_in_GUI=False):
-
-        GUI_Pulse(self, is_in_GUI)
-
-    gui.__doc__ = GUI_Pulse.__doc__
 
 
     def off_pulse(self):
