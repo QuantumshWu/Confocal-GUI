@@ -58,7 +58,7 @@ class BaseMeasurement(ABC):
         t0 = time.time()
         device_time = 0
         acquire_time = 0
-        self.ref_time = [0,0,0,0]
+        self.ref_time = [0,0,0,0,0]
         for self.repeat_done in range(self.repeat):
             for indices, x in self._iterate_data_x():
                 if not self.is_running:
