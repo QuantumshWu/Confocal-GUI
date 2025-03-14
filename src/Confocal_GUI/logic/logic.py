@@ -456,7 +456,6 @@ class ModeSearchMeasurement(BaseMeasurement):
         # counts = self.counter(self.exposure, parent=self) 
         # data_y[i] += counts
         if self.update_mode=='adaptive':
-            t0 = time.time()
             if (time.time()-self.data_y_ref_time)>=self.data_y_ref_gap or (not hasattr(self, 'recent_ref')):
                 self.recent_ref = 0
                 self.device_to_state(self.data_x[0])
@@ -467,28 +466,19 @@ class ModeSearchMeasurement(BaseMeasurement):
                 self.data_y_ref_index[i] = self.data_x[i]
                 self.data_y_ref_time = time.time()
                 self.device_to_state(self.data_x[i])
-            t1 = time.time()
             counts = self.counter.read_counts(self.exposure, parent = self, counter_mode=self.counter_mode, data_mode=self.data_mode)[0]
-            t12 = time.time()
             exposure = self.exposure
             ref_counts_norm = self.recent_ref*exposure/(self.ref_exposure_repeat*self.exposure)
-            t2 = time.time()
             while (((counts -  ref_counts_norm) > self.threshold_in_sigma*np.sqrt(ref_counts_norm)) 
                 and exposure<=(self.max_exposure_repeat*self.exposure)
             ):
                 counts += self.counter.read_counts(self.exposure, parent = self, counter_mode=self.counter_mode, data_mode=self.data_mode)[0]
                 exposure += self.exposure
                 ref_counts_norm = self.recent_ref*exposure/(self.ref_exposure_repeat*self.exposure)
-            t3 = time.time()
             self.data_y[i] = [(counts -  ref_counts_norm)/np.sqrt(ref_counts_norm),]
             self.data_y_counts[i] = [counts,]
             self.data_y_exposure[i] = exposure
-            t4 = time.time()
-            self.ref_time[0] += t1 -t0
-            self.ref_time[1] += t2 -t1
-            self.ref_time[2] += t3 -t2
-            self.ref_time[3] += t4 -t3
-            self.ref_time[4] += t12 -t1
+
         elif self.update_mode=='normal':
             counts = self.counter.read_counts(self.exposure, parent = self, counter_mode=self.counter_mode, data_mode=self.data_mode)
             self.data_y[i] = counts if np.isnan(self.data_y[i][0]) else [(self.data_y[i][j] + counts[j]) for j in range(len(counts))]
@@ -617,7 +607,7 @@ class ModeSearchMeasurement(BaseMeasurement):
 
 
 def mode_search(siv_center, siv_pos, is_drift=True, is_adaptive=True, frequency_array=None, exposure=0.05
-    , save_addr = 'mode_search/'
+    , counter_mode='apd', save_addr = 'mode_search/'
     , threshold_in_sigma=1.5, ref_gap=100, ref_exposure=10, max_exposure=1,
     recenter_gap=600, R=8.5, red_bias_relative_center=None, 
     pl_range=10, pl_step=2, pl_exposure=0.5, 
@@ -631,7 +621,7 @@ def mode_search(siv_center, siv_pos, is_drift=True, is_adaptive=True, frequency_
     fig, data_figure = mode_search(siv_center=737.1, siv_pos=[0,0], is_drift=True, is_adaptive=True
             , frequency_array=np.arange(1e9-2e3, 1e9+2e3, 0.02e3)
             , exposure=0.05
-            , save_addr = 'mode_search/'
+            ,  counter_mode='apd', save_addr = 'mode_search/'
             , threshold_in_sigma=1.5, ref_gap=100, ref_exposure=10, max_exposure=1,
             recenter_gap=600, R=8.5, red_bias_relative_center=None, 
             pl_range=10, pl_step=2, pl_exposure=0.5, 
@@ -651,7 +641,7 @@ def mode_search(siv_center, siv_pos, is_drift=True, is_adaptive=True, frequency_
             fig, data_figure = pl(x_array = np.arange(siv_pos[0]-pl_range, siv_pos[0]+pl_range+pl_step, pl_step), 
                                   y_array = np.arange(siv_pos[1]-pl_range, siv_pos[1]+pl_range+pl_step, pl_step), exposure=pl_exposure,
                                     repeat=1, is_GUI=False, is_dis=True,
-                                    counter_mode='apd_pg', data_mode='single', relim_mode='tight', wavelength = siv_center)
+                                    counter_mode=counter_mode, data_mode='single', relim_mode='tight', wavelength = siv_center)
             _, popt = data_figure.center(R=R)
             siv_pos[0] = popt[-2]
             siv_pos[1] = popt[-1]
@@ -664,7 +654,7 @@ def mode_search(siv_center, siv_pos, is_drift=True, is_adaptive=True, frequency_
             # means keyboardInterrupt inside PL
             fig, data_figure = ple(data_x=np.arange(siv_center-ple_range, siv_center+ple_range, ple_step), exposure=ple_exposure,
                                     repeat=1, is_GUI=False,
-                                    counter_mode='apd_pg', data_mode='single', relim_mode='tight')
+                                    counter_mode=counter_mode, data_mode='single', relim_mode='tight')
             _, popt = data_figure.lorent()
             siv_center = popt[0]
             data_figure.save(save_addr)
@@ -679,7 +669,7 @@ def mode_search(siv_center, siv_pos, is_drift=True, is_adaptive=True, frequency_
             fig, data_figure = mode_search_core(data_x=frequency_array[points_every_cycle*cycles:points_every_cycle*cycles+points_before_recenter], 
                                     exposure=exposure,
                                     wavelength=red_bias, repeat=1, is_GUI=False,
-                                    counter_mode='apd_pg', data_mode='single', relim_mode='tight',
+                                    counter_mode=counter_mode, data_mode='single', relim_mode='tight',
                                     update_mode='adaptive' if is_adaptive is True else 'normal',
                                     threshold_in_sigma=threshold_in_sigma, ref_gap=ref_gap, ref_exposure=ref_exposure, max_exposure=max_exposure)
             if save_addr is not None:
@@ -698,7 +688,7 @@ def mode_search(siv_center, siv_pos, is_drift=True, is_adaptive=True, frequency_
         fig, data_figure = mode_search_core(data_x=frequency_array, 
                                 exposure=exposure,
                                 wavelength=red_bias, repeat=1, is_GUI=False,
-                                counter_mode='apd_pg', data_mode='single', relim_mode='tight',
+                                counter_mode=counter_mode, data_mode='single', relim_mode='tight',
                                 update_mode='adaptive' if is_adaptive is True else 'normal',
                                 threshold_in_sigma=threshold_in_sigma, ref_gap=ref_gap, ref_exposure=ref_exposure, max_exposure=max_exposure)
         if save_addr is not None:
