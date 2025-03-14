@@ -55,23 +55,29 @@ class BaseMeasurement(ABC):
     def _data_generator(self):
         # defines core of data_generator, how .start() call will lead to
         self.to_initial_state()
-
+        t0 = time.time()
+        device_time = 0
+        acquire_time = 0
         for self.repeat_done in range(self.repeat):
             for indices, x in self._iterate_data_x():
                 if not self.is_running:
                     self.is_done = True
                     self.to_final_state()
                     return
+                t1 = time.time()
                 self.device_to_state(x)
+                device_time += time.time()-t1
                 if indices==0 and self.repeat_done==0:
                     time.sleep(1)
                 # wait for stabilization for the first data point, can be removed
+                t1 = time.time()
                 self.update_data_y(indices)
+                acquire_time += time.time()-t1
                 self.points_done += 1
 
         self.is_done = True
         self.to_final_state()
-
+        print(f'All time: {time.time()-t0}, device time {device_time}, acquire_time {acquire_time}')
     def start(self):
         if not self.loaded_params:
             print('missing params, use measurement.load_params()')
