@@ -456,6 +456,7 @@ class ModeSearchMeasurement(BaseMeasurement):
         # counts = self.counter(self.exposure, parent=self) 
         # data_y[i] += counts
         if self.update_mode=='adaptive':
+            t0 = time.time()
             if (time.time()-self.data_y_ref_time)>=self.data_y_ref_gap or (not hasattr(self, 'recent_ref')):
                 self.recent_ref = 0
                 self.device_to_state(self.data_x[0])
@@ -466,19 +467,26 @@ class ModeSearchMeasurement(BaseMeasurement):
                 self.data_y_ref_index[i] = self.data_x[i]
                 self.data_y_ref_time = time.time()
                 self.device_to_state(self.data_x[i])
-
+            t1 = time.time()
             counts = self.counter.read_counts(self.exposure, parent = self, counter_mode=self.counter_mode, data_mode=self.data_mode)[0]
             exposure = self.exposure
             ref_counts_norm = self.recent_ref*exposure/(self.ref_exposure_repeat*self.exposure)
+            t2 = time.time()
             while (((counts -  ref_counts_norm) > self.threshold_in_sigma*np.sqrt(ref_counts_norm)) 
                 and exposure<=(self.max_exposure_repeat*self.exposure)
             ):
                 counts += self.counter.read_counts(self.exposure, parent = self, counter_mode=self.counter_mode, data_mode=self.data_mode)[0]
                 exposure += self.exposure
                 ref_counts_norm = self.recent_ref*exposure/(self.ref_exposure_repeat*self.exposure)
+            t3 = time.time()
             self.data_y[i] = [(counts -  ref_counts_norm)/np.sqrt(ref_counts_norm),]
             self.data_y_counts[i] = [counts,]
             self.data_y_exposure[i] = exposure
+            t4 = time.time()
+            self.ref_time[0] += t1 -t0
+            self.ref_time[1] += t2 -t1
+            self.ref_time[2] += t3 -t2
+            self.ref_time[3] += t4 -t3
         elif self.update_mode=='normal':
             counts = self.counter.read_counts(self.exposure, parent = self, counter_mode=self.counter_mode, data_mode=self.data_mode)
             self.data_y[i] = counts if np.isnan(self.data_y[i][0]) else [(self.data_y[i][j] + counts[j]) for j in range(len(counts))]

@@ -58,6 +58,7 @@ class BaseMeasurement(ABC):
         t0 = time.time()
         device_time = 0
         acquire_time = 0
+        self.ref_time = [0,0,0,0]
         for self.repeat_done in range(self.repeat):
             for indices, x in self._iterate_data_x():
                 if not self.is_running:
@@ -77,7 +78,7 @@ class BaseMeasurement(ABC):
 
         self.is_done = True
         self.to_final_state()
-        print(f'All time: {time.time()-t0}, device time {device_time}, acquire_time {acquire_time}')
+        print(f'All time: {time.time()-t0}, device time {device_time}, acquire_time {acquire_time}, {self.ref_time}')
     def start(self):
         if not self.loaded_params:
             print('missing params, use measurement.load_params()')
