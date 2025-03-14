@@ -437,6 +437,8 @@ class LivePlotGUI(ABC):
         pass
         
     def plot(self):
+        t00 = time.time()
+        sleep_time = 0
         self.init_figure_and_data()
         
         try:
@@ -446,6 +448,7 @@ class LivePlotGUI(ABC):
                     continue
                 self.update_figure()
                 time.sleep(self.update_time)
+                sleep_time += self.update_time
             else:
                 self.update_figure()
                 
@@ -457,7 +460,7 @@ class LivePlotGUI(ABC):
 
         self.after_plot()
         LivePlotGUI.old_fig = self.fig
-        print('Plot Overhead: {self.plot_overhead:.2f}s')
+        print(f'Plot Overhead: {self.plot_overhead:.2f}s, All: {(time.time()-t00):.2f}s, Sleep: {sleep_time:.2f}s')
         
         return self.fig, self.selector
 
