@@ -445,6 +445,8 @@ class LivePlotGUI(ABC):
             while not self.data_generator.is_done:
                 if (self.data_generator.points_done == self.points_done):
                     # if no new data then no update
+                    time.sleep(self.update_time)
+                    sleep_time += self.update_time
                     continue
                 self.update_figure()
                 time.sleep(self.update_time)
