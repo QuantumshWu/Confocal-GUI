@@ -778,9 +778,6 @@ class Pulse(BasePulse):
             self.ip = ip
         self.ps = PulseStreamer(self.ip)
 
-    def gui(self, is_in_GUI=False):
-        GUI_Pulse(self, is_in_GUI)
-
 
     def off_pulse(self):
 

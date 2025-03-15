@@ -126,7 +126,8 @@ class MainWindow(QMainWindow):
         # set size
 
 
-        
+        plt.close('all')
+        # close all previous figures
         self.load_figures()
         self.load_default()
         self.connect_buttons()

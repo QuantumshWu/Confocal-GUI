@@ -427,13 +427,13 @@ class PLMeasurement(BaseMeasurement):
             return fig, data_figure
 
 
-@register_measurement("mode_search_core") #allow a faster call to .load_params() using mode_search_core()
+@register_measurement("mode_search_core") #allow a faster call to .plot() using mode_search_core()
 class ModeSearchMeasurement(BaseMeasurement):
 
     def load_params(self, **kwargs):
         self._load_params(**kwargs)
 
-        len_counts = len(self.counter.read_counts(0.1, parent = self, counter_mode=self.counter_mode, data_mode=self.data_mode))
+        len_counts = self.counter.check_data_len(data_mode=self.data_mode)
 
         self.data_y = np.full((len(self.data_x), 1), np.nan)
 
@@ -542,19 +542,19 @@ class ModeSearchMeasurement(BaseMeasurement):
 
 
     def _load_params(self, data_x=None, exposure=0.01, wavelength=737.1, repeat=1, is_GUI=False,
-        counter_mode='apd', data_mode='single', relim_mode='tight', update_mode='adaptive',is_plot=True, threshold_in_sigma=3, 
+        counter_mode='apd_pg', data_mode='single', relim_mode='tight', update_mode='adaptive',is_plot=True, threshold_in_sigma=3, 
         ref_gap=10, ref_exposure=1, max_exposure=1):
         """
         mode_search_core
 
         args:
         (data_x=None, exposure=0.01, wavelength=737.1, repeat=1, is_GUI=False,
-        counter_mode='apd', data_mode='single', relim_mode='tight', is_plot=True, **kwargs):
+        counter_mode='apd_pg', data_mode='single', relim_mode='tight', is_plot=True, **kwargs):
 
         example:
         fig, data_figure = mode_search_core(data_x=np.arange(1e9-10e6, 1e9+10e6, 0.1e3), exposure=0.01,
                                 wavelength=737.1, repeat=1, is_GUI=False,
-                                counter_mode='apd', data_mode='single', relim_mode='tight', update_mode='adaptive',
+                                counter_mode='apd_pg', data_mode='single', relim_mode='tight', update_mode='adaptive',
                                 threshold_in_sigma=3, ref_gap=10, ref_exposure=1, max_exposure=1)
 
         every ref_gap secs will collect ref for ref_exposure secs and then calculate signal in sigmas from average, if above
@@ -607,7 +607,7 @@ class ModeSearchMeasurement(BaseMeasurement):
 
 
 def mode_search(siv_center, siv_pos, is_drift=True, is_adaptive=True, frequency_array=None, exposure=0.05
-    , counter_mode='apd', save_addr = 'mode_search/'
+    , counter_mode='apd_pg', save_addr = 'mode_search/'
     , threshold_in_sigma=1.5, ref_gap=100, ref_exposure=10, max_exposure=1,
     recenter_gap=600, R=8.5, red_bias_relative_center=None, 
     pl_range=10, pl_step=2, pl_exposure=0.5, 
@@ -621,7 +621,7 @@ def mode_search(siv_center, siv_pos, is_drift=True, is_adaptive=True, frequency_
     fig, data_figure = mode_search(siv_center=737.1, siv_pos=[0,0], is_drift=True, is_adaptive=True
             , frequency_array=np.arange(1e9-2e3, 1e9+2e3, 0.02e3)
             , exposure=0.05
-            ,  counter_mode='apd', save_addr = 'mode_search/'
+            ,  counter_mode='apd_pg', save_addr = 'mode_search/'
             , threshold_in_sigma=1.5, ref_gap=100, ref_exposure=10, max_exposure=1,
             recenter_gap=600, R=8.5, red_bias_relative_center=None, 
             pl_range=10, pl_step=2, pl_exposure=0.5, 
@@ -666,7 +666,7 @@ def mode_search(siv_center, siv_pos, is_drift=True, is_adaptive=True, frequency_
             else:
                 red_bias = spl/(spl/siv_center + red_bias_relative_center)
             print('Red biased at', red_bias)
-            fig, data_figure = mode_search_core(data_x=frequency_array[points_every_cycle*cycles:points_every_cycle*cycles+points_before_recenter], 
+            fig, data_figure = mode_search_core(data_x=frequency_array[points_every_cycle*i:points_every_cycle*i+points_before_recenter], 
                                     exposure=exposure,
                                     wavelength=red_bias, repeat=1, is_GUI=False,
                                     counter_mode=counter_mode, data_mode='single', relim_mode='tight',
@@ -696,6 +696,120 @@ def mode_search(siv_center, siv_pos, is_drift=True, is_adaptive=True, frequency_
 
 
     return fig, data_figure
+
+
+@register_measurement("mode_t1") #allow a faster call to .plot() using mode_t1()
+class ModeT1Measurement(BaseMeasurement):
+
+    def device_to_state(self, duration):
+        # move device state to x from data_x, defaul frequency in GHz
+        self.pulse.x = duration
+        self.pulse.on_pulse()
+
+
+    def to_initial_state(self):
+        # move device/data state to initial state before measurement
+        spl = 299792458
+        self.rf_1550.on = True
+        self.rf_1550.frequency = self.frequency
+        self.laser_stabilizer.on = True
+        self.laser_stabilizer.wavelength = spl/(spl/self.siv_center + self.frequency/1e9)
+        
+        while self.is_running:
+            time.sleep(0.01)
+            if self.laser_stabilizer.is_ready:
+                break
+
+
+    def to_final_state(self):
+        # move device/data state to final state after measurement
+        self.rf_1550.on = False
+        self.pulse.off_pulse()
+        self.laser_stabilizer.on = False
+
+    def read_x(self):
+        return self.pulse.x
+
+    def assign_names(self):
+
+        self.x_name = 'Gap'
+        self.x_unit = 'ns'
+        self.measurement_name = 'Mode_T1'
+        self.x_device_name = 'Pulse.x'
+        self.plot_type = '1D'
+        self.fit_func = 'rabi'
+        self.loaded_params = False
+
+        self.counter = self.config_instances.get('counter', None)
+        self.rf_1550 = self.config_instances.get('rf_1550', None)
+        self.pulse = self.config_instances.get('pulse', None)
+        self.scanner = self.config_instances.get('scanner', None)
+        self.laser_stabilizer = self.config_instances.get('laser_stabilizer', None)
+        # init assignment
+        if (self.counter is None) or (self.rf_1550 is None) or (self.pulse is None) or (self.laser_stabilizer is None):
+            raise KeyError('Missing devices in config_instances')
+
+
+    def _load_params(self, data_x=None, exposure=0.1, frequency=None, siv_center=None, 
+        repeat=1, is_GUI=False,
+        counter_mode='apd', data_mode='single', relim_mode='tight', update_mode='normal', is_plot=True):
+        """
+        mode_t1
+
+        args:
+
+        example:
+        fig, data_figure = mode_t1(data_x=np.arange(1e3, 0.5e6, 0.5e3), exposure=1, frequency=1e9, siv_center=737.1, 
+                repeat=1, is_GUI=False,
+                counter_mode='apd', data_mode='single', relim_mode='tight', update_mode='normal')
+        """
+        self.loaded_params = True
+        if data_x is None:
+            data_x = np.arange(1e3, 0.5e6, 0.5e3)
+        # lifetime of mode is ~ms
+        self.data_x = data_x
+       
+        self.exposure = exposure
+        self.repeat = repeat
+        self.is_GUI = is_GUI
+        self.counter_mode = counter_mode
+        self.data_mode = data_mode
+        self.relim_mode = relim_mode
+        self.set_update_mode(update_mode=update_mode)
+
+        self.frequency = self.rf_1550.frequency if frequency is None else frequency
+        self.siv_center = siv_center
+
+        self.is_plot = is_plot
+        self.info.update({'measurement_name':self.measurement_name, 'plot_type':self.plot_type, 'exposure':self.exposure
+                    , 'repeat':self.repeat, 'frequency':self.frequency,
+                    'scanner':(None if self.scanner is None else (self.scanner.x, self.scanner.y)),
+                    'pulse':{'data_matrix': self.pulse.data_matrix,
+                              'delay_array': self.pulse.delay_array,
+                               'repeat_info': self.pulse.repeat_info,
+                               'channel_names': self.pulse.channel_names}}
+        )
+
+    def plot(self, **kwargs):
+        self.load_params(**kwargs)
+        if not self.is_plot:
+            return self
+
+        if self.is_GUI:
+            self.measurement_Live = live(is_plot=False)
+            GUI_PLE(measurement_PLE=self, measurement_Live=self.measurement_Live)
+            return None, None
+        else:
+            data_x = self.data_x
+            data_y = self.data_y
+            data_generator = self
+            update_time = float(np.max([1, self.exposure*len(data_x)/1000]))
+            liveplot = PLELive(labels=[f'{self.x_name} ({self.x_unit})', f'Counts/{self.exposure}s'],
+                                update_time=update_time, data_generator=data_generator, data=[data_x, data_y],
+                                relim_mode=self.relim_mode)
+            fig, selector = liveplot.plot()
+            data_figure = DataFigure(live_plot=liveplot)
+            return fig, data_figure
 
 
 # ----------------------- below will write soon-----------------------------------------------

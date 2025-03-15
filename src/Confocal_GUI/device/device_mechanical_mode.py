@@ -42,8 +42,8 @@ class DLCpro(BaseLaser, metaclass=SingletonAndCloseMeta):
 
         self._wavelength = None
         self._piezo = self.dlc.laser1.dl.pc.voltage_set.get()
-        self.piezo_min = 68-25
-        self.piezo_max = 68+25
+        self.piezo_min = 60-25
+        self.piezo_max = 60+25
         # piezo range where DLCpro is mode-hop free
 
     def gui(self):
@@ -107,7 +107,7 @@ class LaserStabilizerDLCpro(BaseLaserStabilizer, metaclass=SingletonAndCloseMeta
         self.freq_thre = 0.025 #25MHz threshold defines when to return is_ready
         self.P = 0.8 #scaling factor of PID control
         # leaves about 10% extra space
-        self.wavelength_lb = 737.08
+        self.wavelength_lb = 737.10
         self.wavelength_ub = 737.125
 
     def gui(self):
@@ -171,8 +171,6 @@ class PulseSpinCore(BasePulse):
         import spinapi 
         self.spinapi = spinapi
 
-    def gui(self, is_in_GUI=False):
-        GUI_Pulse(self, is_in_GUI)
 
     def _init(self):
         from spinapi import pb_set_debug, pb_get_version, pb_count_boards, pb_get_error, pb_core_clock, pb_init

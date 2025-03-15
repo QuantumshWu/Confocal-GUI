@@ -28,7 +28,7 @@ def initialize_classes(config, lookup_dict, namespace):
         'laser_stabilizer': {'type': 'VirtualLaserStabilizer','has_dependency':True},
         }
 
-        config_instances = initialize_classes(config, lookup_dict=globals(), namespace=globals())
+        initialize_classes(config, lookup_dict=globals(), namespace=globals())
 
     """
     instances = {}
@@ -262,6 +262,13 @@ class BaseCounterNI(BaseCounter):
             print(f'Can only be subset of the {self.__valid_data_mode}')
         else:
             self._valid_data_mode = value
+
+    def check_data_len(self, data_mode):
+        # method for measurement to check return data length in order to initialize data_y properly
+        if data_mode == 'dual':
+            return 2
+        else:
+            return 1
 
 
     def set_timing(self, exposure):
