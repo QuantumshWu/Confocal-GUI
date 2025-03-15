@@ -324,8 +324,10 @@ class BaseCounterNI(BaseCounter):
             self.reader_ctr = self.nidaqmx.stream_readers.CounterReader(self.task_counter_ctr.in_stream)
             self.reader_ctr_ref = self.nidaqmx.stream_readers.CounterReader(self.task_counter_ctr_ref.in_stream)
 
+            config_instances['pulse'].off_pulse()
             self.task_counter_ctr.start()
             self.task_counter_ctr_ref.start()
+            config_instances['pulse'].on_pulse()
 
         elif self.counter_mode == 'analog':
             self.clock = 500e3 # sampling rate for analog input, should be fast enough to capture gate signal for postprocessing
@@ -1159,6 +1161,13 @@ class VirtualCounter(BaseCounter):
     @property
     def valid_data_mode(self):
         return ['single', 'ref_div', 'ref_sub', 'dual']
+
+    def check_data_len(self, data_mode):
+        # method for measurement to check return data length in order to initialize data_y properly
+        if data_mode == 'dual':
+            return 2
+        else:
+            return 1
 
 
     def read_counts(self, exposure, counter_mode='apd', data_mode='single', **kwargs):
