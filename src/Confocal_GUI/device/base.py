@@ -667,8 +667,8 @@ class BasePulse(ABC):
 
     def gui(self, is_in_GUI=False):
         if is_in_GUI is True:
-            handle = GUI_Pulse(self, is_in_GUI=True)
-            return handle
+            gui_handle = GUI_Pulse(self, is_in_GUI=True)
+            return gui_handle
         else:
             GUI_Pulse(self)
 

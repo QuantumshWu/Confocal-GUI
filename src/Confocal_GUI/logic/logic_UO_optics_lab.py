@@ -35,7 +35,7 @@ class RFWithPulseMeasurement(BaseMeasurement):
     def read_x(self):
         return self.pulse.x
 
-    def assign_names(self):
+    def load_config(self):
 
         self.x_name = 'RF duration'
         self.x_unit = 'ns'
@@ -62,7 +62,6 @@ class RFWithPulseMeasurement(BaseMeasurement):
         """
         rabi func doc str
         """
-        self.loaded_params = True
         if data_x is None:
             data_x = np.arange(10, 1000, 10)
         self.data_x = data_x
@@ -73,14 +72,12 @@ class RFWithPulseMeasurement(BaseMeasurement):
         self.counter_mode = counter_mode
         self.data_mode = data_mode
         self.relim_mode = relim_mode
-        self.set_update_mode(update_mode=update_mode)
+        self.update_mode=update_mode
 
         self.power = self.rf.power if power is None else power
         self.frequency = self.rf.frequency if frequency is None else frequency*1e9
 
-        if pulse_file is not None:
-            self.pulse.load_from_file(pulse_file)
-            # may load from 'rabi_pulse*'
+        self.pulse_file = pulse_file
         self.is_plot = is_plot
         self.info.update({'measurement_name':self.measurement_name, 'plot_type':self.plot_type, 'exposure':self.exposure
                     , 'repeat':self.repeat, 'power':self.power, 'frequency':self.frequency,
@@ -91,11 +88,7 @@ class RFWithPulseMeasurement(BaseMeasurement):
                                'channel_names': self.pulse.channel_names}}
         )
 
-    def plot(self, **kwargs):
-        self.load_params(**kwargs)
-        if not self.is_plot:
-            return self
-
+    def load_GUI(self):
         if self.is_GUI:
             self.measurement_Live = live(is_plot=False)
             GUI_PLE(measurement_PLE=self, measurement_Live=self.measurement_Live)

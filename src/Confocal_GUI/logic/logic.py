@@ -35,7 +35,7 @@ class LiveMeasurement(BaseMeasurement):
     def read_x(self):
         pass
 
-    def assign_names(self):
+    def load_config(self):
 
         self.x_name = 'Data'
         self.x_unit = '1'
@@ -52,7 +52,7 @@ class LiveMeasurement(BaseMeasurement):
 
 
     def _load_params(self, data_x=None, exposure=0.1, is_finite=False, is_GUI=False, repeat=1,
-        counter_mode='apd', data_mode='single', relim_mode='normal', is_plot=True):
+        counter_mode='apd', data_mode='single', relim_mode='normal', pulse_file=None, is_plot=True):
         """
         live
 
@@ -63,10 +63,9 @@ class LiveMeasurement(BaseMeasurement):
         example:
         fig, data_figure = live(data_x = np.arange(100), exposure=0.1
                                 , repeat=1, is_finite=False,
-                                counter_mode='apd', data_mode='single', relim_mode='normal')
+                                counter_mode='apd', data_mode='single', relim_mode='normal', pulse_file=None)
 
         """
-        self.loaded_params = True
         if is_finite==False:
             self.repeat = int(1e6)
         else:
@@ -75,21 +74,18 @@ class LiveMeasurement(BaseMeasurement):
         if data_x is None:
             data_x = np.arange(100)
         self.data_x = data_x
-        self.set_update_mode(update_mode='roll')
+        self.update_mode='roll'
         self.exposure = exposure
         self.is_GUI = is_GUI
         self.counter_mode = counter_mode
         self.data_mode = data_mode
         self.relim_mode = relim_mode
         self.is_plot = is_plot
+        self.pulse_file = pulse_file
         self.info.update({'measurement_name':self.measurement_name, 'plot_type':self.plot_type, 'exposure':self.exposure
                     , 'repeat':self.repeat, 'scanner':(None if self.scanner is None else (self.scanner.x, self.scanner.y))})
 
-    def plot(self, **kwargs):
-        self.load_params(**kwargs)
-        if not self.is_plot:
-            return self
-
+    def load_GUI(self):
         if self.is_GUI:
             GUI_Live(measurement_Live=self)
             return None, None
@@ -129,7 +125,7 @@ class PLEMeasurement(BaseMeasurement):
     def read_x(self):
         return self.wavemeter.wavelength
 
-    def assign_names(self):
+    def load_config(self):
         # only assign once measurement is created
         self.x_name = 'Wavelength'
         self.x_unit = 'nm'
@@ -150,7 +146,7 @@ class PLEMeasurement(BaseMeasurement):
 
 
     def _load_params(self, data_x=None, exposure=0.1, repeat=1, is_GUI=False,
-        counter_mode='apd', data_mode='single', relim_mode='tight', update_mode='normal', is_plot=True):
+        counter_mode='apd', data_mode='single', relim_mode='tight', update_mode='normal', pulse_file=None, is_plot=True):
         """
         ple
 
@@ -161,29 +157,26 @@ class PLEMeasurement(BaseMeasurement):
         example:
         fig, data_figure = ple(data_x=np.arange(737.1-0.005, 737.1+0.005, 0.0005), exposure=0.1,
                                 repeat=1, is_GUI=False,
-                                counter_mode='apd', data_mode='single', relim_mode='tight')
+                                counter_mode='apd', data_mode='single', relim_mode='tight', 
+                                update_mode='normal', pulse_file=None)
 
         """
-        self.loaded_params = True
         if data_x is None:
             data_x = np.arange(737.1-0.005, 737.1+0.005, 0.0005)
         self.data_x = data_x
-        self.set_update_mode(update_mode=update_mode)
+        self.update_mode=update_mode
         self.exposure = exposure
         self.repeat = repeat
         self.is_GUI = is_GUI
         self.counter_mode = counter_mode
         self.data_mode = data_mode
         self.relim_mode = relim_mode
+        self.pulse_file = pulse_file
         self.is_plot = is_plot
         self.info.update({'measurement_name':self.measurement_name, 'plot_type':self.plot_type, 'exposure':self.exposure
                 , 'repeat':self.repeat, 'scanner':(None if self.scanner is None else (self.scanner.x, self.scanner.y))})
 
-    def plot(self, **kwargs):
-        self.load_params(**kwargs)
-        if not self.is_plot:
-            return self
-
+    def load_GUI(self):
         if self.is_GUI:
             from .base import live
             self.measurement_Live = live(is_plot=False)
@@ -224,7 +217,7 @@ class ODMRMeasurement(BaseMeasurement):
     def read_x(self):
         return self.rf.frequency/1e9
 
-    def assign_names(self):
+    def load_config(self):
 
         self.x_name = 'Frequency'
         self.x_unit = 'GHz'
@@ -243,7 +236,7 @@ class ODMRMeasurement(BaseMeasurement):
 
 
     def _load_params(self, data_x=None, exposure=0.1, power=None, repeat=1, is_GUI=False,
-        counter_mode='apd', data_mode='single', relim_mode='tight', update_mode='normal', is_plot=True):
+        counter_mode='apd', data_mode='single', relim_mode='tight', update_mode='normal', pulse_file=None, is_plot=True):
         """
         odmr
 
@@ -255,10 +248,10 @@ class ODMRMeasurement(BaseMeasurement):
         fig, data_figure = odmr(data_x=np.arange(2.88-0.1, 2.88+0.1, 0.001), exposure=0.1,
                                 power=-10,
                                 repeat=1, is_GUI=False,
-                                counter_mode='apd', data_mode='single', relim_mode='tight')
+                                counter_mode='apd', data_mode='single', relim_mode='tight', 
+                                pulse_file=None, update_mode='normal')
 
         """
-        self.loaded_params = True
         if data_x is None:
             data_x = np.arange(2.88-0.1, 2.88+0.1, 0.001)
         self.data_x = data_x       
@@ -268,20 +261,16 @@ class ODMRMeasurement(BaseMeasurement):
         self.counter_mode = counter_mode
         self.data_mode = data_mode
         self.relim_mode = relim_mode
-        self.set_update_mode(update_mode=update_mode)
+        self.update_mode=update_mode
         # for non basic params, load state from device's state
         self.power = self.rf.power if power is None else power
-
+        self.pulse_file = pulse_file
         self.is_plot = is_plot
         self.info.update({'measurement_name':self.measurement_name, 'plot_type':self.plot_type, 'exposure':self.exposure
                     , 'repeat':self.repeat, 'power':self.power, 'scanner':(None if self.scanner is None else (self.scanner.x, self.scanner.y))}
         )
 
-    def plot(self, **kwargs):
-        self.load_params(**kwargs)
-        if not self.is_plot:
-            return self
-
+    def load_GUI(self):
         if self.is_GUI:
             from .base import live
             self.measurement_Live = live(is_plot=False)
@@ -334,7 +323,7 @@ class PLMeasurement(BaseMeasurement):
         y = self.scanner.y
         return (x, y)
 
-    def assign_names(self):
+    def load_config(self):
 
         self.plot_type = '2D'
         self.measurement_name = 'PL'
@@ -349,7 +338,7 @@ class PLMeasurement(BaseMeasurement):
             raise KeyError('Missing devices in config_instances')
 
     def _load_params(self, x_array=None, y_array=None, exposure=0.1, repeat = 1, wavelength=None, is_GUI=False, is_dis=True,
-        counter_mode='apd', data_mode='single', relim_mode='tight', is_plot=True):
+        counter_mode='apd', data_mode='single', relim_mode='tight', pulse_file=None, is_plot=True):
         """
         pl
 
@@ -361,10 +350,10 @@ class PLMeasurement(BaseMeasurement):
         example:
         fig, data_figure = pl(x_array = np.arange(-10, 10, 1), y_array = np.arange(-10, 10, 1), exposure=0.1,
                                 repeat=1, is_GUI=False, is_dis=True,
-                                counter_mode='apd', data_mode='single', relim_mode='tight')
+                                counter_mode='apd', data_mode='single', 
+                                relim_mode='tight', pulse_file=None)
 
         """
-        self.loaded_params = True
         self.is_dis = is_dis
         if wavelength is None:
             self.is_stable = False
@@ -393,15 +382,13 @@ class PLMeasurement(BaseMeasurement):
         self.counter_mode = counter_mode
         self.data_mode = data_mode
         self.relim_mode = relim_mode
-        self.set_update_mode(update_mode='single')
+        self.update_mode='single'
+        self.pulse_file = pulse_file
         self.is_plot = is_plot
         self.info.update({'measurement_name':self.measurement_name, 'plot_type':self.plot_type, 'exposure':self.exposure
                     , 'repeat':self.repeat, 'wavelength':self.wavelength})
 
-    def plot(self, **kwargs):
-        self.load_params(**kwargs)
-        if not self.is_plot:
-            return self
+    def load_GUI(self):
         if self.is_GUI:
             # defines the label name used in GUI
             from .base import live
@@ -449,6 +436,7 @@ class ModeSearchMeasurement(BaseMeasurement):
              'data_y_ref_index':self.data_y_ref_index}
             )
             # update info finally to record self.data_y_counts etc.
+        self.loaded_params = True
 
     def update_data_y(self, i):
         # defines how to update data_y
@@ -520,7 +508,7 @@ class ModeSearchMeasurement(BaseMeasurement):
     def read_x(self):
         return self.rf_1550.frequency
 
-    def assign_names(self):
+    def load_config(self):
         # only assign once measurement is created
         self.x_name = 'Frequency'
         self.x_unit = 'Hz'
@@ -542,7 +530,8 @@ class ModeSearchMeasurement(BaseMeasurement):
 
 
     def _load_params(self, data_x=None, exposure=0.01, wavelength=737.1, repeat=1, is_GUI=False,
-        counter_mode='apd_pg', data_mode='single', relim_mode='tight', update_mode='adaptive',is_plot=True, threshold_in_sigma=3, 
+        counter_mode='apd_pg', data_mode='single', relim_mode='tight', update_mode='adaptive', pulse_file=None,
+        is_plot=True, threshold_in_sigma=3, 
         ref_gap=10, ref_exposure=1, max_exposure=1):
         """
         mode_search_core
@@ -555,13 +544,13 @@ class ModeSearchMeasurement(BaseMeasurement):
         fig, data_figure = mode_search_core(data_x=np.arange(1e9-10e6, 1e9+10e6, 0.1e3), exposure=0.01,
                                 wavelength=737.1, repeat=1, is_GUI=False,
                                 counter_mode='apd_pg', data_mode='single', relim_mode='tight', update_mode='adaptive',
+                                pulse_file=None,
                                 threshold_in_sigma=3, ref_gap=10, ref_exposure=1, max_exposure=1)
 
         every ref_gap secs will collect ref for ref_exposure secs and then calculate signal in sigmas from average, if above
         threshold_in_sigma will repeat read_counts until below or longer than max_exposure
 
         """
-        self.loaded_params = True
         if data_x is None:
             data_x = np.arange(1e9-10e6, 1e9+10e6, 0.1e3)
         self.data_x = data_x
@@ -572,17 +561,14 @@ class ModeSearchMeasurement(BaseMeasurement):
         self.counter_mode = counter_mode
         self.data_mode = data_mode
         self.relim_mode = relim_mode
+        self.pulse_file = pulse_file
         self.is_plot = is_plot
         self.info.update({'measurement_name':self.measurement_name, 'plot_type':self.plot_type, 'exposure':self.exposure
                 , 'repeat':self.repeat, 'scanner':(None if self.scanner is None else (self.scanner.x, self.scanner.y))})
         self.set_update_mode(update_mode=update_mode, threshold_in_sigma=threshold_in_sigma, 
             ref_gap=ref_gap, ref_exposure=ref_exposure, max_exposure=max_exposure)
 
-    def plot(self, **kwargs):
-        self.load_params(**kwargs)
-        if not self.is_plot:
-            return self
-
+    def load_GUI(self):
         if self.is_GUI:
             from .base import live
             self.measurement_Live = live(is_plot=False)
@@ -730,7 +716,7 @@ class ModeT1Measurement(BaseMeasurement):
     def read_x(self):
         return self.pulse.x
 
-    def assign_names(self):
+    def load_config(self):
 
         self.x_name = 'Gap'
         self.x_unit = 'ns'
@@ -752,7 +738,7 @@ class ModeT1Measurement(BaseMeasurement):
 
     def _load_params(self, data_x=None, exposure=0.1, frequency=None, siv_center=None, 
         repeat=1, is_GUI=False,
-        counter_mode='apd', data_mode='single', relim_mode='tight', update_mode='normal', is_plot=True):
+        counter_mode='apd', data_mode='single', relim_mode='tight', update_mode='normal', pulse_file=None, is_plot=True):
         """
         mode_t1
 
@@ -761,9 +747,8 @@ class ModeT1Measurement(BaseMeasurement):
         example:
         fig, data_figure = mode_t1(data_x=np.arange(1e3, 0.5e6, 0.5e3), exposure=1, frequency=1e9, siv_center=737.1, 
                 repeat=1, is_GUI=False,
-                counter_mode='apd', data_mode='single', relim_mode='tight', update_mode='normal')
+                counter_mode='apd', data_mode='single', relim_mode='tight', update_mode='normal', pulse_file=None)
         """
-        self.loaded_params = True
         if data_x is None:
             data_x = np.arange(1e3, 0.5e6, 0.5e3)
         # lifetime of mode is ~ms
@@ -775,11 +760,11 @@ class ModeT1Measurement(BaseMeasurement):
         self.counter_mode = counter_mode
         self.data_mode = data_mode
         self.relim_mode = relim_mode
-        self.set_update_mode(update_mode=update_mode)
+        self.update_mode=update_mode
 
         self.frequency = self.rf_1550.frequency if frequency is None else frequency
         self.siv_center = siv_center
-
+        self.pulse_file = pulse_file
         self.is_plot = is_plot
         self.info.update({'measurement_name':self.measurement_name, 'plot_type':self.plot_type, 'exposure':self.exposure
                     , 'repeat':self.repeat, 'frequency':self.frequency,
@@ -790,11 +775,7 @@ class ModeT1Measurement(BaseMeasurement):
                                'channel_names': self.pulse.channel_names}}
         )
 
-    def plot(self, **kwargs):
-        self.load_params(**kwargs)
-        if not self.is_plot:
-            return self
-
+    def load_GUI(self):
         if self.is_GUI:
             self.measurement_Live = live(is_plot=False)
             GUI_PLE(measurement_PLE=self, measurement_Live=self.measurement_Live)
