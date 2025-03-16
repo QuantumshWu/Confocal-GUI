@@ -106,13 +106,17 @@ class MainWindow(QMainWindow):
         self.data_figure_Live = None
         self.cur_plot = 'PL'
         self.cur_live_plot = None
-        self.is_fit = False
+        self.is_fit_PLE = False
+        self.is_fit_PL = False
         self.spl = 299792458
         self.is_save_to_jupyter_flag = True
         self.time_PL = 0
         self.measurement_PL = measurement_PL
         self.measurement_PLE = measurement_PLE
         self.measurement_Live = measurement_Live
+        self.pulse_PL = None
+        self.pulse_PLE = None
+        self.pulse_Live = None
         self.ui = ui
         self.overhead_PL = 0.01 # estimated 10ms overhead for single data point
         self.overhead_PLE = 0.5 # estimated 500ms overhead for single data point PLE
@@ -132,8 +136,29 @@ class MainWindow(QMainWindow):
         self.load_default()
         self.connect_buttons()
         self.init_widget()
-
         self.show()
+
+    def expand_settings_PL(self):
+        if self.contentWidget_PL.isVisible():
+            self.contentWidget_PL.setVisible(False)
+            self.contentWidget_PL.lower()
+        else:
+            self.contentWidget_PL.raise_()
+            self.contentWidget_PL.setVisible(True)
+    def expand_settings_PLE(self):
+        if self.contentWidget_PLE.isVisible():
+            self.contentWidget_PLE.setVisible(False)
+            self.contentWidget_PLE.lower()
+        else:
+            self.contentWidget_PLE.raise_()
+            self.contentWidget_PLE.setVisible(True)
+    def expand_settings_Live(self):
+        if self.contentWidget_Live.isVisible():
+            self.contentWidget_Live.setVisible(False)
+            self.contentWidget_Live.lower()
+        else:
+            self.contentWidget_Live.raise_()
+            self.contentWidget_Live.setVisible(True)
 
 
 
@@ -158,6 +183,15 @@ class MainWindow(QMainWindow):
 
                 setattr(self, fig['canvas_name'], canvas)
 
+        if self.findChild(QComboBox, 'comboBox_relim_PL') is not None:
+            self.contentWidget_PL.setVisible(False)
+            self.collapseButton_PL.clicked.connect(self.expand_settings_PL)
+        if self.findChild(QComboBox, 'comboBox_relim_PLE') is not None:
+            self.contentWidget_PLE.setVisible(False)
+            self.collapseButton_PLE.clicked.connect(self.expand_settings_PLE)
+        if self.findChild(QComboBox, 'comboBox_relim_Live') is not None:
+            self.contentWidget_Live.setVisible(False)
+            self.collapseButton_Live.clicked.connect(self.expand_settings_Live)
 
 
     def connect_buttons(self):
@@ -170,9 +204,10 @@ class MainWindow(QMainWindow):
                 {'name': 'pushButton_stop_PLE', 'func': self.stop_plot},
                 {'name': 'pushButton_wavelength', 'func': self.read_wavelength},
                 {'name': 'pushButton_range_PLE', 'func': self.read_range_PLE},
-                {'name': 'pushButton_lorent', 'func': self.fit_func},
+                {'name': 'pushButton_lorent', 'func': self.fit_func_PLE},
                 {'name': 'pushButton_save_PLE', 'func': self.save_PLE},
                 {'name': 'pushButton_unit', 'func': self.change_unit},
+                {'name': 'pushButton_load_pulse_PLE', 'func': self.choose_pulse},
                 # for PLE
                 {'name': 'pushButton_device_gui', 'func': self.open_device_gui},
                 # for load device gui
@@ -180,13 +215,16 @@ class MainWindow(QMainWindow):
                 {'name': 'pushButton_stop_Live', 'func': self.stop_plot},
                 {'name': 'pushButton_detach', 'func': self.detach_page},
                 {'name': 'pushButton_reattach', 'func': self.reattach_page},
+                {'name': 'pushButton_load_pulse_Live', 'func': self.choose_pulse},
                 # for Live
+                {'name': 'pushButton_lorent_PL', 'func': self.fit_func_PL},
                 {'name': 'pushButton_start_PL', 'func': self.start_plot_PL},
                 {'name': 'pushButton_stop_PL', 'func': self.stop_plot},
                 {'name': 'pushButton_XY', 'func': self.read_xy},
                 {'name': 'pushButton_range_PL', 'func': self.read_range_PL},
                 {'name': 'pushButton_scanner', 'func': self.move_scanner},
                 {'name': 'pushButton_save_PL', 'func': self.save_PL},
+                {'name': 'pushButton_load_pulse_PL', 'func': self.choose_pulse},
                 # for PL
 
             ],
@@ -286,15 +324,15 @@ class MainWindow(QMainWindow):
 
         widget_config = {
             'setText': [
-                {'name': 'pushButton_start_PLE', 'value': lambda: f'Start {self.measurement_PLE.measurement_name}'},
-                {'name': 'pushButton_stop_PLE', 'value': lambda: f'Stop {self.measurement_PLE.measurement_name}'},
+                {'name': 'pushButton_start_PLE', 'value': lambda: f'Start'},
+                {'name': 'pushButton_stop_PLE', 'value': lambda: f'Stop'},
                 {'name': 'pushButton_wavelength', 'value': lambda: f'Read \n {self.measurement_PLE.x_name}'},
                 {'name': 'label_wl', 'value': lambda: f'Min ({self.measurement_PLE.x_unit})'},
                 {'name': 'label_wu', 'value': lambda: f'Max ({self.measurement_PLE.x_unit})'},
                 {'name': 'label_step_PLE', 'value': lambda: f'Step ({self.measurement_PLE.x_unit})'},
                 {'name': 'label_device', 'value': lambda: f'{self.measurement_PLE.x_device_name}'},
-                {'name': 'pushButton_save_PLE', 'value': lambda: f'Save \n {self.measurement_PLE.measurement_name}'},
-                {'name': 'label_relim_PLE', 'value': lambda: f'Relim {self.measurement_PLE.measurement_name}'},
+                {'name': 'pushButton_save_PLE', 'value': lambda: f'Save'},
+                {'name': 'label_relim_PLE', 'value': lambda: f'Relim'},
                 # PLE
             ],
             'setValue': [
@@ -337,32 +375,45 @@ class MainWindow(QMainWindow):
 
 
         self.valid_relim_mode = ['normal', 'tight']
-        self.valid_fit_func = ['lorent', 'decay', 'rabi', 'lorent_zeeman']
+        self.valid_fit_func_PLE = ['lorent', 'decay', 'rabi', 'lorent_zeeman']
+        self.valid_fit_func_PL = ['center']
+
+        if self.findChild(QComboBox, 'comboBox_relim_PLE') is not None:
+            self.comboBox_counter_mode_PLE.addItems(self.measurement_PLE.counter.valid_counter_mode)
+            self.comboBox_data_mode_PLE.addItems(self.measurement_PLE.counter.valid_data_mode)
+            self.comboBox_relim_PLE.addItems(self.valid_relim_mode)
+            self.comboBox_fit_func.addItems(self.valid_fit_func_PLE)
+            self.comboBox_update_mode_PLE.addItems(self.measurement_PLE.valid_update_mode)
+
+            self.comboBox_relim_PLE.setCurrentText(self.measurement_PLE.relim_mode)
+            self.comboBox_fit_func.setCurrentText(self.measurement_PLE.fit_func)
+            self.comboBox_counter_mode_PLE.setCurrentText(self.measurement_PLE.counter_mode)
+            self.comboBox_data_mode_PLE.setCurrentText(self.measurement_PLE.data_mode)
+            self.comboBox_update_mode_PLE.setCurrentText(self.measurement_PLE.update_mode)
         if self.findChild(QComboBox, 'comboBox_relim_PL') is not None:
             self.comboBox_relim_PL.addItems(self.valid_relim_mode)
+            self.comboBox_counter_mode_PL.addItems(self.measurement_PL.counter.valid_counter_mode)
+            self.comboBox_data_mode_PL.addItems(self.measurement_PL.counter.valid_data_mode)
+            self.comboBox_update_mode_PL.addItems(self.measurement_PL.valid_update_mode)
+            self.comboBox_fit_func_PL.addItems(self.valid_fit_func_PL)
+
+            self.comboBox_counter_mode_PL.setCurrentText(self.measurement_PL.counter_mode)
+            self.comboBox_data_mode_PL.setCurrentText(self.measurement_PL.data_mode)
             self.comboBox_relim_PL.setCurrentText(self.measurement_PL.relim_mode)
-        if self.findChild(QComboBox, 'comboBox_relim_PLE') is not None:
-            self.comboBox_relim_PLE.addItems(self.valid_relim_mode)
-            self.comboBox_relim_PLE.setCurrentText(self.measurement_PLE.relim_mode)
-            self.comboBox_fit_func.addItems(self.valid_fit_func)
-            self.comboBox_fit_func.setCurrentText(self.measurement_PLE.fit_func)
-        self.comboBox_relim_Live.addItems(self.valid_relim_mode)
-        self.comboBox_relim_Live.setCurrentText('normal')
-        self.comboBox_counter_mode.addItems(self.measurement_Live.counter.valid_counter_mode)
-        self.comboBox_data_mode.addItems(self.measurement_Live.counter.valid_data_mode)
-        if self.findChild(QComboBox, 'comboBox_relim_PLE') is not None:
-            self.comboBox_counter_mode.setCurrentText(self.measurement_PLE.counter_mode)
-            self.comboBox_data_mode.setCurrentText(self.measurement_PLE.data_mode)
+            self.comboBox_update_mode_PL.setCurrentText(self.measurement_PL.update_mode)
+        if self.findChild(QComboBox, 'comboBox_relim_Live') is not None:
+            self.comboBox_counter_mode_Live.addItems(self.measurement_Live.counter.valid_counter_mode)
+            self.comboBox_data_mode_Live.addItems(self.measurement_Live.counter.valid_data_mode)
+            self.comboBox_relim_Live.addItems(self.valid_relim_mode)
+            self.comboBox_update_mode_Live.addItems(self.measurement_Live.valid_update_mode)
+
+            self.comboBox_counter_mode_Live.setCurrentText(self.measurement_Live.counter_mode)
+            self.comboBox_data_mode_Live.setCurrentText(self.measurement_Live.data_mode)
+            self.comboBox_relim_Live.setCurrentText(self.measurement_Live.relim_mode)
+            self.comboBox_update_mode_Live.setCurrentText(self.measurement_Live.update_mode)
+        if self.findChild(QComboBox, 'comboBox_device_gui') is not None:
             self.comboBox_device_gui.addItems(list(self.config_instances.keys()))
-            # display all available device instances
-        elif self.findChild(QComboBox, 'comboBox_relim_PL') is not None:
-            self.comboBox_counter_mode.setCurrentText(self.measurement_PL.counter_mode)
-            self.comboBox_data_mode.setCurrentText(self.measurement_PL.data_mode)
-            self.comboBox_device_gui.addItems(list(self.config_instances.keys()))
-        else:
-            self.comboBox_counter_mode.setCurrentText(self.measurement_Live.counter_mode)
-            self.comboBox_data_mode.setCurrentText(self.measurement_Live.data_mode)
-            self.comboBox_device_gui.addItems(list(self.config_instances.keys()))
+
 
         if 'pulse' in list(self.config_instances.keys()):
             self.comboBox_device_gui.setCurrentText('pulse')
@@ -381,6 +432,18 @@ class MainWindow(QMainWindow):
         self.step_PLE_in_MHz()
         self.estimate_PL_time()
         self.update_stabilizer_step()
+
+    def choose_pulse(self):
+        options = QFileDialog.Options()
+        fileName, _ = QFileDialog.getOpenFileName(self,'select','','pulse_file (*_pulse.npz)',options=options)
+
+        obj_name = self.sender().objectName()
+        attr = 'pulse_' + obj_name.split('_')[-1]
+        value = fileName if fileName!='' else None
+        fileName_display = fileName.split('/')[-1][-28:-10] if fileName!='' else 'None' 
+        setattr(self, attr, value)
+        self.sender().setText(fileName_display)
+
 
     def load_file(self):
         from Confocal_GUI.live_plot import LoadAcquire
@@ -554,11 +617,12 @@ class MainWindow(QMainWindow):
  
 
     def read_data_Live(self):
-        for attr in ['exposure_Live', 'many', 'repeat']:
+        for attr in ['exposure_Live', 'many', 'repeat_Live']:
             value = getattr(self, f'doubleSpinBox_{attr}').value()
             setattr(self, attr, value)
+        self.repeat_Live = int(self.repeat_Live)
 
-        for attr in ['relim_Live', 'counter_mode', 'data_mode']: # Read from GUI panel
+        for attr in ['relim_Live', 'counter_mode_Live', 'data_mode_Live', 'update_mode_Live']: # Read from GUI panel
             value = getattr(self, f'comboBox_{attr}').currentText()
             setattr(self, attr, value)
 
@@ -581,9 +645,9 @@ class MainWindow(QMainWindow):
         
         data_x = np.arange(self.many)
 
-        self.measurement_Live.load_params(data_x=data_x, exposure=self.exposure_Live, repeat=self.repeat,
-            is_finite=self.is_finite,
-            counter_mode=self.counter_mode, data_mode=self.data_mode, relim_mode=self.relim_Live)
+        self.measurement_Live.load_params(data_x=data_x, exposure=self.exposure_Live, repeat=self.repeat_Live,
+            is_finite=self.is_finite, update_mode=self.update_mode_Live, pulse_file=self.pulse_Live,
+            counter_mode=self.counter_mode_Live, data_mode=self.data_mode_Live, relim_mode=self.relim_Live)
         data_y = self.measurement_Live.data_y
         self.live_plot_Live = LiveAndDisLive(labels=['Data', f'Counts/{self.exposure_Live:.2f}s'],
                             update_time=0.02, data_generator=self.measurement_Live, data=[data_x, data_y],
@@ -761,15 +825,15 @@ class MainWindow(QMainWindow):
   
             
     def read_data_PL(self):
-        for attr in ['exposure_PL', 'xl', 'xu', 'yl', 'yu', 'step_PL', 'repeat']:
+        for attr in ['exposure_PL', 'xl', 'xu', 'yl', 'yu', 'step_PL', 'repeat_PL']:
             value = getattr(self, f'doubleSpinBox_{attr}').value()
             setattr(self, attr, value)
 
-        for attr in ['relim_PL', 'counter_mode', 'data_mode']: # Read from GUI panel
+        for attr in ['relim_PL', 'counter_mode_PL', 'data_mode_PL', 'update_mode_PL']: # Read from GUI panel
             value = getattr(self, f'comboBox_{attr}').currentText()
             setattr(self, attr, value)
 
-        self.repeat = int(self.repeat)
+        self.repeat_PL = int(self.repeat_PL)
             
             
     def start_plot_PL(self):
@@ -783,8 +847,9 @@ class MainWindow(QMainWindow):
         y_array = np.arange(self.yl, self.yu+self.step_PL, self.step_PL)
         # self.step_PL to include the end point if possible
 
-        self.measurement_PL.load_params(x_array=x_array, y_array=y_array, exposure=self.exposure_PL, repeat=self.repeat,\
-            counter_mode=self.counter_mode, data_mode=self.data_mode, relim_mode=self.relim_PL)
+        self.measurement_PL.load_params(x_array=x_array, y_array=y_array, exposure=self.exposure_PL, repeat=self.repeat_PL,\
+            counter_mode=self.counter_mode_PL, update_mode=self.update_mode_PL, pulse_file=self.pulse_PL,
+            data_mode=self.data_mode_PL, relim_mode=self.relim_PL)
                 
 
         if self.findChild(QCheckBox, 'checkBox_is_stabilizer') is not None:
@@ -890,20 +955,36 @@ class MainWindow(QMainWindow):
         
         
         
-    def fit_func(self):
+    def fit_func_PLE(self):
 
-        self.fit_func = self.comboBox_fit_func.currentText()
+        fit_func_PLE = self.comboBox_fit_func.currentText()
         if self.data_figure_PLE is None:
             self.print_log(f'No figure to fit')
             return
-        if self.is_fit:
+        if self.is_fit_PLE:
             self.data_figure_PLE.clear()
-            self.is_fit = False
+            self.is_fit_PLE = False
             self.print_log(f'fit cleared')
         else:
-            eval(f'self.data_figure_PLE.{self.fit_func}()')
-            self.is_fit = True
+            eval(f'self.data_figure_PLE.{fit_func_PLE}()')
+            self.is_fit_PLE = True
             log_info = self.data_figure_PLE.log_info
+            self.print_log(f'curve fitted, {log_info}')
+
+    def fit_func_PL(self):
+
+        fit_func_PL = self.comboBox_fit_func_PL.currentText()
+        if self.data_figure_PL is None:
+            self.print_log(f'No figure to fit')
+            return
+        if self.is_fit_PL:
+            self.data_figure_PL.clear()
+            self.is_fit_PL = False
+            self.print_log(f'fit cleared')
+        else:
+            eval(f'self.data_figure_PL.{fit_func_PL}()')
+            self.is_fit_PL = True
+            log_info = self.data_figure_PL.log_info
             self.print_log(f'curve fitted, {log_info}')
 
     def change_unit(self):
@@ -935,15 +1016,15 @@ class MainWindow(QMainWindow):
         
         
     def read_data_PLE(self):
-        for attr in ['exposure_PLE', 'wl', 'wu', 'step_PLE', 'repeat']: # Read from GUI panel
+        for attr in ['exposure_PLE', 'wl', 'wu', 'step_PLE', 'repeat_PLE']: # Read from GUI panel
             value = getattr(self, f'doubleSpinBox_{attr}').value()
             setattr(self, attr, value)
 
-        for attr in ['relim_PLE', 'counter_mode', 'data_mode']: # Read from GUI panel
+        for attr in ['relim_PLE', 'counter_mode_PLE', 'data_mode_PLE', 'update_mode_PLE']: # Read from GUI panel
             value = getattr(self, f'comboBox_{attr}').currentText()
             setattr(self, attr, value)
 
-        self.repeat = int(self.repeat)
+        self.repeat_PLE = int(self.repeat_PLE)
 
 
     def start_plot_PLE(self):
@@ -964,8 +1045,9 @@ class MainWindow(QMainWindow):
         self.doubleSpinBox_wavelength.setDisabled(True)
 
 
-        self.measurement_PLE.load_params(data_x=data_x, exposure=self.exposure_PLE, repeat=self.repeat,
-            counter_mode=self.counter_mode, data_mode=self.data_mode, relim_mode=self.relim_PLE)
+        self.measurement_PLE.load_params(data_x=data_x, exposure=self.exposure_PLE, repeat=self.repeat_PLE,
+            update_mode=self.update_mode_PLE, pulse_file=self.pulse_PLE,
+            counter_mode=self.counter_mode_PLE, data_mode=self.data_mode_PLE, relim_mode=self.relim_PLE)
 
         data_y = self.measurement_PLE.data_y
         update_time = float(np.max([1, self.exposure_PLE*len(data_x)/1000]))

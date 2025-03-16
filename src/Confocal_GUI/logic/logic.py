@@ -44,6 +44,7 @@ class LiveMeasurement(BaseMeasurement):
         self.plot_type = '1D'
         self.is_change_unit = False
         self.loaded_params = False
+        self.valid_update_mode = ['roll',]
         self.counter = self.config_instances.get('counter', None)
         self.scanner = self.config_instances.get('scanner', None)
         # init assignment
@@ -52,7 +53,7 @@ class LiveMeasurement(BaseMeasurement):
 
 
     def _load_params(self, data_x=None, exposure=0.1, is_finite=False, is_GUI=False, repeat=1,
-        counter_mode='apd', data_mode='single', relim_mode='normal', pulse_file=None, is_plot=True):
+        counter_mode='apd', data_mode='single', relim_mode='normal', update_mode='roll', pulse_file=None, is_plot=True):
         """
         live
 
@@ -63,7 +64,8 @@ class LiveMeasurement(BaseMeasurement):
         example:
         fig, data_figure = live(data_x = np.arange(100), exposure=0.1
                                 , repeat=1, is_finite=False,
-                                counter_mode='apd', data_mode='single', relim_mode='normal', pulse_file=None)
+                                counter_mode='apd', data_mode='single', 
+                                relim_mode='normal', update_mode='roll', pulse_file=None)
 
         """
         if is_finite==False:
@@ -74,7 +76,10 @@ class LiveMeasurement(BaseMeasurement):
         if data_x is None:
             data_x = np.arange(100)
         self.data_x = data_x
-        self.update_mode='roll'
+        if update_mode not in self.valid_update_mode:
+            print(f'Update_mode must be one of the {self.valid_update_mode}')
+            update_mode = 'roll'
+        self.update_mode=update_mode
         self.exposure = exposure
         self.is_GUI = is_GUI
         self.counter_mode = counter_mode
@@ -135,6 +140,7 @@ class PLEMeasurement(BaseMeasurement):
         self.plot_type = '1D'
         self.fit_func = 'lorent'
         self.loaded_params = False
+        self.valid_update_mode = ['normal', 'single', 'new']
 
         self.counter = self.config_instances.get('counter', None)
         self.wavemeter = self.config_instances.get('wavemeter', None)
@@ -164,6 +170,9 @@ class PLEMeasurement(BaseMeasurement):
         if data_x is None:
             data_x = np.arange(737.1-0.005, 737.1+0.005, 0.0005)
         self.data_x = data_x
+        if update_mode not in self.valid_update_mode:
+            print(f'Update_mode must be one of the {self.valid_update_mode}')
+            update_mode = 'normal'
         self.update_mode=update_mode
         self.exposure = exposure
         self.repeat = repeat
@@ -226,6 +235,7 @@ class ODMRMeasurement(BaseMeasurement):
         self.plot_type = '1D'
         self.fit_func = 'lorent'
         self.loaded_params = False
+        self.valid_update_mode = ['single', 'new', 'normal']
 
         self.counter = self.config_instances.get('counter', None)
         self.rf = self.config_instances.get('rf', None)
@@ -261,6 +271,9 @@ class ODMRMeasurement(BaseMeasurement):
         self.counter_mode = counter_mode
         self.data_mode = data_mode
         self.relim_mode = relim_mode
+        if update_mode not in self.valid_update_mode:
+            print(f'Update_mode must be one of the {self.valid_update_mode}')
+            update_mode = 'normal'
         self.update_mode=update_mode
         # for non basic params, load state from device's state
         self.power = self.rf.power if power is None else power
@@ -333,12 +346,13 @@ class PLMeasurement(BaseMeasurement):
         self.counter = self.config_instances.get('counter', None)
         self.scanner = self.config_instances.get('scanner', None)
         self.loaded_params = False
+        self.valid_update_mode = ['single',]
         # init assignment
         if (self.counter is None) or (self.scanner is None):
             raise KeyError('Missing devices in config_instances')
 
     def _load_params(self, x_array=None, y_array=None, exposure=0.1, repeat = 1, wavelength=None, is_GUI=False, is_dis=True,
-        counter_mode='apd', data_mode='single', relim_mode='tight', pulse_file=None, is_plot=True):
+        counter_mode='apd', data_mode='single', relim_mode='tight', update_mode='single', pulse_file=None, is_plot=True):
         """
         pl
 
@@ -351,6 +365,7 @@ class PLMeasurement(BaseMeasurement):
         fig, data_figure = pl(x_array = np.arange(-10, 10, 1), y_array = np.arange(-10, 10, 1), exposure=0.1,
                                 repeat=1, is_GUI=False, is_dis=True,
                                 counter_mode='apd', data_mode='single', 
+                                update_mode='single',
                                 relim_mode='tight', pulse_file=None)
 
         """
@@ -382,7 +397,9 @@ class PLMeasurement(BaseMeasurement):
         self.counter_mode = counter_mode
         self.data_mode = data_mode
         self.relim_mode = relim_mode
-        self.update_mode='single'
+        if update_mode not in self.valid_update_mode:
+            print(f'Update_mode must be one of the {self.valid_update_mode}')
+        self.update_mode = update_mode
         self.pulse_file = pulse_file
         self.is_plot = is_plot
         self.info.update({'measurement_name':self.measurement_name, 'plot_type':self.plot_type, 'exposure':self.exposure
@@ -518,7 +535,7 @@ class ModeSearchMeasurement(BaseMeasurement):
         self.plot_type = '1D'
         self.fit_func = 'lorent'
         self.loaded_params = False
-
+        self.valid_update_mode = ['adaptive', 'normal']
         self.counter = self.config_instances.get('counter', None)
         self.wavemeter = self.config_instances.get('wavemeter', None)
         self.laser_stabilizer = self.config_instances.get('laser_stabilizer', None)
@@ -565,6 +582,9 @@ class ModeSearchMeasurement(BaseMeasurement):
         self.is_plot = is_plot
         self.info.update({'measurement_name':self.measurement_name, 'plot_type':self.plot_type, 'exposure':self.exposure
                 , 'repeat':self.repeat, 'scanner':(None if self.scanner is None else (self.scanner.x, self.scanner.y))})
+        if update_mode not in self.valid_update_mode:
+            print(f'Update_mode must be one of the {self.valid_update_mode}')
+            update_mode = 'adaptive'
         self.set_update_mode(update_mode=update_mode, threshold_in_sigma=threshold_in_sigma, 
             ref_gap=ref_gap, ref_exposure=ref_exposure, max_exposure=max_exposure)
 
@@ -725,7 +745,7 @@ class ModeT1Measurement(BaseMeasurement):
         self.plot_type = '1D'
         self.fit_func = 'rabi'
         self.loaded_params = False
-
+        self.valid_update_mode = ['normal',]
         self.counter = self.config_instances.get('counter', None)
         self.rf_1550 = self.config_instances.get('rf_1550', None)
         self.pulse = self.config_instances.get('pulse', None)
@@ -760,6 +780,9 @@ class ModeT1Measurement(BaseMeasurement):
         self.counter_mode = counter_mode
         self.data_mode = data_mode
         self.relim_mode = relim_mode
+        if update_mode not in self.valid_update_mode:
+            print(f'Update_mode must be one of the {self.valid_update_mode}')
+            update_mode = 'normal'
         self.update_mode=update_mode
 
         self.frequency = self.rf_1550.frequency if frequency is None else frequency

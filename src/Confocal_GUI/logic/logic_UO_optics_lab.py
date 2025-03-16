@@ -44,7 +44,7 @@ class RFWithPulseMeasurement(BaseMeasurement):
         self.plot_type = '1D'
         self.fit_func = None
         self.loaded_params = False
-
+        self.valid_update_mode = ['single', 'normal', 'new']
         # need to be override by specific measurement such as rabi, spinecho
 
         self.counter = self.config_instances.get('counter', None)
@@ -72,6 +72,9 @@ class RFWithPulseMeasurement(BaseMeasurement):
         self.counter_mode = counter_mode
         self.data_mode = data_mode
         self.relim_mode = relim_mode
+        if update_mode not in self.valid_update_mode:
+            print(f'Update_mode must be one of the {self.valid_update_mode}')
+            update_mode = 'normal'
         self.update_mode=update_mode
 
         self.power = self.rf.power if power is None else power
@@ -130,9 +133,7 @@ def rabi(data_x=None, exposure=0.1, power=-10, frequency=2.88, pulse_file=None,
     Init -> RF(x) -> Readout
 
     """
-    
-    if pulse_file is None:
-        pulse_file = '../src/Confocal_GUI/device/Rabi_pulse*'
+
     if data_x is None:
         data_x = np.arange(20, 2000, 10)
 
@@ -173,8 +174,6 @@ def ramsey(data_x=None, exposure=0.1, power=-10, frequency=2.88, pulse_file=None
 
     """
 
-    if pulse_file is None:
-        pulse_file = '../src/Confocal_GUI/device/Ramsey_pulse*'
     if data_x is None:
         data_x = np.arange(20, 2000, 10)
 
@@ -215,8 +214,6 @@ def spinecho(data_x=None, exposure=0.1, power=-10, frequency=2.88, pulse_file=No
 
     """
 
-    if pulse_file is None:
-        pulse_file = '../src/Confocal_GUI/device/Spinecho_pulse*'
     if data_x is None:
         data_x = np.arange(20, 2000, 10)
 
@@ -260,8 +257,6 @@ def roduration(data_x=None, exposure=0.1, power=-10, frequency=2.88, pulse_file=
 
     """
 
-    if pulse_file is None:
-        pulse_file = '../src/Confocal_GUI/device/ROduration_pulse*'
     if data_x is None:
         data_x = np.arange(-1000, 10000, 100)
 
@@ -303,8 +298,6 @@ def t1(data_x=None, exposure=0.1, power=-10, frequency=2.88, pulse_file=None,
 
     """
 
-    if pulse_file is None:
-        pulse_file = '../src/Confocal_GUI/device/T1_pulse*'
     if data_x is None:
         data_x = np.arange(10, 300000, 1000)
 
