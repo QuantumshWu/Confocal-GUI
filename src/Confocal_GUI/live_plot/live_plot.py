@@ -894,6 +894,11 @@ class PLLive(LivePlotGUI):
         self.area = AreaSelector(self.fig.axes[0])
         self.cross = CrossSelector(self.fig.axes[0])
         self.zoom = ZoomPan(self.fig.axes[0])
+
+        self.ylim_min = np.nanmin(self.data_y[:self.points_done])
+        self.ylim_max = np.nanmax(self.data_y[:self.points_done])
+        self.lines[0].set_clim(vmin=self.ylim_min, vmax=self.ylim_max)
+        # move colorbar to fit max
         
 
 
@@ -1033,6 +1038,11 @@ class PLDisLive(LivePlotGUI):
         y_max = np.nanmax(self.data_y[:self.points_done])
         self.line_min = self.axdis.axvline(y_min, color='red', linewidth=6, alpha=0.3)
         self.line_max = self.axdis.axvline(y_max, color='red', linewidth=6, alpha=0.3)
+
+        self.ylim_min = y_min
+        self.ylim_max = y_max
+        self.lines[0].set_clim(vmin=self.ylim_min, vmax=self.ylim_max)
+        # move colorbar to fit max, min while not change axdis
 
         self.line_l = self.axdis.axvline(self.ylim_min, color=cmap(0), linewidth=6)
         self.line_h = self.axdis.axvline(self.ylim_max, color=cmap(0.95), linewidth=6)

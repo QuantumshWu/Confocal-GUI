@@ -106,8 +106,6 @@ class MainWindow(QMainWindow):
         self.data_figure_Live = None
         self.cur_plot = 'PL'
         self.cur_live_plot = None
-        self.is_fit_PLE = False
-        self.is_fit_PL = False
         self.spl = 299792458
         self.is_save_to_jupyter_flag = True
         self.time_PL = 0
@@ -701,7 +699,6 @@ class MainWindow(QMainWindow):
     
     def stop_plot(self, clicked=True, select_stop=None):
         self.print_log(f'Plot stopped')
-        self.is_fit = False
         if select_stop is None:
             # must be second params, cause button click event will pass a bool variable to function connected
             if self.cur_live_plot is not None:
@@ -961,13 +958,11 @@ class MainWindow(QMainWindow):
         if self.data_figure_PLE is None:
             self.print_log(f'No figure to fit')
             return
-        if self.is_fit_PLE:
+        if self.data_figure_PLE.fit is not None:
             self.data_figure_PLE.clear()
-            self.is_fit_PLE = False
             self.print_log(f'fit cleared')
         else:
             eval(f'self.data_figure_PLE.{fit_func_PLE}()')
-            self.is_fit_PLE = True
             log_info = self.data_figure_PLE.log_info
             self.print_log(f'curve fitted, {log_info}')
 
@@ -977,13 +972,11 @@ class MainWindow(QMainWindow):
         if self.data_figure_PL is None:
             self.print_log(f'No figure to fit')
             return
-        if self.is_fit_PL:
+        if self.data_figure_PL.fit is not None:
             self.data_figure_PL.clear()
-            self.is_fit_PL = False
             self.print_log(f'fit cleared')
         else:
             eval(f'self.data_figure_PL.{fit_func_PL}()')
-            self.is_fit_PL = True
             log_info = self.data_figure_PL.log_info
             self.print_log(f'curve fitted, {log_info}')
 
