@@ -24,6 +24,7 @@ from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget, QGridLayout, QRa
 from PyQt5.QtGui import QPalette, QColor, QFont, QDrag, QPixmap, QRegExpValidator
 from PyQt5 import QtCore, QtWidgets, uic
 
+import Confocal_GUI.live_plot as live_plot_dir
 from Confocal_GUI.live_plot import *
 
 
@@ -118,6 +119,7 @@ class MainWindow(QMainWindow):
         self.ui = ui
         self.overhead_PL = 0.01 # estimated 10ms overhead for single data point
         self.overhead_PLE = 0.5 # estimated 500ms overhead for single data point PLE
+        self.default_folder_pulses = os.path.dirname(os.path.dirname(live_plot_dir.__file__)) + '/pulses/'
         ui_path = os.path.join(os.path.dirname(__file__), self.ui)
         uic.loadUi(ui_path, self)
 
@@ -200,7 +202,7 @@ class MainWindow(QMainWindow):
                 # for load file
                 {'name': 'pushButton_start_PLE', 'func': self.start_plot_PLE},
                 {'name': 'pushButton_stop_PLE', 'func': self.stop_plot},
-                {'name': 'pushButton_wavelength', 'func': self.read_wavelength},
+                {'name': 'pushButton_wavelength', 'func': self.read_xy_PLE},
                 {'name': 'pushButton_range_PLE', 'func': self.read_range_PLE},
                 {'name': 'pushButton_lorent', 'func': self.fit_func_PLE},
                 {'name': 'pushButton_save_PLE', 'func': self.save_PLE},
@@ -218,7 +220,7 @@ class MainWindow(QMainWindow):
                 {'name': 'pushButton_lorent_PL', 'func': self.fit_func_PL},
                 {'name': 'pushButton_start_PL', 'func': self.start_plot_PL},
                 {'name': 'pushButton_stop_PL', 'func': self.stop_plot},
-                {'name': 'pushButton_XY', 'func': self.read_xy},
+                {'name': 'pushButton_XY', 'func': self.read_xy_PL},
                 {'name': 'pushButton_range_PL', 'func': self.read_range_PL},
                 {'name': 'pushButton_scanner', 'func': self.move_scanner},
                 {'name': 'pushButton_save_PL', 'func': self.save_PL},
@@ -433,7 +435,7 @@ class MainWindow(QMainWindow):
 
     def choose_pulse(self):
         options = QFileDialog.Options()
-        fileName, _ = QFileDialog.getOpenFileName(self,'select','','pulse_file (*_pulse.npz)',options=options)
+        fileName, _ = QFileDialog.getOpenFileName(self,'select',self.default_folder_pulses,'pulse_file (*_pulse.npz)',options=options)
 
         obj_name = self.sender().objectName()
         attr = 'pulse_' + obj_name.split('_')[-1]
@@ -447,7 +449,8 @@ class MainWindow(QMainWindow):
         from Confocal_GUI.live_plot import LoadAcquire
         import glob
         options = QFileDialog.Options()
-        fileName, _ = QFileDialog.getOpenFileName(self,'select','','data_figure (*.jpg *.npz)',options=options)
+        default_folder = os.getcwd()
+        fileName, _ = QFileDialog.getOpenFileName(self, 'select', default_folder, 'data_figure (*.jpg *.npz)', options=options)
 
         if fileName == '':
             return
@@ -479,6 +482,15 @@ class MainWindow(QMainWindow):
                 data_figure.fig.tight_layout()
                 data_figure.fig.canvas.draw()
                 self.data_figure_PLE = data_figure
+
+                self.checkBox_is_auto.setChecked(False)
+                # load callback to selector
+                from functools import partial
+                self.cur_plot = 'PLE'
+                params = 'is_print=False, is_in_callback=True'
+                eval(f'self.data_figure_{self.cur_plot}.register_selector_callback(0, partial(self.read_range_{self.cur_plot}, {params}))')
+                eval(f'self.data_figure_{self.cur_plot}.register_selector_callback(2, partial(self.read_range_{self.cur_plot}, {params}))')
+                eval(f'self.data_figure_{self.cur_plot}.register_selector_callback(1, partial(self.read_xy_{self.cur_plot}, {params}))')
             else:
                 self.print_log(f'Cannot load 1D plot_type')
                 return
@@ -495,6 +507,15 @@ class MainWindow(QMainWindow):
                 data_figure.fig.tight_layout()
                 data_figure.fig.canvas.draw()
                 self.data_figure_PL = data_figure
+
+                self.checkBox_is_auto.setChecked(False)
+                # load callback to selector
+                from functools import partial
+                self.cur_plot = 'PL'
+                params = 'is_print=False, is_in_callback=True'
+                eval(f'self.data_figure_{self.cur_plot}.register_selector_callback(0, partial(self.read_range_{self.cur_plot}, {params}))')
+                eval(f'self.data_figure_{self.cur_plot}.register_selector_callback(2, partial(self.read_range_{self.cur_plot}, {params}))')
+                eval(f'self.data_figure_{self.cur_plot}.register_selector_callback(1, partial(self.read_xy_{self.cur_plot}, {params}))')
             else:
                 self.print_log(f'Cannot load 2D plot_type')
                 return
@@ -690,12 +711,19 @@ class MainWindow(QMainWindow):
                 self.cur_live_plot.after_plot()
                 setattr(self, f'data_figure_{self.cur_plot}', DataFigure(live_plot=self.cur_live_plot))
 
-                if hasattr(self, 'live_plot_PLE'):
+                if self.findChild(QComboBox, 'comboBox_relim_PLE') is not None:
                     self.checkBox_is_stabilizer.setDisabled(False)
                     self.doubleSpinBox_wavelength.setDisabled(False)
-                if hasattr(self, 'live_plot_PL'):
+                if self.findChild(QComboBox, 'comboBox_relim_PL') is not None:
                     self.checkBox_is_bind.setChecked(False)
                     self.checkBox_is_bind.setDisabled(False)
+
+                # load callback to selector
+                from functools import partial
+                params = 'is_print=False, is_in_callback=True'
+                eval(f'self.data_figure_{self.cur_plot}.register_selector_callback(0, partial(self.read_range_{self.cur_plot}, {params}))')
+                eval(f'self.data_figure_{self.cur_plot}.register_selector_callback(2, partial(self.read_range_{self.cur_plot}, {params}))')
+                eval(f'self.data_figure_{self.cur_plot}.register_selector_callback(1, partial(self.read_xy_{self.cur_plot}, {params}))')
     
     def stop_plot(self, clicked=True, select_stop=None):
         self.print_log(f'Plot stopped')
@@ -711,17 +739,14 @@ class MainWindow(QMainWindow):
                 plot_handle.stop()
                 self.update_plot()
 
-        if hasattr(self, 'live_plot_PLE'):
+        if self.findChild(QComboBox, 'comboBox_relim_PLE') is not None:
             self.checkBox_is_stabilizer.setDisabled(False)
             self.doubleSpinBox_wavelength.setDisabled(False)
-        if hasattr(self, 'live_plot_PL'):
+            self.estimate_PLE_time()
+        if self.findChild(QComboBox, 'comboBox_relim_PL') is not None:
             self.checkBox_is_bind.setChecked(False)
             self.checkBox_is_bind.setDisabled(False)
-        if hasattr(self, 'live_plot_PL') and self.live_plot_PL is not None:
             self.estimate_PL_time()
-        if hasattr(self, 'live_plot_PLE') and self.live_plot_PLE is not None:
-            self.estimate_PLE_time()
-                
 
 
 
@@ -754,7 +779,8 @@ class MainWindow(QMainWindow):
 
         else:
             self.read_data_PL()
-            self.PL_points = len(np.arange(self.xl, self.xu, self.step_PL)) * len(np.arange(self.yl, self.yu, self.step_PL))
+            self.PL_points = (len(np.arange(self.xl, self.xu+self.step_PL, self.step_PL)) * 
+                len(np.arange(self.yl, self.yu+self.step_PL, self.step_PL)))
             time_est = (self.exposure_PL+self.overhead_PL) * self.PL_points
             self.lineEdit_time_PL.setText(f'new PL finishes in {time_est:.2f}s')
             self.time_PL_start = time.time()
@@ -770,7 +796,9 @@ class MainWindow(QMainWindow):
         self.measurement_PL.device_to_state((x, y))
 
         
-    def read_xy(self):
+    def read_xy_PL(self, is_print=True, is_in_callback=False):
+        if is_in_callback and not self.checkBox_is_auto.isChecked():
+            return
         if self.data_figure_PL is None:
             return
         if self.data_figure_PL.selector == []:
@@ -780,9 +808,11 @@ class MainWindow(QMainWindow):
         if _xy is not None:
             self.doubleSpinBox_X.setValue(_xy[0])
             self.doubleSpinBox_Y.setValue(_xy[1])
-            self.print_log(f'read x = {_xy[0]}, y = {_xy[1]}')
+            if is_print:
+                self.print_log(f'read x = {_xy[0]}, y = {_xy[1]}')
         else:
-            self.print_log(f'read x = None, y = None')
+            if is_print:
+                self.print_log(f'read x = None, y = None')
                 
 
     def save_PL(self):
@@ -800,7 +830,9 @@ class MainWindow(QMainWindow):
         self.print_log('saved PL')
         
         
-    def read_range_PL(self):
+    def read_range_PL(self, is_print=True, is_in_callback=False):
+        if is_in_callback and not self.checkBox_is_auto.isChecked():
+            return
         if self.data_figure_PL is None:
             return
         if self.data_figure_PL.selector[0].range[0] is None:
@@ -810,14 +842,13 @@ class MainWindow(QMainWindow):
         else:
             xl, xh, yl, yh = self.data_figure_PL.selector[0].range
 
-        # are reading edge not the center of grid
+        self.doubleSpinBox_xl.setValue(self.data_figure_PL._align_to_grid(xl, type='x'))
+        self.doubleSpinBox_xu.setValue(self.data_figure_PL._align_to_grid(xh, type='x'))
+        self.doubleSpinBox_yl.setValue(self.data_figure_PL._align_to_grid(yl, type='y'))
+        self.doubleSpinBox_yu.setValue(self.data_figure_PL._align_to_grid(yh, type='y'))
 
-        self.doubleSpinBox_xl.setValue(xl)
-        self.doubleSpinBox_xu.setValue(xh)
-        self.doubleSpinBox_yl.setValue(yl)
-        self.doubleSpinBox_yu.setValue(yh)
-
-        self.print_log(f'PL range updated')
+        if is_print:
+            self.print_log(f'PL range updated')
         
   
             
@@ -912,27 +943,32 @@ class MainWindow(QMainWindow):
 
         else:
             self.read_data_PLE()
-            self.PLE_points = len(np.arange(self.wl, self.wu, self.step_PLE)) 
+            self.PLE_points = len(np.arange(self.wl, self.wu+self.step_PLE, self.step_PLE)) 
             time_est = (self.exposure_PLE + self.overhead_PLE)* self.PLE_points
             # considering the overhead of stabilizing laser frequency
             self.lineEdit_time_PLE.setText(f'new {self.measurement_PLE.measurement_name} finishes in {time_est:.2f}s')
             self.time_PLE_start = time.time()
 
 
-    def read_wavelength(self):
+    def read_xy_PLE(self, is_print=True, is_in_callback=False):
+        if is_in_callback and not self.checkBox_is_auto.isChecked():
+            return
         if self.data_figure_PLE is None:
             return
         if self.data_figure_PLE.selector == []:
-            self.print_log(f'No {self.measurement_PLE.x_name} to read')
+            if is_print:
+                self.print_log(f'No {self.measurement_PLE.x_name} to read')
             return
         _wavelength = self.data_figure_PLE.selector[1].wavelength
         
         if _wavelength is not None:
             self.doubleSpinBox_wavelength.setValue(self.data_figure_PLE.transform_back(_wavelength))
             # transform back to original unit
-            self.print_log(f'{self.measurement_PLE.x_name} was read')
+            if is_print:
+                self.print_log(f'{self.measurement_PLE.x_name} was read')
         else:
-            self.print_log(f'No {self.measurement_PLE.x_name} to read')
+            if is_print:
+                self.print_log(f'No {self.measurement_PLE.x_name} to read')
         #set double spin box to _wavelength
         
         
@@ -988,7 +1024,9 @@ class MainWindow(QMainWindow):
         
         
         
-    def read_range_PLE(self):
+    def read_range_PLE(self, is_print=True, is_in_callback=False):
+        if is_in_callback and not self.checkBox_is_auto.isChecked():
+            return
         if self.data_figure_PLE is None:
             return
         if self.data_figure_PLE.selector[0].range[0] is None:
@@ -1004,8 +1042,8 @@ class MainWindow(QMainWindow):
         self.doubleSpinBox_wl.setValue(new_xl)
         self.doubleSpinBox_wu.setValue(new_xh)
 
-
-        self.print_log(f'{self.measurement_PLE.measurement_name} range updated')
+        if is_print:
+            self.print_log(f'{self.measurement_PLE.measurement_name} range updated')
         
         
     def read_data_PLE(self):
@@ -1700,6 +1738,8 @@ class PulseGUI(QDialog):
 
         self.load_data()
 
+        self.default_folder = os.path.dirname(os.path.dirname(live_plot_dir.__file__)) + '/pulses/'
+
         self.show()
 
 
@@ -2143,7 +2183,7 @@ class PulseGUI(QDialog):
         self.save_data()
 
         options = QFileDialog.Options()
-        fileName, _ = QFileDialog.getSaveFileName(self,'select','','data_figure (*.npz)',options=options)
+        fileName, _ = QFileDialog.getSaveFileName(self,'select',self.default_folder,'data_figure (*.npz)',options=options)
 
         if fileName == '':
             return
@@ -2158,7 +2198,7 @@ class PulseGUI(QDialog):
 
     def load_from_file(self):
         options = QFileDialog.Options()
-        fileName, _ = QFileDialog.getOpenFileName(self,'select','','data_figure (*.npz)',options=options)
+        fileName, _ = QFileDialog.getOpenFileName(self,'select',self.default_folder,'data_figure (*.npz)',options=options)
 
         if fileName == '':
             return
@@ -2250,8 +2290,9 @@ def GUI_Load():
 
     app.setStyle('Windows')
 
+    default_folder = os.getcwd()
     address, _ = QtWidgets.QFileDialog.getOpenFileName(
-        None, "Select Data File", "", "Data Files (*.npz *.jpg);;All Files (*)"
+        None, "Select Data File", default_folder, "Data Files (*.npz *.jpg);;All Files (*)"
     )
     
     return address

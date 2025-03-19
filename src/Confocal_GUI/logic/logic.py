@@ -15,6 +15,102 @@ from Confocal_GUI.gui import *
 from .base import register_measurement, BaseMeasurement
 
 
+
+@register_measurement('pulse_x') #allow a faster call to .load_params() using pulse_x()
+class PulseXMeasurement(BaseMeasurement):
+
+    def device_to_state(self, x):
+        # set pulse 'x' to x
+        self.pulse.x = x
+        self.pulse.on_pulse()
+
+
+    def to_initial_state(self):
+        # move device/data state to initial state before measurement
+        pass
+
+
+    def to_final_state(self):
+        # move device/data state to final state after measurement
+        self.pulse.off_pulse()
+
+    def read_x(self):
+        return self.pulse.x
+
+    def load_config(self):
+
+        self.x_name = 'PulseX'
+        self.x_unit = 'ns'
+        self.measurement_name = 'PulseX'
+        self.x_device_name = ''
+        self.plot_type = '1D'
+        self.is_change_unit = False
+        self.loaded_params = False
+        self.valid_update_mode = ['normal',]
+        self.fit_func = None
+        self.counter = self.config_instances.get('counter', None)
+        self.pulse = self.config_instances.get('pulse', None)
+        # init assignment
+        if (self.counter is None) or (self.pulse is None):
+            raise KeyError('Missing devices in config_instances')
+
+
+    def _load_params(self, data_x=None, exposure=0.1, is_GUI=False, repeat=1,
+        counter_mode='apd', data_mode='single', relim_mode='normal', update_mode='normal', pulse_file=None, is_plot=True):
+        """
+        live
+
+        args:
+        (data_x=None, exposure=0.1, repeat=1, 
+        counter_mode='apd', data_mode='single', relim_mode='normal'):
+
+        example:
+        fig, data_figure = live(data_x = np.arange(100), exposure=0.1
+                                , repeat=1,
+                                counter_mode='apd', data_mode='single', 
+                                relim_mode='normal', update_mode='normal', pulse_file=None)
+
+        """
+
+        if data_x is None:
+            step = 10
+            data_x = np.arange(-1000, 1000+step, step)
+        self.data_x = data_x
+        self.repeat = repeat
+        if update_mode not in self.valid_update_mode:
+            print(f'Update_mode must be one of the {self.valid_update_mode}')
+            update_mode = 'normal'
+        self.update_mode=update_mode
+        self.exposure = exposure
+        self.is_GUI = is_GUI
+        self.counter_mode = counter_mode
+        self.data_mode = data_mode
+        self.relim_mode = relim_mode
+        self.is_plot = is_plot
+        self.pulse_file = pulse_file
+        self.info.update({'measurement_name':self.measurement_name, 'plot_type':self.plot_type, 'exposure':self.exposure
+                    , 'repeat':self.repeat})
+
+    def load_GUI(self):
+        if self.is_GUI:
+            from .base import live
+            self.measurement_Live = live(is_plot=False)
+            GUI_PLE(measurement_PLE=self, measurement_Live=self.measurement_Live)
+            return None, None
+        else:
+            data_x = self.data_x
+            data_y = self.data_y
+            data_generator = self
+            update_time = float(np.max([1, self.exposure*len(data_x)/1000]))
+            liveplot = PLELive(labels=[f'{self.x_name} ({self.x_unit})', f'Counts/{self.exposure}s'],
+                                update_time=update_time, data_generator=data_generator, data=[data_x, data_y],
+                                relim_mode=self.relim_mode)
+            fig, selector = liveplot.plot()
+            data_figure = DataFigure(live_plot=liveplot)
+            return fig, data_figure
+
+
+
 @register_measurement('live') #allow a faster call to .load_params() using live()
 class LiveMeasurement(BaseMeasurement):
 
@@ -168,7 +264,8 @@ class PLEMeasurement(BaseMeasurement):
 
         """
         if data_x is None:
-            data_x = np.arange(737.1-0.005, 737.1+0.005, 0.0005)
+            step = 0.0001 #55MHz
+            data_x = np.arange(737.1-0.005, 737.1+0.005+step, step)
         self.data_x = data_x
         if update_mode not in self.valid_update_mode:
             print(f'Update_mode must be one of the {self.valid_update_mode}')
@@ -263,7 +360,8 @@ class ODMRMeasurement(BaseMeasurement):
 
         """
         if data_x is None:
-            data_x = np.arange(2.88-0.1, 2.88+0.1, 0.001)
+            step = 0.001
+            data_x = np.arange(2.88-0.1, 2.88+0.1+step, step)
         self.data_x = data_x       
         self.exposure = exposure
         self.repeat = repeat
@@ -380,8 +478,8 @@ class PLMeasurement(BaseMeasurement):
             self.laser_stabilizer = self.config_instances.get('laser_stabilizer')
 
         if (x_array is None) or (y_array is None):
-            x_array = np.arange(-10, 10, 1)
-            y_array = np.arange(-10, 10, 1)
+            x_array = np.arange(-100, 100+4, 4)
+            y_array = np.arange(-100, 100+4, 4)
         self.x_array = x_array
         self.y_array = y_array
         self.data_x = []
@@ -569,7 +667,8 @@ class ModeSearchMeasurement(BaseMeasurement):
 
         """
         if data_x is None:
-            data_x = np.arange(1e9-10e6, 1e9+10e6, 0.1e3)
+            step = 0.1e3
+            data_x = np.arange(1e9-10e6, 1e9+10e6+step, step)
         self.data_x = data_x
         self.exposure = exposure
         self.repeat = repeat
@@ -616,7 +715,7 @@ class ModeSearchMeasurement(BaseMeasurement):
             return fig, data_figure
 
 
-def mode_search(siv_center, siv_pos, is_drift=True, is_adaptive=True, frequency_array=None, exposure=0.05
+def mode_search(siv_center, siv_pos, is_recenter=True, is_adaptive=True, frequency_array=None, exposure=0.05
     , counter_mode='apd_pg', save_addr = 'mode_search/'
     , threshold_in_sigma=1.5, ref_x=None, ref_gap=100, ref_exposure=10, max_exposure=1,
     recenter_gap=600, R=8.5, red_bias_relative_center=None, 
@@ -628,7 +727,7 @@ def mode_search(siv_center, siv_pos, is_drift=True, is_adaptive=True, frequency_
     args:
 
     example:
-    fig, data_figure = mode_search(siv_center=737.1, siv_pos=[0,0], is_drift=True, is_adaptive=True
+    fig, data_figure = mode_search(siv_center=737.1, siv_pos=[0,0], is_recenter=True, is_adaptive=True
             , frequency_array=np.arange(1e9-2e3, 1e9+2e3, 0.02e3)
             , exposure=0.05
             ,  counter_mode='apd_pg', save_addr = 'mode_search/'
@@ -642,7 +741,7 @@ def mode_search(siv_center, siv_pos, is_drift=True, is_adaptive=True, frequency_
     from .base import live, ple, pl, mode_search_core
     spl = 299792458
     scanner = config_instances['scanner']
-    if is_drift:
+    if is_recenter:
         points_before_recenter = int(np.ceil(recenter_gap/exposure))
         points_every_cycle = int(np.ceil(recenter_gap/exposure)*0.8)
         # 20% overlap 
@@ -776,7 +875,8 @@ class ModeT1Measurement(BaseMeasurement):
                 counter_mode='apd', data_mode='single', relim_mode='tight', update_mode='normal', pulse_file=None)
         """
         if data_x is None:
-            data_x = np.arange(1e3, 0.5e6, 0.5e3)
+            step = 0.5e3
+            data_x = np.arange(1e3, 0.5e6+step, step)
         # lifetime of mode is ~ms
         self.data_x = data_x
        

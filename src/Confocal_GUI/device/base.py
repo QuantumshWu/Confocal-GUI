@@ -1318,7 +1318,10 @@ class VirtualCounter(BaseCounter):
                 pl_dict[key] = config_instances.get(key, 1)
             
             time.sleep(exposure)
-            position = np.array([parent.scanner.x, parent.scanner.y])
+            if hasattr(parent, 'scanner'):
+                position = np.array([parent.scanner.x, parent.scanner.y])
+            else:
+                position = np.array([0, 0])
             distance = np.linalg.norm(np.array(pl_dict['pl_center']) - position)
             
             lambda_counts = exposure*(pl_dict['pl_height']*(pl_dict['pl_width']/2)**2

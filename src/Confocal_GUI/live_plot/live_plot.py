@@ -557,7 +557,6 @@ class LivePlotGUI(ABC):
 
             return True
 
-
            
             
 class PLELive(LivePlotGUI):
@@ -1067,19 +1066,23 @@ class AreaSelector():
         self.ax = ax
         self.text = None
         self.range = [None, None, None, None]
+        self.callback = None
         artist = ax.get_children()[0]
         if isinstance(artist, matplotlib.image.AxesImage):
             cmap = ax.images[0].colorbar.mappable.get_cmap()
             self.color = cmap(0.95)
         else:
             self.color = 'grey'
-            
+
         self.selector = RectangleSelector(ax, self.onselect, interactive=True, useblit=False, button=[1], 
                                           props=dict(alpha=0.8, fill=False, 
                                                      linestyle='-', color=self.color)) 
         #set blit=True has weird bug, or implement RectangleSelector myself
-        
 
+        
+    def on_callback(self):
+        if self.callback is not None:
+            self.callback()
         
     def onselect(self, eclick, erelease):
         x1, x2, y1, y2 = self.selector.extents
@@ -1091,6 +1094,7 @@ class AreaSelector():
                 self.text.remove()
                 self.text = None
             self.ax.figure.canvas.draw()
+            self.on_callback()
             return
         
         self.range = [min(x1, x2), max(x1, x2), min(y1, y2), max(y1, y2)]
@@ -1114,6 +1118,7 @@ class AreaSelector():
             self.text.set_text(f'({format_str.format(x1, y1)})\n({format_str.format(x2, y2)})')
 
         self.ax.figure.canvas.draw()
+        self.on_callback()
         
     def set_active(self, active):
         if not active:
@@ -1129,7 +1134,7 @@ class CrossSelector():
         self.last_click_time = None
         self.wavelength = None # x of cross selector for PLE
         self.xy = None #xy of PL
-        
+        self.callback = None
         artist = ax.get_children()[0]
         if isinstance(artist, matplotlib.image.AxesImage):
             cmap = ax.images[0].colorbar.mappable.get_cmap()
@@ -1138,6 +1143,10 @@ class CrossSelector():
             self.color = 'grey'
         
         self.cid_press = self.ax.figure.canvas.mpl_connect('button_press_event', self.on_press)
+
+    def on_callback(self):
+        if self.callback is not None:
+            self.callback()
 
     def on_press(self, event):
         if event.inaxes == self.ax:                
@@ -1176,6 +1185,7 @@ class CrossSelector():
                     self.text.set_text(f'({format_str.format(x, y)})')
                 
                 self.ax.figure.canvas.draw()
+                self.on_callback()
     
     def remove_point(self):
         if self.point is not None:
@@ -1214,6 +1224,12 @@ class ZoomPan():
             
         self.dragging = False
         self.center_line = None
+        self.callback = None
+        self.data_figure = None
+
+    def on_callback(self):
+        if self.callback is not None:
+            self.callback()
 
 
     def on_scroll(self, event):
@@ -1240,6 +1256,7 @@ class ZoomPan():
             else:
                 self.ax.set_xlim(xlim)
             self.ax.figure.canvas.draw()
+            self.on_callback()
 
     def on_press(self, event):
         if event.inaxes != self.ax:
@@ -1257,6 +1274,7 @@ class ZoomPan():
                     else:
                         self.ax.set_xlim(self.data_figure.data_x[0], self.data_figure.data_x[-1])
                         self.ax.figure.canvas.draw()
+                    self.on_callback()
                     return
 
                 self.dragging = True
@@ -1278,6 +1296,7 @@ class ZoomPan():
                         self.ax.set_xlim((self.extents[0], self.extents[1]))
                         self.ax.set_ylim((self.extents[2], self.extents[3]))
                         self.ax.figure.canvas.draw()
+                    self.on_callback()
                     return
 
                 self.dragging = True
@@ -1328,6 +1347,7 @@ class ZoomPan():
                 self.center_line.remove()
                 self.center_line = None
             self.ax.figure.canvas.draw()
+            self.on_callback()
 
             
     def set_active(self, active):
@@ -1627,6 +1647,21 @@ class DataFigure():
     def close_selector(self):
         for selector in self.selector:
             selector.set_active(False)
+
+    def _align_to_grid(self, x, type):
+        # round to center of 2D grid
+        # type='x' for x, type='y' for y
+        if not self.plot_type == '2D':
+            return
+        if not hasattr(self, 'grid_center'):
+            self.grid_center = self.data_x[0] # one of the center of grid, [x_center, y_center]
+            self.step_x = np.abs(self.live_plot.data_generator.x_array[1] - self.live_plot.data_generator.x_array[0])
+            self.step_y = np.abs(self.live_plot.data_generator.y_array[1] - self.live_plot.data_generator.y_array[0])
+
+        if type == 'x':
+            return round((x-self.grid_center[0])/self.step_x)*self.step_x + self.grid_center[0]
+        if type == 'y':
+            return round((x-self.grid_center[1])/self.step_y)*self.step_y + self.grid_center[1]
 
     def save(self, addr='', extra_info=None):
         current_time = time.localtime()
@@ -1939,10 +1974,40 @@ class DataFigure():
                 return self.data_x[valid_index][index_l:index_h], self.data_y[valid_index, 0][index_l:index_h]
 
         elif self.plot_type == '2D':
-            # should return data_x_p as ([x0, x1, ...], [y0, y1, ...])
-            x_array = self.data_x[valid_index][:, 0]
-            y_array = self.data_x[valid_index][:, 1]
-            return (x_array, y_array), self.data_y[valid_index, 0]
+            if self.selector[0].range[0] is None:
+                xl, xh = np.sort(self.fig.axes[0].get_xlim())
+                yl, yh = np.sort(self.fig.axes[0].get_ylim())
+                xl, xh = [self._align_to_grid(v, 'x') for v in (xl, xh)]
+                yl, yh = [self._align_to_grid(v, 'y') for v in (yl, yh)]
+                index_area = np.where(
+                    (self.data_x[valid_index, 0] >= xl) & (self.data_x[valid_index, 0] <= xh) &
+                    (self.data_x[valid_index, 1] >= yl) & (self.data_x[valid_index, 1] <= yh)
+                )[0]
+                if len(index_area)<=min_num:
+                    return (self.data_x[valid_index][:, 0], self.data_x[valid_index][:, 1]), self.data_y[valid_index, 0]
+
+                data_x_p = self.data_x[valid_index][index_area]
+                return (data_x_p[:, 0], data_x_p[:, 1]), self.data_y[valid_index][index_area, 0]
+            else:
+                xl, xh, yl, yh = self.selector[0].range
+                if (xl is None) or (xh is None):
+                    return (self.data_x[valid_index][:, 0], self.data_x[valid_index][:, 1]), self.data_y[valid_index, 0]
+                if (xl - xh)==0:
+                    return (self.data_x[valid_index][:, 0], self.data_x[valid_index][:, 1]), self.data_y[valid_index, 0]
+
+                xl, xh = [self._align_to_grid(v, 'x') for v in (xl, xh)]
+                yl, yh = [self._align_to_grid(v, 'y') for v in (yl, yh)]
+                index_area = np.where(
+                    (self.data_x[valid_index, 0] >= xl) & (self.data_x[valid_index, 0] <= xh) &
+                    (self.data_x[valid_index, 1] >= yl) & (self.data_x[valid_index, 1] <= yh)
+                )[0]
+                if len(index_area)<=min_num:
+                    return (self.data_x[valid_index][:, 0], self.data_x[valid_index][:, 1]), self.data_y[valid_index, 0]
+
+                data_x_p = self.data_x[valid_index][index_area]
+                return (data_x_p[:, 0], data_x_p[:, 1]), self.data_y[valid_index][index_area, 0]
+                # should return data_x_p as ([x0, x1, ...], [y0, y1, ...])
+
        
 
     def _fit_and_draw(self, is_fit, is_display, kwargs):
@@ -2313,6 +2378,15 @@ class DataFigure():
             temp_unit = next_unit
 
         self.transform_back = (lambda x: functools.reduce(lambda a, f: f(a), transforms, x)) if transforms else lambda x: x
+
+
+    def register_selector_callback(self, selector_i, func):
+        # enable GUI passes func as the callback to track selector changes, for realtime update range
+        # call after choose_selector() to reset selector.callback to func
+        if self.selector is None:
+            print('No selector to register callback')
+            return
+        self.selector[selector_i].callback = func
 
 
 

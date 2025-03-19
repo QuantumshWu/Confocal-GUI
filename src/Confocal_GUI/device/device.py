@@ -103,7 +103,8 @@ class TLB6700(BaseLaser, metaclass=SingletonAndCloseMeta):
         self.__tlb_query(f'SOURce:VOLTage:PIEZO {self._piezo:.2f}')
 
 
-class LaserStabilizerCore(BaseLaserStabilizer, metaclass=SingletonAndCloseMeta):
+# need rewrite !!!
+class __LaserStabilizerCore(BaseLaserStabilizer, metaclass=SingletonAndCloseMeta):
     """
     core logic for stabilizer,
     
