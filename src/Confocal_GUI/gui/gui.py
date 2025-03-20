@@ -27,6 +27,9 @@ from PyQt5 import QtCore, QtWidgets, uic
 import Confocal_GUI.live_plot as live_plot_dir
 from Confocal_GUI.live_plot import *
 
+PULSES_INIT_DIR = os.path.dirname(os.path.dirname(live_plot_dir.__file__)) + '/pulses/'
+FIGS_INIT_DIR = os.getcwd()
+
 
 class MplCanvas(FigureCanvasQTAgg):
     """
@@ -119,7 +122,6 @@ class MainWindow(QMainWindow):
         self.ui = ui
         self.overhead_PL = 0.01 # estimated 10ms overhead for single data point
         self.overhead_PLE = 0.5 # estimated 500ms overhead for single data point PLE
-        self.default_folder_pulses = os.path.dirname(os.path.dirname(live_plot_dir.__file__)) + '/pulses/'
         ui_path = os.path.join(os.path.dirname(__file__), self.ui)
         uic.loadUi(ui_path, self)
 
@@ -128,7 +130,6 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(self.init_size.width(), self.init_size.height())
         self.setWindowTitle(f'ConfocalGUI@Wanglab, UOregon' )
         # set size
-
 
         plt.close('all')
         # close all previous figures
@@ -202,8 +203,6 @@ class MainWindow(QMainWindow):
                 # for load file
                 {'name': 'pushButton_start_PLE', 'func': self.start_plot_PLE},
                 {'name': 'pushButton_stop_PLE', 'func': self.stop_plot},
-                {'name': 'pushButton_wavelength', 'func': self.read_xy_PLE},
-                {'name': 'pushButton_range_PLE', 'func': self.read_range_PLE},
                 {'name': 'pushButton_lorent', 'func': self.fit_func_PLE},
                 {'name': 'pushButton_save_PLE', 'func': self.save_PLE},
                 {'name': 'pushButton_unit', 'func': self.change_unit},
@@ -220,9 +219,6 @@ class MainWindow(QMainWindow):
                 {'name': 'pushButton_lorent_PL', 'func': self.fit_func_PL},
                 {'name': 'pushButton_start_PL', 'func': self.start_plot_PL},
                 {'name': 'pushButton_stop_PL', 'func': self.stop_plot},
-                {'name': 'pushButton_XY', 'func': self.read_xy_PL},
-                {'name': 'pushButton_range_PL', 'func': self.read_range_PL},
-                {'name': 'pushButton_scanner', 'func': self.move_scanner},
                 {'name': 'pushButton_save_PL', 'func': self.save_PL},
                 {'name': 'pushButton_load_pulse_PL', 'func': self.choose_pulse},
                 # for PL
@@ -434,26 +430,30 @@ class MainWindow(QMainWindow):
         self.update_stabilizer_step()
 
     def choose_pulse(self):
+        global PULSES_INIT_DIR
         options = QFileDialog.Options()
-        fileName, _ = QFileDialog.getOpenFileName(self,'select',self.default_folder_pulses,'pulse_file (*_pulse.npz)',options=options)
+        fileName, _ = QFileDialog.getOpenFileName(self,'select',PULSES_INIT_DIR,'pulse_file (*_pulse.npz)',options=options)
 
         obj_name = self.sender().objectName()
         attr = 'pulse_' + obj_name.split('_')[-1]
         value = fileName if fileName!='' else None
+        if value is not None:
+            PULSES_INIT_DIR = os.path.dirname(fileName)
         fileName_display = fileName.split('/')[-1][-28:-10] if fileName!='' else 'None' 
         setattr(self, attr, value)
         self.sender().setText(fileName_display)
 
 
     def load_file(self):
+        global FIGS_INIT_DIR
         from Confocal_GUI.live_plot import LoadAcquire
         import glob
         options = QFileDialog.Options()
-        default_folder = os.getcwd()
-        fileName, _ = QFileDialog.getOpenFileName(self, 'select', default_folder, 'data_figure (*.jpg *.npz)', options=options)
+        fileName, _ = QFileDialog.getOpenFileName(self, 'select', FIGS_INIT_DIR, 'data_figure (*.jpg *.npz)', options=options)
 
         if fileName == '':
             return
+        FIGS_INIT_DIR = os.path.dirname(fileName)
         files_all = glob.glob(fileName[:-4] + '*')# includes .jpg, .npz etc.
         files = []
         for file in files_all:
@@ -718,12 +718,15 @@ class MainWindow(QMainWindow):
                     self.checkBox_is_bind.setChecked(False)
                     self.checkBox_is_bind.setDisabled(False)
 
-                # load callback to selector
-                from functools import partial
-                params = 'is_print=False, is_in_callback=True'
-                eval(f'self.data_figure_{self.cur_plot}.register_selector_callback(0, partial(self.read_range_{self.cur_plot}, {params}))')
-                eval(f'self.data_figure_{self.cur_plot}.register_selector_callback(2, partial(self.read_range_{self.cur_plot}, {params}))')
-                eval(f'self.data_figure_{self.cur_plot}.register_selector_callback(1, partial(self.read_xy_{self.cur_plot}, {params}))')
+                if self.cur_plot not in ['PL', 'PLE']:
+                    return
+                else:
+                    # load callback to selector
+                    from functools import partial
+                    params = 'is_print=False, is_in_callback=True'
+                    eval(f'self.data_figure_{self.cur_plot}.register_selector_callback(0, partial(self.read_range_{self.cur_plot}, {params}))')
+                    eval(f'self.data_figure_{self.cur_plot}.register_selector_callback(2, partial(self.read_range_{self.cur_plot}, {params}))')
+                    eval(f'self.data_figure_{self.cur_plot}.register_selector_callback(1, partial(self.read_xy_{self.cur_plot}, {params}))')
     
     def stop_plot(self, clicked=True, select_stop=None):
         self.print_log(f'Plot stopped')
@@ -1118,10 +1121,7 @@ class MainWindow(QMainWindow):
             self.pulse_gui_handle.close()
 
         plt.close('all') # make sure close all plots which avoids error message
-
-            
         event.accept()
-        QtWidgets.QApplication.quit()  # Ensure application exits completely
 
 
 
@@ -1679,6 +1679,8 @@ class PulseGUI(QDialog):
         self.device_handle = device_handle
         self.channel_names_map = [f'Ch{channel}' for channel in range(8)]
         self.drag_container = None
+
+        global PULSES_INIT_DIR
         
         self.layout = QVBoxLayout(self)
         self.widget_button = QWidget()
@@ -1738,7 +1740,6 @@ class PulseGUI(QDialog):
 
         self.load_data()
 
-        self.default_folder = os.path.dirname(os.path.dirname(live_plot_dir.__file__)) + '/pulses/'
 
         self.show()
 
@@ -2179,11 +2180,11 @@ class PulseGUI(QDialog):
             sublayout.addWidget(btn)
 
     def save_to_file(self):
-
+        global PULSES_INIT_DIR
         self.save_data()
 
         options = QFileDialog.Options()
-        fileName, _ = QFileDialog.getSaveFileName(self,'select',self.default_folder,'data_figure (*.npz)',options=options)
+        fileName, _ = QFileDialog.getSaveFileName(self,'select',PULSES_INIT_DIR,'data_figure (*.npz)',options=options)
 
         if fileName == '':
             return
@@ -2194,17 +2195,19 @@ class PulseGUI(QDialog):
         if '_pulse' in fileName:
             fileName = fileName[:-6]
 
+        PULSES_INIT_DIR = os.path.dirname(fileName)
         self.device_handle.save_to_file(addr = fileName)
 
     def load_from_file(self):
+        global PULSES_INIT_DIR
         options = QFileDialog.Options()
-        fileName, _ = QFileDialog.getOpenFileName(self,'select',self.default_folder,'data_figure (*.npz)',options=options)
+        fileName, _ = QFileDialog.getOpenFileName(self,'select',PULSES_INIT_DIR,'data_figure (*.npz)',options=options)
 
         if fileName == '':
             return
 
+        PULSES_INIT_DIR = os.path.dirname(fileName)
         self.device_handle.load_from_file(addr = fileName[:-4]+'*')
-
         self.load_data(is_read_tmp=False)
 
     def replace_channel_names(self, text, channel):
@@ -2278,6 +2281,7 @@ GUI_Pulse.__doc__ = PulseGUI.__doc__
 
 
 def GUI_Load():
+    global FIGS_INIT_DIR
     if hasattr(QtCore.Qt, 'AA_EnableHighDpiScaling'):
         QtWidgets.QApplication.setAttribute(QtCore.Qt.AA_EnableHighDpiScaling, True)
     if hasattr(QtCore.Qt, 'AA_UseHighDpiPixmaps'):
@@ -2290,9 +2294,10 @@ def GUI_Load():
 
     app.setStyle('Windows')
 
-    default_folder = os.getcwd()
-    address, _ = QtWidgets.QFileDialog.getOpenFileName(
-        None, "Select Data File", default_folder, "Data Files (*.npz *.jpg);;All Files (*)"
+    fileName, _ = QtWidgets.QFileDialog.getOpenFileName(
+        None, "Select Data File", FIGS_INIT_DIR, "Data Files (*.npz *.jpg);;All Files (*)"
     )
+    if fileName is not '':
+        FIGS_INIT_DIR = os.path.dirname(fileName)
     
-    return address
+    return fileName

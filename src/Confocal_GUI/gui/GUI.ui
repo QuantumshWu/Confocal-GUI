@@ -69,7 +69,7 @@
      <widget class="QCheckBox" name="checkBox_is_bind">
       <property name="geometry">
        <rect>
-        <x>440</x>
+        <x>350</x>
         <y>760</y>
         <width>171</width>
         <height>31</height>
@@ -82,7 +82,7 @@
        </font>
       </property>
       <property name="text">
-       <string>Bind set to Scanner</string>
+       <string>Apply</string>
       </property>
      </widget>
      <widget class="QLabel" name="label_5">
@@ -113,7 +113,7 @@
       </property>
       <property name="geometry">
        <rect>
-        <x>10</x>
+        <x>90</x>
         <y>680</y>
         <width>421</width>
         <height>31</height>
@@ -282,26 +282,6 @@
        <double>0.000000000000000</double>
       </property>
      </widget>
-     <widget class="QPushButton" name="pushButton_scanner">
-      <property name="geometry">
-       <rect>
-        <x>340</x>
-        <y>720</y>
-        <width>91</width>
-        <height>71</height>
-       </rect>
-      </property>
-      <property name="font">
-       <font>
-        <family>Arial</family>
-        <pointsize>12</pointsize>
-       </font>
-      </property>
-      <property name="text">
-       <string>Move 
-to set X, Y</string>
-      </property>
-     </widget>
      <widget class="QLabel" name="label_6">
       <property name="geometry">
        <rect>
@@ -344,47 +324,6 @@ to set X, Y</string>
       </property>
       <property name="alignment">
        <set>Qt::AlignCenter</set>
-      </property>
-     </widget>
-     <widget class="QPushButton" name="pushButton_XY">
-      <property name="geometry">
-       <rect>
-        <x>10</x>
-        <y>720</y>
-        <width>71</width>
-        <height>71</height>
-       </rect>
-      </property>
-      <property name="font">
-       <font>
-        <family>Arial</family>
-        <pointsize>12</pointsize>
-       </font>
-      </property>
-      <property name="text">
-       <string>Read 
- X, Y</string>
-      </property>
-     </widget>
-     <widget class="QPushButton" name="pushButton_range_PL">
-      <property name="geometry">
-       <rect>
-        <x>10</x>
-        <y>600</y>
-        <width>71</width>
-        <height>71</height>
-       </rect>
-      </property>
-      <property name="font">
-       <font>
-        <family>Arial</family>
-        <pointsize>12</pointsize>
-       </font>
-      </property>
-      <property name="text">
-       <string>Read 
-X, Y 
-range</string>
       </property>
      </widget>
      <widget class="QPushButton" name="pushButton_load">
@@ -1149,26 +1088,6 @@ range</string>
        <double>-10.000000000000000</double>
       </property>
      </widget>
-     <widget class="QPushButton" name="pushButton_wavelength">
-      <property name="geometry">
-       <rect>
-        <x>630</x>
-        <y>680</y>
-        <width>101</width>
-        <height>71</height>
-       </rect>
-      </property>
-      <property name="font">
-       <font>
-        <family>Arial</family>
-        <pointsize>12</pointsize>
-       </font>
-      </property>
-      <property name="text">
-       <string>Read 
-wavelength</string>
-      </property>
-     </widget>
      <widget class="QDoubleSpinBox" name="doubleSpinBox_wl">
       <property name="geometry">
        <rect>
@@ -1923,26 +1842,6 @@ wavelength</string>
         <family>Arial</family>
         <pointsize>12</pointsize>
        </font>
-      </property>
-     </widget>
-     <widget class="QPushButton" name="pushButton_range_PLE">
-      <property name="geometry">
-       <rect>
-        <x>630</x>
-        <y>560</y>
-        <width>81</width>
-        <height>71</height>
-       </rect>
-      </property>
-      <property name="font">
-       <font>
-        <family>Arial</family>
-        <pointsize>12</pointsize>
-       </font>
-      </property>
-      <property name="text">
-       <string>Read 
-range</string>
       </property>
      </widget>
      <widget class="QLineEdit" name="lineEdit_step_PLE">

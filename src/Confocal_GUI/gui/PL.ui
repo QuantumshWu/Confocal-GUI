@@ -142,7 +142,7 @@
    <widget class="QCheckBox" name="checkBox_is_bind">
     <property name="geometry">
      <rect>
-      <x>440</x>
+      <x>350</x>
       <y>760</y>
       <width>171</width>
       <height>31</height>
@@ -155,27 +155,7 @@
      </font>
     </property>
     <property name="text">
-     <string>Bind set to Scanner</string>
-    </property>
-   </widget>
-   <widget class="QPushButton" name="pushButton_scanner">
-    <property name="geometry">
-     <rect>
-      <x>340</x>
-      <y>720</y>
-      <width>91</width>
-      <height>71</height>
-     </rect>
-    </property>
-    <property name="font">
-     <font>
-      <family>Arial</family>
-      <pointsize>12</pointsize>
-     </font>
-    </property>
-    <property name="text">
-     <string>Move 
-to set X, Y</string>
+     <string>Apply</string>
     </property>
    </widget>
    <widget class="QWidget" name="widget_figure_PL_outer" native="true">
@@ -734,26 +714,6 @@ to set X, Y</string>
      <bool>true</bool>
     </property>
    </widget>
-   <widget class="QPushButton" name="pushButton_XY">
-    <property name="geometry">
-     <rect>
-      <x>10</x>
-      <y>720</y>
-      <width>71</width>
-      <height>71</height>
-     </rect>
-    </property>
-    <property name="font">
-     <font>
-      <family>Arial</family>
-      <pointsize>12</pointsize>
-     </font>
-    </property>
-    <property name="text">
-     <string>Read 
- X, Y</string>
-    </property>
-   </widget>
    <widget class="QDoubleSpinBox" name="doubleSpinBox_Y">
     <property name="geometry">
      <rect>
@@ -949,27 +909,6 @@ to set X, Y</string>
     </property>
     <property name="value">
      <double>1.000000000000000</double>
-    </property>
-   </widget>
-   <widget class="QPushButton" name="pushButton_range_PL">
-    <property name="geometry">
-     <rect>
-      <x>10</x>
-      <y>600</y>
-      <width>71</width>
-      <height>71</height>
-     </rect>
-    </property>
-    <property name="font">
-     <font>
-      <family>Arial</family>
-      <pointsize>12</pointsize>
-     </font>
-    </property>
-    <property name="text">
-     <string>Read 
-X, Y 
-range</string>
     </property>
    </widget>
    <widget class="QLineEdit" name="lineEdit_time_PL">
@@ -1705,6 +1644,28 @@ range</string>
     </property>
     <property name="currentText">
      <string/>
+    </property>
+   </widget>
+   <widget class="QCheckBox" name="checkBox_is_auto">
+    <property name="geometry">
+     <rect>
+      <x>10</x>
+      <y>10</y>
+      <width>171</width>
+      <height>31</height>
+     </rect>
+    </property>
+    <property name="font">
+     <font>
+      <family>Arial</family>
+      <pointsize>12</pointsize>
+     </font>
+    </property>
+    <property name="text">
+     <string>Auto read range</string>
+    </property>
+    <property name="checked">
+     <bool>true</bool>
     </property>
    </widget>
   </widget>

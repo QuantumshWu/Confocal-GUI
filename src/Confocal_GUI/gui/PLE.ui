@@ -36,26 +36,6 @@
      <bool>false</bool>
     </property>
    </widget>
-   <widget class="QPushButton" name="pushButton_wavelength">
-    <property name="geometry">
-     <rect>
-      <x>10</x>
-      <y>680</y>
-      <width>101</width>
-      <height>71</height>
-     </rect>
-    </property>
-    <property name="font">
-     <font>
-      <family>Arial</family>
-      <pointsize>12</pointsize>
-     </font>
-    </property>
-    <property name="text">
-     <string>Read 
-wavelength</string>
-    </property>
-   </widget>
    <widget class="QComboBox" name="comboBox_device_gui">
     <property name="enabled">
      <bool>true</bool>
@@ -983,26 +963,6 @@ wavelength</string>
     <zorder>pushButton_stop_PLE</zorder>
     <zorder>widget_figure_PLE</zorder>
    </widget>
-   <widget class="QPushButton" name="pushButton_range_PLE">
-    <property name="geometry">
-     <rect>
-      <x>10</x>
-      <y>560</y>
-      <width>81</width>
-      <height>71</height>
-     </rect>
-    </property>
-    <property name="font">
-     <font>
-      <family>Arial</family>
-      <pointsize>12</pointsize>
-     </font>
-    </property>
-    <property name="text">
-     <string>Read 
-range</string>
-    </property>
-   </widget>
    <widget class="QLineEdit" name="lineEdit_print">
     <property name="geometry">
      <rect>
@@ -1523,6 +1483,28 @@ range</string>
     </property>
     <property name="text">
      <string>is finite</string>
+    </property>
+   </widget>
+   <widget class="QCheckBox" name="checkBox_is_auto">
+    <property name="geometry">
+     <rect>
+      <x>10</x>
+      <y>10</y>
+      <width>171</width>
+      <height>31</height>
+     </rect>
+    </property>
+    <property name="font">
+     <font>
+      <family>Arial</family>
+      <pointsize>12</pointsize>
+     </font>
+    </property>
+    <property name="text">
+     <string>Auto read range</string>
+    </property>
+    <property name="checked">
+     <bool>true</bool>
     </property>
    </widget>
   </widget>
