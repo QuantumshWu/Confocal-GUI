@@ -2297,7 +2297,7 @@ def GUI_Load():
     fileName, _ = QtWidgets.QFileDialog.getOpenFileName(
         None, "Select Data File", FIGS_INIT_DIR, "Data Files (*.npz *.jpg);;All Files (*)"
     )
-    if fileName is not '':
+    if fileName != '':
         FIGS_INIT_DIR = os.path.dirname(fileName)
     
     return fileName
