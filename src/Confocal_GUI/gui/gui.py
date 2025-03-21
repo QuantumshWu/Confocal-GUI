@@ -881,11 +881,6 @@ class MainWindow(QMainWindow):
         self.measurement_PL.load_params(x_array=x_array, y_array=y_array, exposure=self.exposure_PL, repeat=self.repeat_PL,\
             counter_mode=self.counter_mode_PL, update_mode=self.update_mode_PL, pulse_file=self.pulse_PL,
             data_mode=self.data_mode_PL, relim_mode=self.relim_PL)
-                
-
-        if self.findChild(QCheckBox, 'checkBox_is_stabilizer') is not None:
-            self.checkBox_is_stabilizer.setDisabled(True)
-            self.doubleSpinBox_wavelength.setDisabled(True)
 
         self.checkBox_is_bind.setChecked(False)
         self.checkBox_is_bind.setDisabled(True)

@@ -718,7 +718,7 @@ class ModeSearchMeasurement(BaseMeasurement):
 def mode_search(siv_center, siv_pos, is_recenter=True, is_adaptive=True, frequency_array=None, exposure=0.05
     , counter_mode='apd_pg', save_addr = 'mode_search/'
     , threshold_in_sigma=1.5, ref_x=None, ref_gap=100, ref_exposure=10, max_exposure=1,
-    recenter_gap=600, R=8.5, red_bias_relative_center=None, 
+    recenter_gap=600, R=8.5, red_bias_relative_center='+', 
     pl_range=10, pl_step=2, pl_exposure=0.5, 
     ple_range=0.002, ple_step=0.00005, ple_exposure=0.5):
     """
@@ -732,7 +732,7 @@ def mode_search(siv_center, siv_pos, is_recenter=True, is_adaptive=True, frequen
             , exposure=0.05
             ,  counter_mode='apd_pg', save_addr = 'mode_search/'
             , threshold_in_sigma=1.5, ref_x=None, ref_gap=100, ref_exposure=10, max_exposure=1,
-            recenter_gap=600, R=8.5, red_bias_relative_center=None, 
+            recenter_gap=600, R=8.5, red_bias_relative_center='+', 
             pl_range=10, pl_step=2, pl_exposure=0.5, 
             ple_range=0.002, ple_step=0.00005, ple_exposure=0.5)
 
@@ -770,10 +770,12 @@ def mode_search(siv_center, siv_pos, is_recenter=True, is_adaptive=True, frequen
             if np.isnan(data_figure.data_y).any():
                 break
             # means keyboardInterrupt inside PLE
-            if red_bias_relative_center is None:
+            if red_bias_relative_center is '+':
                 red_bias = spl/(spl/siv_center + np.mean(frequency_array)/1e9)
+            elif red_bias_relative_center is '-':
+                red_bias = spl/(spl/siv_center - np.mean(frequency_array)/1e9)
             else:
-                red_bias = spl/(spl/siv_center + red_bias_relative_center)
+                red_bias = spl/(spl/siv_center + red_bias_relative_center/1e9)
             print('Red biased at', red_bias)
             fig, data_figure = mode_search_core(data_x=frequency_array[points_every_cycle*i:points_every_cycle*i+points_before_recenter], 
                                     exposure=exposure,
@@ -790,10 +792,12 @@ def mode_search(siv_center, siv_pos, is_recenter=True, is_adaptive=True, frequen
     else:
         scanner.x = siv_pos[0]
         scanner.y = siv_pos[1]
-        if red_bias_relative_center is None:
+        if red_bias_relative_center is '+':
             red_bias = spl/(spl/siv_center + np.mean(frequency_array)/1e9)
+        elif red_bias_relative_center is '-':
+            red_bias = spl/(spl/siv_center - np.mean(frequency_array)/1e9)
         else:
-            red_bias = spl/(spl/siv_center + red_bias_relative_center)
+            red_bias = spl/(spl/siv_center + red_bias_relative_center/1e9)
 
         fig, data_figure = mode_search_core(data_x=frequency_array, 
                                 exposure=exposure,

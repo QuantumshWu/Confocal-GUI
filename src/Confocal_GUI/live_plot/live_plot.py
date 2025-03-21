@@ -2353,15 +2353,15 @@ class DataFigure():
             return
 
         new_unit, conversion_func = self.conversion_map[self.unit]
-        self._update_unit(conversion_func)
 
         ax = self.fig.axes[0]
         old_xlabel = ax.get_xlabel()
         new_xlabel = re.sub(r'\((.+)\)$', f'({new_unit})', old_xlabel)
         self.fig.axes[0].set_xlabel(new_xlabel)
-
         self.unit = new_unit
         self._update_transform_back()
+        self._update_unit(conversion_func)
+        # update selector after transform_back to avoid wrong unit read with callback
         self.fig.canvas.draw()
 
     def _update_transform_back(self):
