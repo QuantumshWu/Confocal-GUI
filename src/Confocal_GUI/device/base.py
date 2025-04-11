@@ -492,6 +492,8 @@ class BaseCounterNI(BaseCounter):
         elif self.counter_mode == 'analog':
             self.task_counter_ai.start()
 
+            data_main = 0
+            data_ref = 0
             read_sample_num = self.sample_num
             self.reader_analog.read_many_sample(self.counts_array, 
                 number_of_samples_per_channel = read_sample_num, timeout=5*self.exposure
