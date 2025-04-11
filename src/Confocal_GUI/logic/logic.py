@@ -770,9 +770,9 @@ def mode_search(siv_center, siv_pos, is_recenter=True, is_adaptive=True, frequen
             if np.isnan(data_figure.data_y).any():
                 break
             # means keyboardInterrupt inside PLE
-            if red_bias_relative_center is '+':
+            if red_bias_relative_center == '+':
                 red_bias = spl/(spl/siv_center + np.mean(frequency_array)/1e9)
-            elif red_bias_relative_center is '-':
+            elif red_bias_relative_center == '-':
                 red_bias = spl/(spl/siv_center - np.mean(frequency_array)/1e9)
             else:
                 red_bias = spl/(spl/siv_center + red_bias_relative_center/1e9)
@@ -792,9 +792,9 @@ def mode_search(siv_center, siv_pos, is_recenter=True, is_adaptive=True, frequen
     else:
         scanner.x = siv_pos[0]
         scanner.y = siv_pos[1]
-        if red_bias_relative_center is '+':
+        if red_bias_relative_center == '+':
             red_bias = spl/(spl/siv_center + np.mean(frequency_array)/1e9)
-        elif red_bias_relative_center is '-':
+        elif red_bias_relative_center == '-':
             red_bias = spl/(spl/siv_center - np.mean(frequency_array)/1e9)
         else:
             red_bias = spl/(spl/siv_center + red_bias_relative_center/1e9)

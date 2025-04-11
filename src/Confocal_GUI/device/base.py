@@ -331,14 +331,12 @@ class BaseCounterNI(BaseCounter):
 
         elif self.counter_mode == 'analog':
             self.clock = 500e3 # sampling rate for analog input, should be fast enough to capture gate signal for postprocessing
-            self.buffer_size = int(1e6)
             self.sample_num = int(round(self.clock*exposure))
-            self.task_counter_ai.timing.cfg_samp_clk_timing(self.clock, sample_mode=self.nidaqmx.constants.AcquisitionType.CONTINUOUS
-                , samps_per_chan=self.buffer_size)
+            self.task_counter_ai.timing.cfg_samp_clk_timing(self.clock, sample_mode=self.nidaqmx.constants.AcquisitionType.FINITE
+                , samps_per_chan=sample_num)
             self.exposure = exposure
             self.counts_array = np.zeros((3, self.sample_num), dtype=np.float64)
             self.reader_analog = self.nidaqmx.stream_readers.AnalogMultiChannelReader(self.task_counter_ai.in_stream)
-            self.task_counter_ai.start()
         else:
             print(f'Can only be one of the {self.valid_counter_mode}')
 
@@ -492,36 +490,30 @@ class BaseCounterNI(BaseCounter):
             data_ref = float(self.counts_ref_array[-1] - data_ref_0)
 
         elif self.counter_mode == 'analog':
-            total_sample = self.task_counter_ai.in_stream.total_samp_per_chan_acquired
-            self.task_counter_ai.in_stream.offset = total_sample
-            # update read pos accrodingly to keep reading most recent self.sample_num+1 samples
+            self.task_counter_ai.start()
 
-            sample_remain = self.sample_num
-            data_main = 0
-            data_ref = 0
-            while sample_remain>0:
-                read_sample_num = np.min([self.buffer_size, sample_remain])
-                self.reader_analog.read_many_sample(self.data_buffer, 
-                    number_of_samples_per_channel = read_sample_num, timeout=5*self.exposure
-                )
+            read_sample_num = self.sample_num
+            self.reader_analog.read_many_sample(self.counts_array, 
+                number_of_samples_per_channel = read_sample_num, timeout=5*self.exposure
+            )
 
-                data = self.counts_array[0, :]
-                gate1 = self.counts_array[1, :]
-                gate2 = self.counts_array[2, :]
-                threshold = 2.7
+            data = self.counts_array[0, :]
+            gate1 = self.counts_array[1, :]
+            gate2 = self.counts_array[2, :]
+            threshold = 2.7
 
-                gate1_index = np.where(gate1 > threshold)[0]
-                gate2_index = np.where(gate2 > threshold)[0]
+            gate1_index = np.where(gate1 > threshold)[0]
+            gate2_index = np.where(gate2 > threshold)[0]
 
-                data_main += float(np.sum(data[gate1_index]))
-                data_ref += float(np.sum(data[gate2_index]))
-                # seems better than np.sum()/np.sum(), don't know why?
-                # may due to finite sampling rate than they have different array length
-                sample_remain -= read_sample_num
+            data_main += float(np.sum(data[gate1_index]))
+            data_ref += float(np.sum(data[gate2_index]))
+            # seems better than np.sum()/np.sum(), don't know why?
+            # may due to finite sampling rate than they have different array length
 
             data_main = data_main/self.sample_num
             data_ref = data_ref/self.sample_num
 
+            self.task_counter_ai.stop()
         else:
             print(f'can only be one of the {self.valid_counter_mode}')
 

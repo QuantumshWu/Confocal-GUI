@@ -83,10 +83,10 @@ class USB6346(BaseCounterNI, BaseScanner, metaclass=SingletonAndCloseMeta):
     def __init__(self, port_config=None):
 
         if port_config is None:
-            port_config = {'analog_signal':'ai0', 'analog_gate':'ai1', 'analog_gate_ref':'ai2',\
-                           'apd_signal':'PFI3', 'apd_gate':'PFI4', 'apd_gate_ref':'PFI5'}
+            port_config = {'analog_signal':'/Dev1/ai0', 'analog_gate':'/Dev1/ai1', 'analog_gate_ref':'/Dev1/ai2',\
+                           'apd_signal':'/Dev1/PFI3', 'apd_gate':'/Dev1/PFI4', 'apd_gate_ref':'/Dev1/PFI5'}
         super().__init__(port_config=port_config)
-        self.valid_counter_mode = ['apd', 'apd_pg']
+        self.valid_counter_mode = ['analog', 'apd', 'apd_pg']
         self.valid_data_mode = ['single', 'ref_div', 'ref_sub', 'dual']
     
 
