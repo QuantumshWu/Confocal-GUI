@@ -333,7 +333,7 @@ class BaseCounterNI(BaseCounter):
             self.clock = 500e3 # sampling rate for analog input, should be fast enough to capture gate signal for postprocessing
             self.sample_num = int(round(self.clock*exposure))
             self.task_counter_ai.timing.cfg_samp_clk_timing(self.clock, sample_mode=self.nidaqmx.constants.AcquisitionType.FINITE
-                , samps_per_chan=sample_num)
+                , samps_per_chan=self.sample_num)
             self.exposure = exposure
             self.counts_array = np.zeros((3, self.sample_num), dtype=np.float64)
             self.reader_analog = self.nidaqmx.stream_readers.AnalogMultiChannelReader(self.task_counter_ai.in_stream)
