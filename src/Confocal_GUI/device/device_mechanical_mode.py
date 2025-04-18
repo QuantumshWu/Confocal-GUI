@@ -135,12 +135,11 @@ class LaserStabilizerDLCpro(BaseLaserStabilizer, metaclass=SingletonAndCloseMeta
         v_diff = self.P*freq_diff/self.ratio 
         v_0 = self.laser.piezo
         if (v_0+v_diff)<self.v_min or (v_0+v_diff)>self.v_max:
-            
             pass
         else:
             self.laser.piezo = v_0+v_diff
 
-        time.sleep(0.2)# wait for piezo stable and measurement converge
+        time.sleep(0.05)# wait for piezo stable and measurement converge
         return
 
 
