@@ -29,7 +29,7 @@ class DLCpro(BaseLaser, metaclass=SingletonAndCloseMeta):
     # return or set piezo voltage
         
     """     
-    def __init__(self, ip=None):
+    def __init__(self, ip=None, piezo_min=None, piezo_max=None):
 
         from toptica.lasersdk.dlcpro.v2_2_0 import DLCpro, NetworkConnection        
         if ip is None:
@@ -42,8 +42,8 @@ class DLCpro(BaseLaser, metaclass=SingletonAndCloseMeta):
 
         self._wavelength = None
         self._piezo = self.dlc.laser1.dl.pc.voltage_set.get()
-        self.piezo_min = 60-25
-        self.piezo_max = 60+25
+        self.piezo_min = 60-25 if piezo_min is None else piezo_min
+        self.piezo_max = 60+25 if piezo_max is None else piezo_max
         # piezo range where DLCpro is mode-hop free
 
     def gui(self):
@@ -96,7 +96,7 @@ class LaserStabilizerDLCpro(BaseLaserStabilizer, metaclass=SingletonAndCloseMeta
     .ratio = -0.85GHz/V defines the ratio for feedback
     """
     
-    def __init__(self):
+    def __init__(self, wavelength_lb=None, wavelength_ub=None):
         super().__init__()
         self.ratio = 0.54 # +1V piezo -> +0.54GHz freq
         self.laser = config_instances.get('laser')
@@ -107,8 +107,8 @@ class LaserStabilizerDLCpro(BaseLaserStabilizer, metaclass=SingletonAndCloseMeta
         self.freq_thre = 0.025 #25MHz threshold defines when to return is_ready
         self.P = 0.8 #scaling factor of PID control
         # leaves about 10% extra space
-        self.wavelength_lb = 737.10
-        self.wavelength_ub = 737.125
+        self.wavelength_lb = 737.10 if wavelength_lb is None else wavelength_lb
+        self.wavelength_ub = 737.125 if wavelength_ub is None else wavelength_ub
 
     def gui(self):
         """
