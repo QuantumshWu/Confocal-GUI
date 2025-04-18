@@ -121,11 +121,19 @@ class LaserStabilizerDLCpro(BaseLaserStabilizer, metaclass=SingletonAndCloseMeta
     def _stabilizer_core(self):
         
         freq_desired = self.spl/self.wavelength
-        wave_cache = self.wavemeter.wavelength
+        while(1):
+            wave_cache = self.wavemeter.wavelength #wait
+            if wave_cache != 0:
+                break
+            else:
+                time.sleep(0.1)
         freq_diff_guess = freq_desired - self.spl/wave_cache#freq_desired - self.freq_recent
+        if np.abs(freq_diff) <= self.freq_thre:
+            self.is_ready = True
+        else:
+            self.is_ready = False
         v_diff = self.P*freq_diff_guess/self.ratio 
         v_0 = self.laser.piezo
-        #print(f'read wave {wave_cache}')
         if (v_0+v_diff)<self.v_min or (v_0+v_diff)>self.v_max:
             
             pass
@@ -133,12 +141,6 @@ class LaserStabilizerDLCpro(BaseLaserStabilizer, metaclass=SingletonAndCloseMeta
             self.laser.piezo = v_0+v_diff
 
         time.sleep(0.2)# wait for piezo stable and measurement converge
-        freq_actual = self.spl/self.wavemeter.wavelength #wait
-        freq_diff = freq_desired - freq_actual
-        if np.abs(freq_diff) <= self.freq_thre:
-            self.is_ready = True
-        else:
-            self.is_ready = False
         return
 
 

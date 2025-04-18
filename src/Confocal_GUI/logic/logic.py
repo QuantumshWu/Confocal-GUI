@@ -714,6 +714,18 @@ class ModeSearchMeasurement(BaseMeasurement):
             data_figure = DataFigure(live_plot=liveplot)
             return fig, data_figure
 
+def mode_search_estimator(sideband_bg_rate=200, sideband_height_rate=200, exposure=0.05, threshold_in_sigma=2, max_exposure=1):
+    # return the probability that real signal beyond threshold_in_sigma
+    # and also the sigma at max_exposure
+    from scipy.stats import poisson
+    k = sideband_bg_rate*exposure + threshold_in_sigma*np.sqrt(sideband_bg_rate*exposure)
+    mu = (sideband_bg_rate+sideband_height_rate)*exposure
+    p_signal = poisson.sf(k=k, mu=mu)
+    sigma_max = sideband_height_rate*max_exposure/np.sqrt(sideband_bg_rate*max_exposure)
+    print(f'Probability that real signal larger than detection threshold is {p_signal:.2f}, and sigma at max exposure is {sigma_max:.2f}.')
+
+
+
 
 def mode_search(siv_center, siv_pos, is_recenter=True, is_adaptive=True, frequency_array=None, exposure=0.05
     , counter_mode='apd_pg', save_addr = 'mode_search/'
