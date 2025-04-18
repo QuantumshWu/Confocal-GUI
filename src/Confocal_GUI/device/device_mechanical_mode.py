@@ -127,12 +127,12 @@ class LaserStabilizerDLCpro(BaseLaserStabilizer, metaclass=SingletonAndCloseMeta
                 break
             else:
                 time.sleep(0.1)
-        freq_diff_guess = freq_desired - self.spl/wave_cache#freq_desired - self.freq_recent
+        freq_diff = freq_desired - self.spl/wave_cache#freq_desired - self.freq_recent
         if np.abs(freq_diff) <= self.freq_thre:
             self.is_ready = True
         else:
             self.is_ready = False
-        v_diff = self.P*freq_diff_guess/self.ratio 
+        v_diff = self.P*freq_diff/self.ratio 
         v_0 = self.laser.piezo
         if (v_0+v_diff)<self.v_min or (v_0+v_diff)>self.v_max:
             
