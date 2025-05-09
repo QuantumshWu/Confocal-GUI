@@ -338,7 +338,7 @@ class ODMRMeasurement(BaseMeasurement):
         self.rf = self.config_instances.get('rf', None)
         self.scanner = self.config_instances.get('scanner', None)
         # init assignment
-        if (self.counter is None) or (self.rf is None):
+        if (self.counter is None):
             raise KeyError('Missing devices in config_instances')
 
 
@@ -572,7 +572,7 @@ class ModeSearchMeasurement(BaseMeasurement):
             counts = self.counter.read_counts(self.exposure, parent = self, counter_mode=self.counter_mode, data_mode=self.data_mode)[0]
             exposure = self.exposure
             ref_counts_norm = self.recent_ref*exposure/(self.ref_exposure_repeat*self.exposure)
-            while (((counts -  ref_counts_norm) > self.threshold_in_sigma*np.sqrt(ref_counts_norm)) 
+            while (((counts -  ref_counts_norm)*self.mode_dir > self.threshold_in_sigma*np.sqrt(ref_counts_norm)) 
                 and exposure<=(self.max_exposure_repeat*self.exposure)
             ):
                 counts += self.counter.read_counts(self.exposure, parent = self, counter_mode=self.counter_mode, data_mode=self.data_mode)[0]
@@ -603,11 +603,11 @@ class ModeSearchMeasurement(BaseMeasurement):
 
     def device_to_state(self, frequency):
         # move device state to x from data_x
-        self.rf_1550.frequency = frequency
+        self.rf.frequency = frequency
 
     def to_initial_state(self):
         # move device/data state to initial state before measurement
-        self.rf_1550.on = True
+        self.rf.on = True
         self.laser_stabilizer.on = True
         self.laser_stabilizer.wavelength = self.wavelength
         while self.is_running:
@@ -618,17 +618,17 @@ class ModeSearchMeasurement(BaseMeasurement):
     def to_final_state(self):
         # move device/data state to final state after measurement
         self.laser_stabilizer.on = False
-        self.rf_1550.on = False
+        self.rf.on = False
 
     def read_x(self):
-        return self.rf_1550.frequency
+        return self.rf.frequency
 
     def load_config(self):
         # only assign once measurement is created
         self.x_name = 'Frequency'
         self.x_unit = 'Hz'
         self.measurement_name = 'Mode'
-        self.x_device_name = 'rf_1550'
+        self.x_device_name = 'rf'
         # defines the label name used in GUI
         self.plot_type = '1D'
         self.fit_func = 'lorent'
@@ -638,16 +638,15 @@ class ModeSearchMeasurement(BaseMeasurement):
         self.wavemeter = self.config_instances.get('wavemeter', None)
         self.laser_stabilizer = self.config_instances.get('laser_stabilizer', None)
         self.scanner = self.config_instances.get('scanner', None)
-        self.rf_1550 = self.config_instances.get('rf_1550', None)
         # init assignment
-        if (self.counter is None) or (self.wavemeter is None) or (self.laser_stabilizer is None) or (self.rf_1550 is None):
+        if (self.counter is None) or (self.wavemeter is None) or (self.laser_stabilizer is None):
             raise KeyError('Missing devices in config_instances')
 
 
     def _load_params(self, data_x=None, exposure=0.01, wavelength=737.1, repeat=1, is_GUI=False,
         counter_mode='apd_pg', data_mode='single', relim_mode='tight', update_mode='adaptive', pulse_file=None,
         is_plot=True, threshold_in_sigma=3, ref_x=None,
-        ref_gap=10, ref_exposure=1, max_exposure=1):
+        ref_gap=10, ref_exposure=1, max_exposure=1, rf='rf_1550', mode_type='peak'):
         """
         mode_search_core
 
@@ -660,7 +659,7 @@ class ModeSearchMeasurement(BaseMeasurement):
                                 wavelength=737.1, repeat=1, is_GUI=False,
                                 counter_mode='apd_pg', data_mode='single', relim_mode='tight', update_mode='adaptive',
                                 pulse_file=None,
-                                threshold_in_sigma=3,  ref_x=None, ref_gap=10, ref_exposure=1, max_exposure=1)
+                                threshold_in_sigma=3,  ref_x=None, ref_gap=10, ref_exposure=1, max_exposure=1, rf='rf_1550', mode_type='peak')
 
         every ref_gap secs will collect ref for ref_exposure secs and then calculate signal in sigmas from average, if above
         threshold_in_sigma will repeat read_counts until below or longer than max_exposure
@@ -683,6 +682,14 @@ class ModeSearchMeasurement(BaseMeasurement):
             self.ref_x = self.data_x[0]
         else:
             self.ref_x = ref_x
+        self.mode_type = mode_type
+        if self.mode_type == 'peak':
+            self.mode_dir = 1
+        elif self.mode_type == 'dip':
+            self.mode_dir = -1
+        else:
+            raise KeyError('Mode type must be dip or peak')
+        self.rf = self.config_instances.get(rf, 'rf_1550')
         self.info.update({'measurement_name':self.measurement_name, 'plot_type':self.plot_type, 'exposure':self.exposure
                 , 'repeat':self.repeat, 'scanner':(None if self.scanner is None else (self.scanner.x, self.scanner.y))})
         if update_mode not in self.valid_update_mode:
@@ -732,9 +739,14 @@ def mode_search(siv_center, siv_pos, is_recenter=True, is_adaptive=True, frequen
     , threshold_in_sigma=1.5, ref_x=None, ref_gap=100, ref_exposure=10, max_exposure=1,
     recenter_gap=600, R=8.5, red_bias_relative_center='+', 
     pl_range=10, pl_step=2, pl_exposure=0.5, 
-    ple_range=0.002, ple_step=0.00005, ple_exposure=0.5):
+    ple_range=0.002, ple_step=0.00005, ple_exposure=0.5, mode_type='peak', rf='rf_1550'):
     """
     mode_search
+
+    when mode_type='dip' is the algorithm to find cpt dip for a lambda-system where SiV interacting with phonons
+    with carrier at SiV transition ZPL and sideband at phonon sideband omega_m away from ZPL.
+    photon_at_sideband +/- phonon = ZPL = photon_at_carrier.
+    Here use photon_at_sideband + phonon = ZPL = photon_at_carrier, which is red_bias_relative_center='+'.
 
     args:
 
@@ -746,7 +758,7 @@ def mode_search(siv_center, siv_pos, is_recenter=True, is_adaptive=True, frequen
             , threshold_in_sigma=1.5, ref_x=None, ref_gap=100, ref_exposure=10, max_exposure=1,
             recenter_gap=600, R=8.5, red_bias_relative_center='+', 
             pl_range=10, pl_step=2, pl_exposure=0.5, 
-            ple_range=0.002, ple_step=0.00005, ple_exposure=0.5)
+            ple_range=0.002, ple_step=0.00005, ple_exposure=0.5, mode_type='peak', rf='rf_1550')
 
     """
     from Confocal_GUI.device import config_instances
@@ -795,7 +807,7 @@ def mode_search(siv_center, siv_pos, is_recenter=True, is_adaptive=True, frequen
                                     counter_mode=counter_mode, data_mode='single', relim_mode='tight',
                                     update_mode='adaptive' if is_adaptive is True else 'normal',
                                     threshold_in_sigma=threshold_in_sigma, ref_x=ref_x, 
-                                    ref_gap=ref_gap, ref_exposure=ref_exposure, max_exposure=max_exposure)
+                                    ref_gap=ref_gap, ref_exposure=ref_exposure, max_exposure=max_exposure, rf=rf, mode_type=mode_type)
             if save_addr is not None:
                 data_figure.save(save_addr)
             if np.isnan(data_figure.data_y).any():
@@ -817,7 +829,7 @@ def mode_search(siv_center, siv_pos, is_recenter=True, is_adaptive=True, frequen
                                 counter_mode=counter_mode, data_mode='single', relim_mode='tight',
                                 update_mode='adaptive' if is_adaptive is True else 'normal',
                                 threshold_in_sigma=threshold_in_sigma, ref_x=ref_x,
-                                ref_gap=ref_gap, ref_exposure=ref_exposure, max_exposure=max_exposure)
+                                ref_gap=ref_gap, ref_exposure=ref_exposure, max_exposure=max_exposure, rf=rf, mode_type=mode_type)
         if save_addr is not None:
             data_figure.save(save_addr)
 

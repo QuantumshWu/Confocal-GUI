@@ -98,12 +98,12 @@ class LaserStabilizerDLCpro(BaseLaserStabilizer, metaclass=SingletonAndCloseMeta
     
     def __init__(self, wavelength_lb=None, wavelength_ub=None):
         super().__init__()
-        self.ratio = 0.54 # +1V piezo -> +0.54GHz freq
+        self.ratio = 0.56 # +1V piezo -> +0.56GHz freq
         self.laser = config_instances.get('laser')
         self.spl = 299792458
         self.v_mid = 0.5*(self.laser.piezo_max + self.laser.piezo_min)
-        self.v_min = self.laser.piezo_min + 0.05*(self.laser.piezo_max - self.laser.piezo_min)
-        self.v_max = self.laser.piezo_min + 0.95*(self.laser.piezo_max - self.laser.piezo_min)
+        self.v_min = self.laser.piezo_min + 0.01*(self.laser.piezo_max - self.laser.piezo_min)
+        self.v_max = self.laser.piezo_min + 0.99*(self.laser.piezo_max - self.laser.piezo_min)
         self.freq_thre = 0.025 #25MHz threshold defines when to return is_ready
         self.P = 0.8 #scaling factor of PID control
         # leaves about 10% extra space
@@ -132,14 +132,16 @@ class LaserStabilizerDLCpro(BaseLaserStabilizer, metaclass=SingletonAndCloseMeta
             self.is_ready = True
         else:
             self.is_ready = False
-        v_diff = self.P*freq_diff/self.ratio 
+        v_diff = self.P*freq_diff/self.ratio
         v_0 = self.laser.piezo
-        if (v_0+v_diff)<self.v_min or (v_0+v_diff)>self.v_max:
-            pass
+        if (v_0+v_diff)<self.v_min:
+            self.laser.piezo = self.v_min
+        elif (v_0+v_diff)>self.v_max:
+            self.laser.piezo = self.v_max
         else:
             self.laser.piezo = v_0+v_diff
 
-        time.sleep(0.05)# wait for piezo stable and measurement converge
+        time.sleep(0.1)# wait for piezo stable and measurement converge
         return
 
 
