@@ -513,7 +513,7 @@ class DSG836(BaseRF, metaclass=SingletonAndCloseMeta):
     on for if output is on
     """
     
-    def __init__(self, visa_str='USB0::0x1AB1::0x099C::DSG8M223900103::INSTR', power_ul = -5):
+    def __init__(self, visa_str='USB0::0x1AB1::0x099C::DSG8M223900103::INSTR', power_ub=-5, power_lb=None):
         import pyvisa
         rm = pyvisa.ResourceManager()
         self.handle = rm.open_resource(visa_str)
@@ -521,7 +521,8 @@ class DSG836(BaseRF, metaclass=SingletonAndCloseMeta):
         self._frequency = eval(self.handle.query('SOURce:FREQuency?')[:-1])
         self._iq = False # if IQ modulation is on
         self._on = False # if output is on
-        self.power_ul = power_ul
+        self.power_ub = power_ub
+        self.power_lb = power_lb
 
     def gui(self):
         """
@@ -538,9 +539,9 @@ class DSG836(BaseRF, metaclass=SingletonAndCloseMeta):
     
     @power.setter
     def power(self, value):
-        if value > self.power_ul:
-            value = self.power_ul
-            print(f'can not exceed RF power {self.power_ul}dbm')
+        if value > self.power_ub:
+            value = self.power_ub
+            print(f'can not exceed RF power {self.power_ub}dbm')
         self._power = value
         self.handle.write(f'SOURce:Power {self._power}')
     
