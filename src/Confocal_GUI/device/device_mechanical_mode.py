@@ -29,7 +29,7 @@ class DLCpro(BaseLaser, metaclass=SingletonAndCloseMeta):
     # return or set piezo voltage
         
     """     
-    def __init__(self, ip=None, piezo_min=None, piezo_max=None):
+    def __init__(self, ip=None, piezo_lb=None, piezo_ub=None):
 
         from toptica.lasersdk.dlcpro.v2_2_0 import DLCpro, NetworkConnection        
         if ip is None:
@@ -42,8 +42,8 @@ class DLCpro(BaseLaser, metaclass=SingletonAndCloseMeta):
 
         self._wavelength = None
         self._piezo = self.dlc.laser1.dl.pc.voltage_set.get()
-        self.piezo_min = 60-25 if piezo_min is None else piezo_min
-        self.piezo_max = 60+25 if piezo_max is None else piezo_max
+        self.piezo_lb = 60-25 if piezo_lb is None else piezo_lb
+        self.piezo_ub = 60+25 if piezo_ub is None else piezo_ub
         # piezo range where DLCpro is mode-hop free
 
     def gui(self):
@@ -71,10 +71,10 @@ class DLCpro(BaseLaser, metaclass=SingletonAndCloseMeta):
     
     @piezo.setter
     def piezo(self, value):
-        if self.piezo_min<=value<=self.piezo_max:
+        if self.piezo_lb<=value<=self.piezo_ub:
             piezo = value
         else:
-            print(f'Piezo {value} out of range, should be between {self.piezo_min} and {self.piezo_max}')
+            print(f'Piezo {value} out of range, should be between {self.piezo_lb} and {self.piezo_ub}')
             return
 
         #with self.DLCpro(self.NetworkConnection(self.ip)) as dlc:
@@ -101,9 +101,9 @@ class LaserStabilizerDLCpro(BaseLaserStabilizer, metaclass=SingletonAndCloseMeta
         self.ratio = 0.56 # +1V piezo -> +0.56GHz freq
         self.laser = config_instances.get('laser')
         self.spl = 299792458
-        self.v_mid = 0.5*(self.laser.piezo_max + self.laser.piezo_min)
-        self.v_min = self.laser.piezo_min + 0.01*(self.laser.piezo_max - self.laser.piezo_min)
-        self.v_max = self.laser.piezo_min + 0.99*(self.laser.piezo_max - self.laser.piezo_min)
+        self.v_mid = 0.5*(self.laser.piezo_ub + self.laser.piezo_lb)
+        self.v_min = self.laser.piezo_lb + 0.01*(self.laser.piezo_ub - self.laser.piezo_lb)
+        self.v_max = self.laser.piezo_lb + 0.99*(self.laser.piezo_ub - self.laser.piezo_lb)
         self.freq_thre = 0.025 #25MHz threshold defines when to return is_ready
         self.P = 0.8 #scaling factor of PID control
         # leaves about 10% extra space
