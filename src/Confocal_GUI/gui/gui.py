@@ -1256,16 +1256,8 @@ class DeviceGUI(QDialog):
                 # Dynamically get the lower and upper bounds from the device
                 lb_attr = f"{prop}_lb"
                 ub_attr = f"{prop}_ub"
-                try:
-                    lb = getattr(self.device, lb_attr)
-                    ub = getattr(self.device, ub_attr)
-                except AttributeError:
-                    lb = -1e9
-                    ub = 1e9  # **Use default range if bounds are not defined**
-
-                # **Store lower and upper bounds for validation during apply**
-                input_control.lb = lb
-                input_control.ub = ub
+                input_control.lb = getattr(self.device, lb_attr, None)
+                input_control.ub = getattr(self.device, ub_attr, None)
 
             elif prop_type == 'str':
                 input_control = QComboBox()
@@ -1367,11 +1359,11 @@ class DeviceGUI(QDialog):
                     raise ValueError("Input cannot be empty.")
                 new_value = float(input_text)
 
-                # **Enforce bounds if they exist**
-                lb = getattr(input_control, 'lb', -1e9)
-                ub = getattr(input_control, 'ub', 1e9)
-                if not (lb <= new_value <= ub):
-                    raise ValueError(f"Value must be between {self.format_float(lb)} and {self.format_float(ub)}.")
+                lb, ub = input_control.lb, input_control.ub
+                if (lb is not None and new_value < lb) or (ub is not None and new_value > ub):
+                    low  = self.format_float(lb) if lb is not None else "-∞"
+                    high = self.format_float(ub) if ub is not None else "∞"
+                    raise ValueError(f"Value must be between {low} and {high}.")
 
             elif prop_type == 'str':
                 new_value = input_control.currentText() == 'True'
